@@ -1,6 +1,10 @@
-import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import envPaths from "env-paths";
+import { difference, union } from "es-toolkit";
+import { ensureDir, move, pathExists, remove } from "fs-extra";
+import { x as tarExtract } from "tar";
+import { glob } from "tinyglobby";
 import * as z from "zod";
 
 import type { CheckResult } from "#/checks.js";
@@ -31,9 +35,117 @@ const BlueprintSchema = z.object({
 });
 
 export interface TechStackRunOptions {
-	configDir: string;
-	cwd: string;
 	home: string;
+	refresh: boolean;
+}
+
+export interface CachedRepo {
+	dir: string;
+	stale: boolean;
+}
+
+function safeRef(ref: string): string {
+	const safe = ref.replaceAll(/[^A-Za-z0-9._-]+/gu, "_");
+	if (safe === "" || safe === "." || safe === "..") {
+		throw new Error(`Unsafe tech-stack ref: “${ref}”.`);
+	}
+	return safe;
+}
+
+function cacheDirFor(owner: string, repo: string, ref: string): string {
+	return join(
+		envPaths("adistack-conform", { suffix: "" }).cache,
+		"github",
+		owner,
+		repo,
+		safeRef(ref),
+	);
+}
+
+function splitId(id: string): { owner: string; repo: string } {
+	const parts = id.split("/");
+	return { owner: parts[0] ?? "", repo: parts[1] ?? "" };
+}
+
+async function downloadTarball(id: string, ref: string, tmpPath: string): Promise<void> {
+	const headers: Record<string, string> = { "User-Agent": "adistack-conform" };
+	const token = process.env["GITHUB_TOKEN"];
+	if (token !== undefined && token !== "") {
+		headers["Authorization"] = `Bearer ${token}`;
+	}
+	let response: Response;
+	try {
+		response = await fetch(`https://codeload.github.com/${id}/tar.gz/${ref}`, {
+			headers,
+			redirect: "follow",
+		});
+	} catch (error) {
+		throw new Error(
+			`Cannot download tech-stack ${id}@${ref}: ${error instanceof Error ? error.message : String(error)}`,
+			{ cause: error },
+		);
+	}
+	if (!response.ok) {
+		if (response.status === 404) {
+			throw new Error(
+				`tech-stack ${id}@${ref} not found on GitHub (check techStack.id/ref, or set GITHUB_TOKEN for a private repo).`,
+			);
+		}
+		if (response.status === 401 || response.status === 403) {
+			throw new Error(
+				`GitHub refused tech-stack ${id}@${ref} (HTTP ${response.status}; private repo or rate limit — set GITHUB_TOKEN).`,
+			);
+		}
+		throw new Error(`GitHub download failed for tech-stack ${id}@${ref}: HTTP ${response.status}.`);
+	}
+	await Bun.write(tmpPath, await response.arrayBuffer());
+}
+
+async function extractTarball(archive: string, dest: string): Promise<void> {
+	await tarExtract({ cwd: dest, file: archive, strip: 1 });
+}
+
+async function ensureGithubRepo(spec: TechStackSpec, refresh: boolean): Promise<CachedRepo> {
+	const { owner, repo } = splitId(spec.id);
+	const dir = cacheDirFor(owner, repo, spec.ref);
+	const metaPath = join(dir, ".conform-meta.json");
+	if (!refresh && (await pathExists(metaPath))) {
+		try {
+			const meta = (await Bun.file(metaPath).json()) as { id?: unknown; ref?: unknown };
+			if (meta["id"] === spec.id && meta["ref"] === spec.ref) {
+				return { dir, stale: false };
+			}
+		} catch {
+			// Corrupt marker — fall through to re-download.
+		}
+	}
+	const tmpArchive = `${dir}.tarball`;
+	const stage = `${dir}.stage`;
+	try {
+		await downloadTarball(spec.id, spec.ref, tmpArchive);
+		await remove(stage);
+		await ensureDir(stage);
+		await extractTarball(tmpArchive, stage);
+		await remove(dir);
+		await ensureDir(join(dir, ".."));
+		await move(stage, dir);
+		await Bun.write(
+			metaPath,
+			`${JSON.stringify({ fetchedAt: new Date().toISOString(), id: spec.id, ref: spec.ref }, null, 2)}\n`,
+		);
+		return { dir, stale: false };
+	} catch (error) {
+		if (await pathExists(metaPath)) {
+			console.warn(
+				`Warning: using cached tech-stack ${spec.id}@${spec.ref} (${error instanceof Error ? error.message : String(error)})`,
+			);
+			return { dir, stale: true };
+		}
+		throw error;
+	} finally {
+		await remove(tmpArchive);
+		await remove(stage);
+	}
 }
 
 function short(value: string, max = 160): string {
@@ -68,16 +180,8 @@ async function loadRegistry(
 
 async function listBlueprints(repoRoot: string): Promise<string[]> {
 	const dir = join(repoRoot, "machines", "blueprints");
-	let entries: string[];
-	try {
-		entries = await readdir(dir);
-	} catch {
-		entries = [];
-	}
-	return entries
-		.filter((entry) => entry.endsWith(".json"))
-		.map((entry) => entry.slice(0, -".json".length))
-		.toSorted();
+	const entries = await glob("*.json", { cwd: dir });
+	return entries.map((entry) => entry.slice(0, -".json".length)).toSorted();
 }
 
 async function loadBlueprint(
@@ -241,12 +345,7 @@ export async function runTechStackChecks(
 	spec: TechStackSpec,
 	options: TechStackRunOptions,
 ): Promise<CheckResult[]> {
-	const repoRoot = resolveTargetPath(spec.repo, options.configDir, options.home);
-	if (!(await Bun.file(join(repoRoot, "machines", "presets", "registry.json")).exists())) {
-		throw new Error(
-			`tech-stack repo not found at ${repoRoot} (pass --repo or set "repo" to the tech-stack checkout).`,
-		);
-	}
+	const repoRoot = (await ensureGithubRepo(spec, options.refresh)).dir;
 	const registry = await loadRegistry(repoRoot);
 	let blueprintPresets: string[] = [];
 	let blueprintExcludes: string[] = [];
@@ -255,9 +354,8 @@ export async function runTechStackChecks(
 		blueprintExcludes = blueprint.exclude;
 		blueprintPresets = blueprint.presets;
 	}
-	const wanted = [...blueprintPresets, ...spec.presets];
-	const excluded = new Set([...blueprintExcludes, ...spec.exclude]);
-	const names = [...new Set(wanted)].filter((name) => !excluded.has(name)).toSorted();
+	const wanted = union(blueprintPresets, spec.presets);
+	const names = difference(wanted, [...blueprintExcludes, ...spec.exclude]).toSorted();
 	const unknown = names.filter((name) => !registry.has(name));
 	if (unknown.length > 0) {
 		throw new Error(

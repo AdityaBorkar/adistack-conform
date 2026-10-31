@@ -1,5 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { dirname } from "node:path";
+import { execaSync } from "execa";
+import equal from "fast-deep-equal";
+import { outputFile } from "fs-extra";
+import pointer from "json-pointer";
 
 import type { ConformConfig } from "#/config.js";
 import { resolveTargetPath } from "#/config.js";
@@ -60,111 +62,44 @@ function matchValue(
 	}
 }
 
-function deepEqual(a: unknown, b: unknown): boolean {
-	if (Object.is(a, b)) {
-		return true;
-	}
-	if (typeof a !== typeof b) {
-		return false;
-	}
-	if (Array.isArray(a) || Array.isArray(b)) {
-		if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
-			return false;
-		}
-		return a.every((item, index) => deepEqual(item, b[index]));
-	}
-	if (typeof a === "object" && a !== null && b !== null) {
-		const left = a as Record<string, unknown>;
-		const right = b as Record<string, unknown>;
-		const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-		for (const key of keys) {
-			if (!deepEqual(left[key], right[key])) {
-				return false;
-			}
-		}
-		return true;
-	}
-	return false;
-}
-
-function parsePointer(pointer: string): string[] {
-	return pointer
-		.split("/")
-		.slice(1)
-		.map((part) => part.replaceAll("~1", "/").replaceAll("~0", "~"));
-}
-
-export function getPointer(doc: unknown, pointer: string): { found: boolean; value: unknown } {
-	if (pointer === "" || pointer === "/") {
+export function getPointer(doc: unknown, pointerStr: string): { found: boolean; value: unknown } {
+	if (pointerStr === "" || pointerStr === "/") {
 		return { found: true, value: doc };
 	}
-	let current = doc;
-	for (const part of parsePointer(pointer)) {
-		if (typeof current !== "object" || current === null) {
+	try {
+		if (typeof doc !== "object" || doc === null) {
 			return { found: false, value: undefined };
 		}
-		if (Array.isArray(current)) {
-			const index = Number(part);
-			if (!Number.isInteger(index) || index < 0 || index >= current.length) {
-				return { found: false, value: undefined };
-			}
-			current = current[index];
-		} else {
-			const record = current as Record<string, unknown>;
-			if (!(part in record)) {
-				return { found: false, value: undefined };
-			}
-			current = record[part];
+		const obj = doc as Record<string, unknown>;
+		if (!pointer.has(obj, pointerStr)) {
+			return { found: false, value: undefined };
 		}
+		return { found: true, value: pointer.get(obj, pointerStr) };
+	} catch {
+		return { found: false, value: undefined };
 	}
-	return { found: true, value: current };
 }
 
-export function setPointer(doc: unknown, pointer: string, value: unknown): unknown {
-	if (pointer === "" || pointer === "/") {
+export function setPointer(doc: unknown, pointerStr: string, value: unknown): unknown {
+	if (pointerStr === "" || pointerStr === "/") {
 		return value;
 	}
-	const parts = parsePointer(pointer);
-	const root: unknown = typeof doc === "object" && doc !== null ? doc : {};
-	let current = root as Record<string, unknown> | unknown[];
-	for (let index = 0; index < parts.length; index += 1) {
-		const part = parts[index] as string;
-		const last = index === parts.length - 1;
-		if (Array.isArray(current)) {
-			const at = Number(part);
-			if (!Number.isInteger(at) || at < 0) {
-				throw new Error(`Invalid array index in pointer: ${pointer}`);
-			}
-			while (current.length <= at) {
-				current.push(undefined);
-			}
-			if (last) {
-				current[at] = value;
-				return root;
-			}
-			if (typeof current[at] !== "object" || current[at] === null) {
-				current[at] = {};
-			}
-			current = current[at] as Record<string, unknown> | unknown[];
-		} else {
-			const record = current as Record<string, unknown>;
-			if (last) {
-				record[part] = value;
-				return root;
-			}
-			if (typeof record[part] !== "object" || record[part] === null) {
-				record[part] = /^\d+$/u.test(parts[index + 1] as string) ? [] : {};
-			}
-			current = record[part] as Record<string, unknown> | unknown[];
-		}
-	}
+	const root = (typeof doc === "object" && doc !== null ? doc : {}) as Record<string, unknown>;
+	pointer.set(root, pointerStr, value);
 	return root;
 }
 
 function runShell(command: string, cwd: string): { code: number; output: string } {
-	const result = spawnSync("sh", ["-c", command], { cwd, encoding: "utf8", timeout: 30_000 });
-	const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
-	return { code: result.status ?? 1, output };
+	try {
+		const result = execaSync("sh", ["-c", command], { cwd, reject: false, timeout: 30_000 });
+		const output = [result.stdout, result.stderr]
+			.filter((part) => part !== "")
+			.join("\n")
+			.trim();
+		return { code: result.exitCode ?? 1, output };
+	} catch (error) {
+		return { code: 1, output: error instanceof Error ? error.message : String(error) };
+	}
 }
 
 async function checkFile(
@@ -365,7 +300,7 @@ async function checkJsonField(
 	}
 	const found = getPointer(doc, raw.pointer);
 	const actual = JSON.stringify(found.value) ?? "undefined";
-	if (!found.found || !deepEqual(found.value, raw.expect)) {
+	if (!found.found || !equal(found.value, raw.expect)) {
 		if (raw.fix === "set") {
 			const next = setPointer(structuredClone(doc), raw.pointer, raw.expect);
 			const newContent = `${JSON.stringify(next, null, 2)}\n`;
@@ -551,10 +486,5 @@ export async function applyFix(result: CheckResult): Promise<void> {
 	if (!result.fix) {
 		throw new Error(`Check ${result.id} is not fixable.`);
 	}
-	const dir = dirname(result.fix.filePath);
-	if (dir.length > 0) {
-		const { mkdir } = await import("node:fs/promises");
-		await mkdir(dir, { recursive: true });
-	}
-	await Bun.write(result.fix.filePath, result.fix.newContent);
+	await outputFile(result.fix.filePath, result.fix.newContent);
 }

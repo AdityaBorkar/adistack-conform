@@ -35,6 +35,7 @@ async function runAllChecks(
 	loaded: LoadedConfig,
 	base: { config: string; cwd: string },
 	only: CheckScope | undefined,
+	refresh: boolean,
 ): Promise<CheckResult[]> {
 	const home = defaultHome();
 	const results = await runChecks(loaded.config, {
@@ -45,13 +46,7 @@ async function runAllChecks(
 		only,
 	});
 	if (loaded.config.techStack !== undefined && only !== "project") {
-		results.push(
-			...(await runTechStackChecks(loaded.config.techStack, {
-				configDir: loaded.dir,
-				cwd: base.cwd,
-				home,
-			})),
-		);
+		results.push(...(await runTechStackChecks(loaded.config.techStack, { home, refresh })));
 	}
 	return results;
 }
@@ -69,17 +64,23 @@ program
 	.description("Check conform.config.json against the current project/system-user.")
 	.option("--json", "Print machine-readable JSON.")
 	.option("--project-only", "Only run project checks.")
+	.option("--refresh", "Re-download tech-stack blueprints/presets, ignoring the cache.")
 	.option("--system-only", "Only run system checks.")
 	.action(
 		async (
-			cmdOptions: { json?: boolean; projectOnly?: boolean; systemOnly?: boolean },
+			cmdOptions: {
+				json?: boolean;
+				projectOnly?: boolean;
+				refresh?: boolean;
+				systemOnly?: boolean;
+			},
 			cmd: Command,
 		) => {
 			const base = baseOptions(cmd);
 			const only = scopeOf(cmdOptions);
 			try {
 				const loaded = await loadConfig(base.config, base.cwd);
-				const results = await runAllChecks(loaded, base, only);
+				const results = await runAllChecks(loaded, base, only, cmdOptions.refresh === true);
 				if (cmdOptions.json === true) {
 					const failed = results.filter((item) => !item.ok);
 					console.log(
@@ -114,6 +115,7 @@ program
 	.option("--dry-run", "Show what would be fixed without writing.")
 	.option("--no-diff", "Hide the diff preview.")
 	.option("--project-only", "Only fix project checks.")
+	.option("--refresh", "Re-download tech-stack blueprints/presets, ignoring the cache.")
 	.option("--system-only", "Only fix system checks.")
 	.action(
 		async (
@@ -122,6 +124,7 @@ program
 				diff?: boolean;
 				dryRun?: boolean;
 				projectOnly?: boolean;
+				refresh?: boolean;
 				systemOnly?: boolean;
 			},
 			cmd: Command,
@@ -131,7 +134,7 @@ program
 			try {
 				const only = scopeOf(cmdOptions);
 				const loaded = await loadConfig(base.config, base.cwd);
-				const results = await runAllChecks(loaded, base, only);
+				const results = await runAllChecks(loaded, base, only, cmdOptions.refresh === true);
 				const failed = results.filter((item) => !item.ok);
 				const fixable = failed.filter((item) => item.fixable);
 				const unfixable = failed.filter((item) => !item.fixable);
@@ -228,7 +231,7 @@ program
 					}
 				}
 
-				const rerun = await runAllChecks(loaded, base, only);
+				const rerun = await runAllChecks(loaded, base, only, cmdOptions.refresh === true);
 				const remaining = rerun.filter((item) => !item.ok);
 				console.log(
 					`\nFixed ${applied}/${selected.length}. ${remaining.length} check(s) still failing.`,
@@ -252,9 +255,11 @@ program
 	.option("--blueprint <name>", "Pre-existing tech-stack blueprint to enforce.")
 	.option("--exclude <names...>", "Tech-stack presets to drop from the blueprint.")
 	.option("--force", "Overwrite an existing config file.")
+	.option("--id <owner/repo>", "GitHub repo holding blueprints/presets (or set TECH_STACK_ID).")
 	.option("--minimal", "Only snapshot project checks (skip system-user).")
 	.option("--preset <names...>", "Tech-stack preset(s) to enforce (own blueprint).")
-	.option("--repo <path>", "Path to the tech-stack checkout (or set TECH_STACK_REPO).")
+	.option("--ref <ref>", "GitHub branch, tag, or commit (or set TECH_STACK_REF; default: main).")
+	.option("--source <name>", "Blueprint/preset source; only “github” is supported.")
 	.option("--stdout", "Print to stdout instead of writing a file.")
 	.action(
 		async (
@@ -262,9 +267,11 @@ program
 				blueprint?: string;
 				exclude?: string[];
 				force?: boolean;
+				id?: string;
 				minimal?: boolean;
 				preset?: string[];
-				repo?: string;
+				ref?: string;
+				source?: string;
 				stdout?: boolean;
 			},
 			cmd: Command,
@@ -274,20 +281,32 @@ program
 				const wantsTechStack =
 					cmdOptions.blueprint !== undefined ||
 					cmdOptions.exclude !== undefined ||
+					cmdOptions.id !== undefined ||
 					cmdOptions.preset !== undefined ||
-					cmdOptions.repo !== undefined;
+					cmdOptions.ref !== undefined ||
+					cmdOptions.source !== undefined;
 				let techStack: TechStackSpec | undefined;
 				if (wantsTechStack) {
-					const repo = cmdOptions.repo ?? process.env["TECH_STACK_REPO"];
-					if (repo === undefined || repo === "") {
-						throw new Error("Missing tech-stack repo: pass --repo <path> or set TECH_STACK_REPO.");
+					const id = cmdOptions.id ?? process.env["TECH_STACK_ID"];
+					if (id === undefined || id === "") {
+						throw new Error(
+							"Missing tech-stack repo: pass --id <owner/repo> or set TECH_STACK_ID.",
+						);
+					}
+					const source = cmdOptions.source ?? "github";
+					if (source !== "github") {
+						throw new Error(
+							`Unsupported tech-stack source: ${source} (only “github” is supported).`,
+						);
 					}
 					techStack = {
 						blueprint: cmdOptions.blueprint,
 						exclude: cmdOptions.exclude ?? [],
 						fix: "overwrite",
+						id,
 						presets: cmdOptions.preset ?? [],
-						repo,
+						ref: cmdOptions.ref ?? process.env["TECH_STACK_REF"] ?? "main",
+						source: "github",
 					};
 				}
 				const snapshot = await buildSnapshot(base.cwd, {

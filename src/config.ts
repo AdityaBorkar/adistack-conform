@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
+import untildify from "untildify";
 import * as z from "zod";
 
 const MatchSchema = z.enum(["contains", "exact", "regex"]);
@@ -67,8 +68,10 @@ const TechStackSpecSchema = z.object({
 	blueprint: z.string().min(1).optional(),
 	exclude: z.array(z.string().min(1)).default([]),
 	fix: z.enum(["overwrite", "report"]).default("overwrite"),
+	id: z.string().regex(/^[^/\s]+\/[^/\s]+$/u, "Expected techStack.id as “owner/repo”."),
 	presets: z.array(z.string().min(1)).default([]),
-	repo: z.string().min(1),
+	ref: z.string().min(1).default("main"),
+	source: z.literal("github"),
 });
 
 export type TechStackSpec = z.infer<typeof TechStackSpecSchema>;
@@ -89,18 +92,9 @@ export interface LoadedConfig {
 	path: string;
 }
 
-function expandHome(path: string, home: string): string {
-	if (path === "~") {
-		return home;
-	}
-	if (path.startsWith("~/")) {
-		return join(home, path.slice(2));
-	}
-	return path;
-}
-
 export function resolveTargetPath(raw: string, baseDir: string, home: string): string {
-	const expanded = expandHome(raw, home);
+	const expanded =
+		raw === "~" ? home : raw.startsWith("~/") ? join(home, raw.slice(2)) : untildify(raw);
 	if (isAbsolute(expanded)) {
 		return expanded;
 	}

@@ -1,5 +1,6 @@
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+
+import { execaSync } from "execa";
 
 import type { TechStackSpec } from "#/config.js";
 import { defaultHome } from "#/config.js";
@@ -17,8 +18,8 @@ interface SnapshotFile {
 
 function tryCommand(command: string, cwd: string): string | undefined {
 	try {
-		const result = spawnSync("sh", ["-c", command], { cwd, encoding: "utf8", timeout: 10_000 });
-		if (result.status !== 0) {
+		const result = execaSync("sh", ["-c", command], { cwd, reject: false, timeout: 10_000 });
+		if (result.exitCode !== 0) {
 			return undefined;
 		}
 		const out = `${result.stdout ?? ""}`.trim();
@@ -131,7 +132,11 @@ export async function buildSnapshot(
 		system: { binaries, env, files: systemFiles },
 	};
 	if (options.techStack !== undefined) {
-		const spec: Record<string, unknown> = { repo: options.techStack.repo };
+		const spec: Record<string, unknown> = {
+			id: options.techStack.id,
+			ref: options.techStack.ref,
+			source: options.techStack.source,
+		};
 		if (options.techStack.blueprint !== undefined) {
 			spec["blueprint"] = options.techStack.blueprint;
 		}

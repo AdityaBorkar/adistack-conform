@@ -18,9 +18,9 @@ bun run verify            # format && lint && types && build
 ## CLI (`adistack-conform [--config <path>] [--cwd <dir>]`)
 
 ```bash
-adistack-conform init [--minimal] [--force] [--stdout] [--repo <path>] [--preset <names...>] [--blueprint <name>] [--exclude <names...>]  # scaffold conform.config.json from current state (+ optional tech-stack refs)
-adistack-conform check [--json] [--project-only|--system-only]  # exit 0 ok, 1 drift, 2 config error
-adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only|--system-only]  # space to toggle, Select-all pseudo-option first, diff preview, per-item ok/error, re-checks after apply
+adistack-conform init [--minimal] [--force] [--stdout] [--id <owner/repo>] [--ref <ref>] [--source <name>] [--preset <names...>] [--blueprint <name>] [--exclude <names...>]  # scaffold conform.config.json from current state (+ optional tech-stack refs)
+adistack-conform check [--json] [--refresh] [--project-only|--system-only]  # exit 0 ok, 1 drift, 2 config error
+adistack-conform fix [--all] [--dry-run] [--no-diff] [--refresh] [--project-only|--system-only]  # space to toggle, Select-all pseudo-option first, diff preview, per-item ok/error, re-checks after apply
 ```
 
 ## conform.config.json — `techStack` section (system-user desired state)
@@ -33,7 +33,9 @@ blueprint/preset or defines its own blueprint inline via `presets`:
 {
 	"version": 1,
 	"techStack": {
-		"repo": "../tech-stack",
+		"source": "github",
+		"id": "myorg/tech-stack",
+		"ref": "main",
 		"blueprint": "main",
 		"presets": ["git", "shell"],
 		"exclude": ["wsl"],
@@ -42,12 +44,18 @@ blueprint/preset or defines its own blueprint inline via `presets`:
 }
 ```
 
-- `repo` — path to the tech-stack checkout (relative to the config file, `~` ok).
-- `blueprint` — `machines/blueprints/<name>.json` in tech-stack (base preset list).
-- `presets` — own blueprint: extra tech-stack preset names, merged over the blueprint.
+- `source` — always `"github"`. `id` — `"owner/repo"` holding blueprints/presets.
+- `ref` — branch, tag, or commit (default `main`; pin a tag/commit for reproducibility).
+- `blueprint` — `machines/blueprints/<name>.json` in that repo (base preset list).
+- `presets` — own blueprint: extra preset names, merged over the blueprint.
 - `exclude` — preset names dropped from the effective set.
 - `fix: "overwrite"|"report"` — whether preset mismatches are auto-fixable (default `overwrite`).
 - Effective set = (blueprint ∪ presets) − exclude. Unknown names fail with exit 2.
+- The repo tarball is downloaded from codeload (`GITHUB_TOKEN` supported for
+  private repos / rate limits) and cached under
+  `~/.cache/adistack-conform/github/<owner>/<repo>/<ref>/`
+  (`XDG_CACHE_HOME` respected). `check`/`fix --refresh` forces a re-download;
+  a failed download falls back to the cache with a warning.
 - Each preset resolves via `machines/presets/registry.json` (`path` → `target`).
   `docs:` targets, Windows `%...%` targets, and annotation-only targets are reported
   as skipped (exit 0); a leading `~/...` or `/...` token is used when the target

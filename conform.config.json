@@ -39,10 +39,5 @@
 		"env": [],
 		"files": []
 	},
-	"techStack": {
-		"exclude": [],
-		"presets": ["git"],
-		"repo": "../tech-stack"
-	},
 	"version": 1
 }
