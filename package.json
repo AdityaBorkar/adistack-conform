@@ -1,0 +1,44 @@
+{
+	"name": "adistack-conform",
+	"version": "0.1.0",
+	"bin": {
+		"adistack-conform": "./dist/adistack-conform"
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"type": "module",
+	"imports": {
+		"#/*": "./src/*"
+	},
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"build": "bun build src/index.ts --compile --outfile dist/adistack-conform",
+		"check:format": "oxfmt",
+		"check:lint": "oxlint",
+		"check:types": "tsrs",
+		"clean": "bunx rimraf --glob \"**/{node_modules,dist,bun.lockb}\"",
+		"prepare": "husky",
+		"verify": "bun check:format && bun check:lint && bun check:types && bun run build"
+	},
+	"dependencies": {
+		"@clack/prompts": "1.8.1",
+		"commander": "15.0.0",
+		"zod": "4.6.7"
+	},
+	"devDependencies": {
+		"@commitlint/cli": "21.2.4",
+		"@commitlint/config-conventional": "21.2.4",
+		"@types/bun": "1.4.4",
+		"@types/node": "26.6.5",
+		"bun-types": "1.4.4",
+		"husky": "9.1.7",
+		"oxfmt": "0.74.0",
+		"oxlint": "1.89.0",
+		"tsrs": "0.18.0-ts7.1.0-dev.20260929",
+		"typescript": "7.0.2"
+	}
+}

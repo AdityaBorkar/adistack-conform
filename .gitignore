@@ -1,0 +1,11 @@
+node_modules
+dist
+
+.env*
+*.env
+*.tsbuildinfo
+*.tgz
+.DS_Store
+
+.agents/skills
+codedb.snapshot

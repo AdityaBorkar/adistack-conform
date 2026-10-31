@@ -1,0 +1,66 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"categories": {
+		"correctness": "error",
+		"pedantic": "error",
+		"perf": "error",
+		"suspicious": "error"
+	},
+	"env": {
+		"es2022": true,
+		"node": true
+	},
+	"overrides": [
+		{
+			"files": ["src/index.ts"],
+			"rules": {
+				"no-await-in-loop": "off"
+			}
+		}
+	],
+	"plugins": ["eslint", "import", "node", "oxc", "promise", "typescript", "unicorn"],
+	"rules": {
+		"import/max-dependencies": "off",
+		"import/no-unassigned-import": "error",
+		"max-lines": "off",
+		"max-lines-per-function": "off",
+		"no-restricted-imports": [
+			"error",
+			{
+				"patterns": [
+					{
+						"group": ["https://**", "http://**"],
+						"message": "URL imports are banned."
+					},
+					{
+						"group": [
+							"npm:*",
+							"npm:*/*",
+							"npm:*/*/*",
+							"npm:*/*/*/*",
+							"jsr:*",
+							"jsr:*/*",
+							"jsr:*/*/*",
+							"jsr:*/*/*/*"
+						],
+						"message": "Package-protocol imports are banned."
+					}
+				]
+			}
+		],
+		"sort-keys": [
+			"error",
+			"asc",
+			{
+				"caseSensitive": true,
+				"natural": true,
+				"minKeys": 2,
+				"allowLineSeparatedGroups": false
+			}
+		],
+		"no-underscore-dangle": "warn",
+		"promise/always-return": "off",
+		"promise/no-callback-in-promise": "off",
+		"sort-imports": "off"
+	}
+}

@@ -1,0 +1,16 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"references": {
+		"tech-stack": {
+			"path": "~/repo/tech-stack",
+			"description": "Machine tech-stack: Nix home.nix, REPORT/CONFIG/HOW_TO, machines/presets for opencode/vscode/zed/biome. Use for toolchain versions and editor/agent presets."
+		}
+	},
+	"permissions": [
+		{
+			"action": "external_directory",
+			"resource": "~/repo/tech-stack/*",
+			"effect": "allow"
+		}
+	]
+}

@@ -1,0 +1,48 @@
+{
+	"project": {
+		"commands": [],
+		"files": [
+			{
+				"path": "AGENTS.md"
+			},
+			{
+				"path": "package.json"
+			},
+			{
+				"path": "src/index.ts"
+			},
+			{
+				"contains": ["\"strict\": true"],
+				"id": "tsconfig-strict",
+				"path": "tsconfig.json"
+			}
+		],
+		"json": [
+			{
+				"expect": "./src/*",
+				"fix": "set",
+				"id": "path-alias",
+				"path": "package.json",
+				"pointer": "/imports/#~1*"
+			},
+			{
+				"expect": "module",
+				"fix": "set",
+				"id": "package-type",
+				"path": "package.json",
+				"pointer": "/type"
+			}
+		]
+	},
+	"system": {
+		"binaries": [],
+		"env": [],
+		"files": []
+	},
+	"techStack": {
+		"exclude": [],
+		"presets": ["git"],
+		"repo": "../tech-stack"
+	},
+	"version": 1
+}

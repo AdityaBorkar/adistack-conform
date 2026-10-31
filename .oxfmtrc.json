@@ -1,0 +1,25 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"printWidth": 100,
+	"sortImports": {
+		"customGroups": [
+			{
+				"elementNamePattern": ["bun", "bun:*", "bun:*/*"],
+				"groupName": "bun"
+			}
+		],
+		"groups": [
+			["builtin", "bun"],
+			"external",
+			"internal",
+			["parent", "sibling", "index", "subpath"],
+			["style", "side_effect_style", "side_effect"],
+			"unknown"
+		],
+		"ignoreCase": false
+	},
+	"sortPackageJson": {
+		"sortScripts": true
+	},
+	"useTabs": true
+}
