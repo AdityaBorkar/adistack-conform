@@ -2,7 +2,7 @@
 
 ## Stack
 
-Bun-only TypeScript CLI (`bun build --compile` binary + npm `adistack-conform` bin) + Commander + @clack/prompts + Zod v4 + oxlint/oxfmt + tsrs. No CI, no README yet.
+Bun-only TypeScript CLI (`bun build --compile` binary + npm `adistack-conform` bin) + Commander + @clack/prompts + Zod v4 + oxlint/oxfmt + tsrs + knip. No CI, no README yet.
 
 ## Commands
 
@@ -12,7 +12,8 @@ bun run build            # bun build src/index.ts --compile --outfile dist/adist
 bun run check:format     # bun oxfmt — writes in place (oxfmt defaults to --write, despite the name)
 bun run check:lint       # bun oxlint
 bun run check:types      # bun tsrs (Bun typechecker, not tsc)
-bun run verify            # format && lint && types && build
+bun run check:knip       # bun knip (unused deps/exports/files)
+bun run verify            # format && lint && types && knip && build
 ```
 
 ## CLI (`adistack-conform [--config <path>] [--cwd <dir>]`)

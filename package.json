@@ -8,7 +8,8 @@
 		".output",
 		"package.json",
 		"configuration_schema.json",
-		"README.md"
+		"README.md",
+		"skills"
 	],
 	"type": "module",
 	"imports": {
@@ -19,6 +20,7 @@
 	},
 	"scripts": {
 		"build": "bun gen:json-schema && bun build src/index.ts --compile --outfile .output/adistack-conform",
+		"check:knip": "knip",
 		"check:lint": "oxlint",
 		"check:types": "tsrs",
 		"clean": "bunx rimraf --glob \"**/{node_modules,dist,bun.lockb}\"",
@@ -26,7 +28,7 @@
 		"format": "oxfmt",
 		"gen:json-schema": "",
 		"prepare": "husky",
-		"verify": "bun format && bun check:lint && bun check:types && bun run build"
+		"verify": "bun format && bun check:lint && bun check:types && bun check:knip && bun run build"
 	},
 	"dependencies": {
 		"@clack/prompts": "1.8.1",
@@ -48,11 +50,9 @@
 		"@commitlint/cli": "21.2.4",
 		"@commitlint/config-conventional": "21.2.4",
 		"@types/bun": "1.4.4",
-		"@types/diff": "7.0.2",
 		"@types/fs-extra": "11.0.4",
 		"@types/json-pointer": "1.0.34",
 		"@types/node": "26.6.5",
-		"bun-types": "1.4.4",
 		"husky": "9.1.7",
 		"knip": "6.43.0",
 		"oxfmt": "0.75.0",
