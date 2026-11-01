@@ -3,7 +3,7 @@
 	"references": {
 		"tech-stack": {
 			"path": "~/repo/tech-stack",
-			"description": "Machine tech-stack: Nix home.nix, REPORT/CONFIG/HOW_TO, machines/presets for opencode/vscode/zed/biome. Use for toolchain versions and editor/agent presets."
+			"description": "Tech Stack definations used for projects and machines."
 		}
 	},
 	"permissions": [

@@ -1,0 +1,65 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"description": "JSON Schema reference, e.g. machine-preset.json.",
+			"type": "string"
+		},
+		"packages": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"files": {
+						"minItems": 1,
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"name": {
+									"type": "string",
+									"minLength": 1,
+									"description": "File name within the preset."
+								},
+								"path": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Repo-relative source path, e.g. machine/presets/git/gitconfig."
+								},
+								"target": {
+									"type": "string",
+									"minLength": 1,
+									"description": "Enforcement target."
+								}
+							},
+							"required": ["name", "path", "target"],
+							"additionalProperties": false
+						},
+						"description": "Files belonging to this preset."
+					},
+					"name": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Preset name."
+					},
+					"reference": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Repo-relative preset directory."
+					}
+				},
+				"required": ["files", "name", "reference"],
+				"additionalProperties": false
+			},
+			"description": "All machine presets."
+		},
+		"type": {
+			"type": "string",
+			"const": "machine.presets",
+			"description": "Discriminant for the machine presets manifest."
+		}
+	},
+	"required": ["packages", "type"],
+	"additionalProperties": false
+}

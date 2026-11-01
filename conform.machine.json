@@ -1,0 +1,8 @@
+{
+	"$schema": "./configuration_schema/machine.json",
+	"source": {
+		"type": "github",
+		"repo": "AdityaBorkar/tech-stack"
+	},
+	"blueprint": "main"
+}

@@ -1,0 +1,65 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"description": "JSON Schema reference, e.g. ./configuration_schema/project.json.",
+			"type": "string"
+		},
+		"blueprint": {
+			"type": "string",
+			"minLength": 1,
+			"description": "Project blueprint name, e.g. cli-app."
+		},
+		"exclude": {
+			"default": [],
+			"description": "Preset names dropped from the effective set.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"fix": {
+			"default": "overwrite",
+			"description": "Whether preset mismatches are auto-fixable.",
+			"type": "string",
+			"enum": ["overwrite", "report"]
+		},
+		"presets": {
+			"default": [],
+			"description": "Extra preset names merged over the blueprint.",
+			"type": "array",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			}
+		},
+		"source": {
+			"type": "object",
+			"properties": {
+				"ref": {
+					"default": "main",
+					"description": "Git branch, tag, or commit.",
+					"type": "string",
+					"minLength": 1
+				},
+				"repo": {
+					"type": "string",
+					"pattern": "^[^/\\s]+\\/[^/\\s]+$",
+					"description": "GitHub owner/repo holding blueprints and presets."
+				},
+				"type": {
+					"type": "string",
+					"const": "github",
+					"description": "Preset source; only github is supported."
+				}
+			},
+			"required": ["ref", "repo", "type"],
+			"additionalProperties": false,
+			"description": "Tech-stack repo holding blueprints and presets."
+		}
+	},
+	"required": ["blueprint", "exclude", "fix", "presets", "source"],
+	"additionalProperties": false
+}

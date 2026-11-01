@@ -1,0 +1,60 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"description": "JSON Schema reference, e.g. registry.json.",
+			"type": "string"
+		},
+		"machine": {
+			"type": "object",
+			"properties": {
+				"blueprints": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"description": "Blueprint locations relative to tech-stack root."
+				},
+				"presets": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"description": "Preset locations relative to tech-stack root."
+				}
+			},
+			"required": ["blueprints", "presets"],
+			"additionalProperties": false,
+			"description": "Machine blueprints and presets locations."
+		},
+		"project": {
+			"type": "object",
+			"properties": {
+				"blueprints": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"description": "Blueprint locations relative to tech-stack root."
+				},
+				"presets": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"description": "Preset locations relative to tech-stack root."
+				}
+			},
+			"required": ["blueprints", "presets"],
+			"additionalProperties": false,
+			"description": "Project blueprints and presets locations."
+		}
+	},
+	"required": ["machine", "project"],
+	"additionalProperties": false
+}

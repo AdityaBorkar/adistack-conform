@@ -7,7 +7,7 @@
 	"files": [
 		".output",
 		"package.json",
-		"configuration_schema.json",
+		"configuration_schema",
 		"README.md",
 		"skills"
 	],
@@ -19,16 +19,16 @@
 		".": "./src/index.ts"
 	},
 	"scripts": {
-		"build": "bun gen:json-schema && bun build src/index.ts --compile --outfile .output/adistack-conform",
-		"check:knip": "knip",
+		"build": "bun ./scripts/build.ts",
 		"check:lint": "oxlint",
 		"check:types": "tsrs",
 		"clean": "bunx rimraf --glob \"**/{node_modules,dist,bun.lockb}\"",
 		"dev": "bun ./src/index.ts",
 		"format": "oxfmt",
-		"gen:json-schema": "",
+		"gen:json-schema": "bun ./scripts/generate-json-schema.ts",
 		"prepare": "husky",
-		"verify": "bun format && bun check:lint && bun check:types && bun check:knip && bun run build"
+		"review:knip": "knip",
+		"verify": "bun format && bun check:lint && bun check:types && bun run build"
 	},
 	"dependencies": {
 		"@clack/prompts": "1.8.1",

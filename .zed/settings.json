@@ -1,5 +1,5 @@
 {
-	"file_scan_exclusions": ["**/.git", "**/dist", "**/node_modules", "tsconfig.tsbuildinfo"],
+	"file_scan_exclusions": ["**/.git", "**/.output", "**/node_modules", "tsconfig.tsbuildinfo"],
 	"format_on_save": "on",
 	"formatter": [
 		{ "code_action": "source.fixAll" },
