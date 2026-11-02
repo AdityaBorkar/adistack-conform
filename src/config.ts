@@ -1,95 +1,26 @@
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import untildify from "untildify";
 import * as z from "zod";
 
-const MatchSchema = z.enum(["contains", "exact", "regex"]);
+import { MachineSchema } from "#/schemas/machine.js";
+import { ProjectSchema } from "#/schemas/project.js";
 
-const FileCheckSchema = z
-	.object({
-		contains: z.array(z.string().min(1)).optional(),
-		expected: z.string().optional(),
-		expectedFile: z.string().optional(),
-		id: z.string().min(1).optional(),
-		mustExist: z.boolean().optional(),
-		path: z.string().min(1),
-	})
-	.refine((value) => value.expected === undefined || value.expectedFile === undefined, {
-		message: "File check cannot set both `expected` and `expectedFile`.",
-	});
-
-const JsonFieldCheckSchema = z.object({
-	expect: z.unknown(),
-	fix: z.enum(["report", "set"]).default("set"),
-	id: z.string().min(1).optional(),
-	path: z.string().min(1),
-	pointer: z.string().min(1),
-});
-
-const CommandCheckSchema = z.object({
-	expect: z.string(),
-	fixHint: z.string().optional(),
-	id: z.string().min(1),
-	match: MatchSchema.default("exact"),
-	run: z.string().min(1),
-});
-
-const BinaryCheckSchema = z.object({
-	args: z.array(z.string()).default(["--version"]),
-	bin: z.string().min(1),
-	expect: z.string(),
-	fixHint: z.string().optional(),
-	id: z.string().min(1).optional(),
-	match: MatchSchema.default("contains"),
-});
-
-const EnvCheckSchema = z.object({
-	expect: z.string().optional(),
-	fixHint: z.string().optional(),
-	match: MatchSchema.default("exact"),
-	mustExist: z.boolean().default(true),
-	name: z.string().min(1),
-});
-
-const ProjectSectionSchema = z.object({
-	commands: z.array(CommandCheckSchema).default([]),
-	files: z.array(FileCheckSchema).default([]),
-	json: z.array(JsonFieldCheckSchema).default([]),
-});
-
-const SystemSectionSchema = z.object({
-	binaries: z.array(BinaryCheckSchema).default([]),
-	env: z.array(EnvCheckSchema).default([]),
-	files: z.array(FileCheckSchema).default([]),
-});
-
-const TechStackSpecSchema = z.object({
-	blueprint: z.string().min(1).optional(),
-	exclude: z.array(z.string().min(1)).default([]),
-	fix: z.enum(["overwrite", "report"]).default("overwrite"),
-	id: z.string().regex(/^[^/\s]+\/[^/\s]+$/u, "Expected techStack.id as “owner/repo”."),
-	presets: z.array(z.string().min(1)).default([]),
-	ref: z.string().min(1).default("main"),
-	source: z.literal("github"),
-});
-
-export type TechStackSpec = z.infer<typeof TechStackSpecSchema>;
-
-export const ConformConfigSchema = z.object({
-	$schema: z.string().optional(),
-	project: ProjectSectionSchema.default({ commands: [], files: [], json: [] }),
-	system: SystemSectionSchema.default({ binaries: [], env: [], files: [] }),
-	techStack: TechStackSpecSchema.optional(),
-	version: z.literal(1),
-});
-
-export type ConformConfig = z.infer<typeof ConformConfigSchema>;
+export interface TechStackSpec {
+	blueprint?: string;
+	exclude: string[];
+	id: string;
+	presets: string[];
+	ref: string;
+	source: "github";
+}
 
 export interface LoadedConfig {
-	config: ConformConfig;
 	dir: string;
+	kind: "machine" | "project";
 	path: string;
+	spec: TechStackSpec;
 }
 
 export function resolveTargetPath(raw: string, baseDir: string, home: string): string {
@@ -101,18 +32,56 @@ export function resolveTargetPath(raw: string, baseDir: string, home: string): s
 	return resolve(baseDir, expanded);
 }
 
-export function resolveConfigPath(raw: string, cwd: string): string {
+export function resolveConfigPath(raw: string): string {
 	if (isAbsolute(raw)) {
 		return raw;
 	}
-	return resolve(cwd, raw);
+	return resolve(process.cwd(), raw);
 }
 
-export async function loadConfig(configPath: string, cwd: string): Promise<LoadedConfig> {
-	const path = resolveConfigPath(configPath, cwd);
+function presetSpecFrom(data: {
+	blueprint: string;
+	exclude: string[];
+	presets: string[];
+	source: { branch?: string; ref: string; repo: string };
+}): TechStackSpec {
+	return {
+		blueprint: data.blueprint,
+		exclude: data.exclude,
+		id: data.source.repo,
+		presets: data.presets,
+		ref: data.source.branch ?? data.source.ref,
+		source: "github",
+	};
+}
+
+function invalidConfigError(path: string, detail: string): Error {
+	return new Error(
+		`Invalid conform config in ${path} (expected conform.project.json or conform.machine.json format):\n${detail}`,
+	);
+}
+
+function parseProjectConfig(path: string, parsed: unknown): z.infer<typeof ProjectSchema> {
+	const project = ProjectSchema.safeParse(parsed);
+	if (!project.success) {
+		throw invalidConfigError(path, z.prettifyError(project.error));
+	}
+	return project.data;
+}
+
+function parseMachineConfig(path: string, parsed: unknown): z.infer<typeof MachineSchema> {
+	const machine = MachineSchema.safeParse(parsed);
+	if (!machine.success) {
+		throw invalidConfigError(path, z.prettifyError(machine.error));
+	}
+	return machine.data;
+}
+
+export async function loadConfig(configPath: string): Promise<LoadedConfig> {
+	const path = resolveConfigPath(configPath);
 	const file = Bun.file(path);
 	if (!(await file.exists())) {
-		throw new Error(`Config not found: ${path}\nRun \`adistack-conform init\` to create one.`);
+		throw new Error(`Config not found: ${path}`);
 	}
 	let parsed: unknown;
 	try {
@@ -121,11 +90,64 @@ export async function loadConfig(configPath: string, cwd: string): Promise<Loade
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new Error(`Invalid JSON in ${path}: ${detail}`, { cause: error });
 	}
-	const result = ConformConfigSchema.safeParse(parsed);
-	if (!result.success) {
-		throw new Error(`Invalid conform config in ${path}:\n${z.prettifyError(result.error)}`);
+	const fileName = basename(path);
+	if (fileName === "conform.machine.json") {
+		const machine = parseMachineConfig(path, parsed);
+		return {
+			dir: dirname(path),
+			kind: "machine",
+			path,
+			spec: presetSpecFrom(machine),
+		};
 	}
-	return { config: result.data, dir: dirname(path), path };
+	if (fileName === "conform.project.json") {
+		return {
+			dir: dirname(path),
+			kind: "project",
+			path,
+			spec: presetSpecFrom(parseProjectConfig(path, parsed)),
+		};
+	}
+	const project = ProjectSchema.safeParse(parsed);
+	if (project.success) {
+		return {
+			dir: dirname(path),
+			kind: "project",
+			path,
+			spec: presetSpecFrom(project.data),
+		};
+	}
+	const machine = MachineSchema.safeParse(parsed);
+	if (machine.success) {
+		return {
+			dir: dirname(path),
+			kind: "machine",
+			path,
+			spec: presetSpecFrom(machine.data),
+		};
+	}
+	throw invalidConfigError(path, z.prettifyError(project.error));
+}
+
+const DISCOVER_NAMES = ["conform.project.json", "conform.machine.json"];
+
+export async function discoverConfigs(): Promise<LoadedConfig[]> {
+	const cwd = process.cwd();
+	const candidates = await Promise.all(
+		DISCOVER_NAMES.map(async (name) => ({
+			exists: await Bun.file(join(cwd, name)).exists(),
+			name,
+		})),
+	);
+	const found = await Promise.all(
+		candidates
+			.filter((candidate) => candidate.exists)
+			.map((candidate) => loadConfig(join(cwd, candidate.name))),
+	);
+	if (found.length === 0) {
+		throw new Error(`No config found in ${cwd} (looked for ${DISCOVER_NAMES.join(", ")}).`);
+	}
+	return found;
 }
 
 export function defaultHome(): string {

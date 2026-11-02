@@ -7,36 +7,26 @@ import { x as tarExtract } from "tar";
 import { glob } from "tinyglobby";
 import * as z from "zod";
 
-import type { CheckResult } from "#/checks.js";
+import type { CheckResult, CheckScope } from "#/checks.js";
 import type { TechStackSpec } from "#/config.js";
 import { resolveTargetPath } from "#/config.js";
+import { MachineBlueprintSchema } from "#/schemas/machine-blueprint.js";
+import { MachinePresetManifestSchema } from "#/schemas/machine-preset.js";
+import { ProjectBlueprintSchema } from "#/schemas/project-blueprint.js";
+import { ProjectPresetManifestSchema } from "#/schemas/project-preset.js";
+import { RegistrySchema } from "#/schemas/registry.js";
 
-const RegistryFileSchema = z.object({
-	name: z.string(),
-	path: z.string().min(1),
-	target: z.string().min(1),
-});
-
-const RegistryPackageSchema = z.object({
-	files: z.array(RegistryFileSchema),
-	name: z.string().min(1),
-	reference: z.string().min(1),
-});
-
-const RegistrySchema = z.object({
-	packages: z.array(RegistryPackageSchema),
-});
-
-const BlueprintSchema = z.object({
-	description: z.string().optional(),
-	exclude: z.array(z.string().min(1)).default([]),
-	name: z.string().min(1).optional(),
-	presets: z.array(z.string().min(1)),
-});
+interface PresetPackage {
+	files: { name: string; path: string; target: string }[];
+	name: string;
+	reference: string;
+}
 
 export interface TechStackRunOptions {
+	baseDir: string;
 	home: string;
-	refresh: boolean;
+	noCache: boolean;
+	scope: CheckScope;
 }
 
 export interface CachedRepo {
@@ -105,11 +95,11 @@ async function extractTarball(archive: string, dest: string): Promise<void> {
 	await tarExtract({ cwd: dest, file: archive, strip: 1 });
 }
 
-async function ensureGithubRepo(spec: TechStackSpec, refresh: boolean): Promise<CachedRepo> {
+async function ensureGithubRepo(spec: TechStackSpec, noCache: boolean): Promise<CachedRepo> {
 	const { owner, repo } = splitId(spec.id);
 	const dir = cacheDirFor(owner, repo, spec.ref);
 	const metaPath = join(dir, ".conform-meta.json");
-	if (!refresh && (await pathExists(metaPath))) {
+	if (!noCache && (await pathExists(metaPath))) {
 		try {
 			const meta = (await Bun.file(metaPath).json()) as { id?: unknown; ref?: unknown };
 			if (meta["id"] === spec.id && meta["ref"] === spec.ref) {
@@ -153,10 +143,8 @@ function short(value: string, max = 160): string {
 	return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-async function loadRegistry(
-	repoRoot: string,
-): Promise<Map<string, z.infer<typeof RegistryPackageSchema>>> {
-	const path = join(repoRoot, "machines", "presets", "registry.json");
+async function loadRegistryDocument(repoRoot: string): Promise<z.infer<typeof RegistrySchema>> {
+	const path = join(repoRoot, "registry.json");
 	const file = Bun.file(path);
 	if (!(await file.exists())) {
 		throw new Error(`tech-stack registry not found: ${path}`);
@@ -171,52 +159,95 @@ async function loadRegistry(
 	if (!result.success) {
 		throw new Error(`Invalid tech-stack registry in ${path}:\n${z.prettifyError(result.error)}`);
 	}
-	const byName = new Map<string, z.infer<typeof RegistryPackageSchema>>();
-	for (const pkg of result.data.packages) {
-		byName.set(pkg.name, pkg);
+	return result.data;
+}
+
+async function loadRegistry(
+	repoRoot: string,
+	scope: CheckScope,
+): Promise<Map<string, PresetPackage>> {
+	const registry = await loadRegistryDocument(repoRoot);
+	const schema = scope === "project" ? ProjectPresetManifestSchema : MachinePresetManifestSchema;
+	const manifests = await Promise.all(
+		registry[scope].presets.map(async (dir) => {
+			const manifestPath = join(repoRoot, dir, "manifest.json");
+			const manifestFile = Bun.file(manifestPath);
+			if (!(await manifestFile.exists())) {
+				throw new Error(`tech-stack preset manifest not found: ${manifestPath}`);
+			}
+			try {
+				return { manifestPath, parsed: (await manifestFile.json()) as unknown };
+			} catch (error) {
+				throw new Error(`Invalid tech-stack preset manifest in ${manifestPath}`, { cause: error });
+			}
+		}),
+	);
+	const byName = new Map<string, PresetPackage>();
+	for (const { manifestPath, parsed } of manifests) {
+		const manifest = schema.safeParse(parsed);
+		if (!manifest.success) {
+			throw new Error(
+				`Invalid tech-stack preset manifest in ${manifestPath}:\n${z.prettifyError(manifest.error)}`,
+			);
+		}
+		for (const pkg of manifest.data.packages) {
+			if (!byName.has(pkg.name)) {
+				byName.set(pkg.name, pkg);
+			}
+		}
 	}
 	return byName;
 }
 
-async function listBlueprints(repoRoot: string): Promise<string[]> {
-	const dir = join(repoRoot, "machines", "blueprints");
-	const entries = await glob("*.json", { cwd: dir });
-	return entries.map((entry) => entry.slice(0, -".json".length)).toSorted();
+async function listBlueprints(repoRoot: string, scope: CheckScope): Promise<string[]> {
+	const registry = await loadRegistryDocument(repoRoot);
+	const matches = await Promise.all(
+		registry[scope].blueprints.map((dir) => glob("*/manifest.json", { cwd: join(repoRoot, dir) })),
+	);
+	const names = new Set<string>();
+	for (const entries of matches) {
+		for (const entry of entries) {
+			names.add(entry.slice(0, -"/manifest.json".length));
+		}
+	}
+	return [...names].toSorted();
 }
 
 async function loadBlueprint(
 	repoRoot: string,
+	scope: CheckScope,
 	name: string,
-): Promise<z.infer<typeof BlueprintSchema>> {
-	const candidates = [
-		join(repoRoot, "machines", "blueprints", `${name}.json`),
-		join(repoRoot, "machines", "blueprints", name, "blueprint.json"),
-	];
-	const found = await Promise.all(
-		candidates.map(async (path) => ({ exists: await Bun.file(path).exists(), path })),
+): Promise<{ exclude: string[]; presets: string[] }> {
+	const registry = await loadRegistryDocument(repoRoot);
+	const schema = scope === "project" ? ProjectBlueprintSchema : MachineBlueprintSchema;
+	const candidates = await Promise.all(
+		registry[scope].blueprints.map(async (dir) => ({
+			exists: await Bun.file(join(repoRoot, dir, name, "manifest.json")).exists(),
+			path: join(repoRoot, dir, name, "manifest.json"),
+		})),
 	);
-	const hit = found.find((item) => item.exists);
-	if (hit !== undefined) {
-		let parsed: unknown;
-		try {
-			parsed = await Bun.file(hit.path).json();
-		} catch (error) {
-			throw new Error(`Invalid blueprint in ${hit.path}`, { cause: error });
-		}
-		const result = BlueprintSchema.safeParse(parsed);
-		if (!result.success) {
-			throw new Error(`Invalid blueprint in ${hit.path}:\n${z.prettifyError(result.error)}`);
-		}
-		return result.data;
+	const hit = candidates.find((candidate) => candidate.exists);
+	if (hit === undefined) {
+		const available = await listBlueprints(repoRoot, scope);
+		const hint = available.length > 0 ? ` Available blueprints: ${available.join(", ")}.` : "";
+		throw new Error(`Blueprint "${name}" not found in the tech-stack repo.${hint}`);
 	}
-	const available = await listBlueprints(repoRoot);
-	const hint = available.length > 0 ? ` Available blueprints: ${available.join(", ")}.` : "";
-	throw new Error(`Blueprint "${name}" not found in ${repoRoot}/machines/blueprints.${hint}`);
+	let parsed: unknown;
+	try {
+		parsed = await Bun.file(hit.path).json();
+	} catch (error) {
+		throw new Error(`Invalid blueprint in ${hit.path}`, { cause: error });
+	}
+	const result = schema.safeParse(parsed);
+	if (!result.success) {
+		throw new Error(`Invalid blueprint in ${hit.path}:\n${z.prettifyError(result.error)}`);
+	}
+	return result.data;
 }
 
 type ClassifiedTarget = { reason: string; type: "skip" } | { path: string; type: "path" };
 
-function classifyTarget(target: string): ClassifiedTarget {
+function classifyTarget(target: string, scope: CheckScope): ClassifiedTarget {
 	if (target.startsWith("docs:")) {
 		return { reason: "docs-only, nothing to enforce", type: "skip" };
 	}
@@ -226,6 +257,9 @@ function classifyTarget(target: string): ClassifiedTarget {
 	}
 	if (target.includes("%")) {
 		return { reason: "Windows-only target", type: "skip" };
+	}
+	if (scope === "project" && (token.startsWith("./") || token.startsWith("../"))) {
+		return { path: token, type: "path" };
 	}
 	return { reason: `no concrete target ("${target}")`, type: "skip" };
 }
@@ -237,12 +271,12 @@ async function checkPresetFile(
 	presetTarget: string,
 	repoRoot: string,
 	targetPath: string,
-	overwrite: boolean,
+	scope: CheckScope,
 ): Promise<CheckResult> {
 	const base = {
 		id: `preset:${packageName}:${presetFileName}`,
 		kind: "preset",
-		scope: "system",
+		scope,
 		source: `tech-stack:${packageName}`,
 		target: presetTarget,
 	} as const;
@@ -321,16 +355,6 @@ async function checkPresetFile(
 	if (actual === golden) {
 		return { ...base, actual: "matches preset", expected: short(golden), fixable: false, ok: true };
 	}
-	if (!overwrite) {
-		return {
-			...base,
-			actual: short(actual),
-			expected: short(golden),
-			fixable: false,
-			hint: `Sync from tech-stack preset: cp ${presetPath} ${targetPath}`,
-			ok: false,
-		};
-	}
 	return {
 		...base,
 		actual: short(actual),
@@ -345,12 +369,12 @@ export async function runTechStackChecks(
 	spec: TechStackSpec,
 	options: TechStackRunOptions,
 ): Promise<CheckResult[]> {
-	const repoRoot = (await ensureGithubRepo(spec, options.refresh)).dir;
-	const registry = await loadRegistry(repoRoot);
+	const repoRoot = (await ensureGithubRepo(spec, options.noCache)).dir;
+	const registry = await loadRegistry(repoRoot, options.scope);
 	let blueprintPresets: string[] = [];
 	let blueprintExcludes: string[] = [];
 	if (spec.blueprint !== undefined) {
-		const blueprint = await loadBlueprint(repoRoot, spec.blueprint);
+		const blueprint = await loadBlueprint(repoRoot, options.scope, spec.blueprint);
 		blueprintExcludes = blueprint.exclude;
 		blueprintPresets = blueprint.presets;
 	}
@@ -364,9 +388,9 @@ export async function runTechStackChecks(
 	}
 	const jobs: Promise<CheckResult>[] = [];
 	for (const name of names) {
-		const pkg = registry.get(name) as z.infer<typeof RegistryPackageSchema>;
+		const pkg = registry.get(name) as PresetPackage;
 		for (const file of pkg.files) {
-			const classified = classifyTarget(file.target);
+			const classified = classifyTarget(file.target, options.scope);
 			if (classified.type === "skip") {
 				jobs.push(
 					Promise.resolve({
@@ -376,7 +400,7 @@ export async function runTechStackChecks(
 						id: `preset:${name}:${file.name}`,
 						kind: "preset",
 						ok: true,
-						scope: "system",
+						scope: options.scope,
 						skipped: true,
 						source: `tech-stack:${name}`,
 						target: file.target,
@@ -384,7 +408,7 @@ export async function runTechStackChecks(
 				);
 				continue;
 			}
-			const targetPath = resolveTargetPath(classified.path, options.home, options.home);
+			const targetPath = resolveTargetPath(classified.path, options.baseDir, options.home);
 			jobs.push(
 				checkPresetFile(
 					name,
@@ -393,7 +417,7 @@ export async function runTechStackChecks(
 					file.target,
 					repoRoot,
 					targetPath,
-					spec.fix === "overwrite",
+					options.scope,
 				),
 			);
 		}

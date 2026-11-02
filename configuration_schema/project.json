@@ -20,12 +20,6 @@
 				"minLength": 1
 			}
 		},
-		"fix": {
-			"default": "overwrite",
-			"description": "Whether preset mismatches are auto-fixable.",
-			"type": "string",
-			"enum": ["overwrite", "report"]
-		},
 		"presets": {
 			"default": [],
 			"description": "Extra preset names merged over the blueprint.",
@@ -38,6 +32,11 @@
 		"source": {
 			"type": "object",
 			"properties": {
+				"branch": {
+					"description": "Git branch of the tech-stack repo (defaults to ref).",
+					"type": "string",
+					"minLength": 1
+				},
 				"ref": {
 					"default": "main",
 					"description": "Git branch, tag, or commit.",
@@ -60,6 +59,6 @@
 			"description": "Tech-stack repo holding blueprints and presets."
 		}
 	},
-	"required": ["blueprint", "exclude", "fix", "presets", "source"],
+	"required": ["blueprint", "exclude", "presets", "source"],
 	"additionalProperties": false
 }

@@ -3,90 +3,114 @@ import * as prompts from "@clack/prompts";
 import { Command } from "commander";
 
 import type { CheckScope, CheckResult } from "#/checks.js";
-import { applyFix, desiredContent, readActualContent, runChecks } from "#/checks.js";
-import type { LoadedConfig, TechStackSpec } from "#/config.js";
-import { defaultHome, loadConfig, resolveConfigPath } from "#/config.js";
+import { applyFix, desiredContent, readActualContent } from "#/checks.js";
+import type { LoadedConfig } from "#/config.js";
+import { defaultHome, discoverConfigs, loadConfig } from "#/config.js";
 import { renderDiff } from "#/diff.js";
-import { buildSnapshot } from "#/init.js";
 import { printResults } from "#/output.js";
 import { runTechStackChecks } from "#/techstack.js";
 
 const VERSION = "0.1.0";
 
-function scopeOf(options: { projectOnly?: boolean; systemOnly?: boolean }): CheckScope | undefined {
-	if (options.projectOnly === true && options.systemOnly === true) {
-		throw new Error("Pass only one of --project-only / --system-only.");
+function scopeOf(options: {
+	projectOnly?: boolean;
+	machineOnly?: boolean;
+}): CheckScope | undefined {
+	if (options.projectOnly === true && options.machineOnly === true) {
+		throw new Error("Pass only one of --project-only / --machine-only.");
 	}
 	if (options.projectOnly === true) {
 		return "project";
 	}
-	if (options.systemOnly === true) {
-		return "system";
+	if (options.machineOnly === true) {
+		return "machine";
 	}
 	return undefined;
 }
 
-function baseOptions(cmd: Command): { config: string; cwd: string } {
-	const globals = cmd.optsWithGlobals<{ config: string; cwd: string }>();
-	return { config: globals.config, cwd: globals.cwd };
+function baseOptions(cmd: Command): { config?: string } {
+	const globals = cmd.optsWithGlobals<{ config?: string }>();
+	return { config: globals.config };
+}
+
+async function loadConfigs(config: string | undefined): Promise<LoadedConfig[]> {
+	if (config !== undefined) {
+		return [await loadConfig(config)];
+	}
+	return discoverConfigs();
 }
 
 async function runAllChecks(
-	loaded: LoadedConfig,
-	base: { config: string; cwd: string },
+	configs: LoadedConfig[],
 	only: CheckScope | undefined,
-	refresh: boolean,
+	noCache: boolean,
 ): Promise<CheckResult[]> {
 	const home = defaultHome();
-	const results = await runChecks(loaded.config, {
-		baseDir: loaded.dir,
-		configDir: loaded.dir,
-		cwd: base.cwd,
-		home,
-		only,
-	});
-	if (loaded.config.techStack !== undefined && only !== "project") {
-		results.push(...(await runTechStackChecks(loaded.config.techStack, { home, refresh })));
+	const results: CheckResult[] = [];
+	for (const loaded of configs) {
+		if (loaded.kind === "project") {
+			if (only !== "machine") {
+				results.push(
+					...(await runTechStackChecks(loaded.spec, {
+						baseDir: process.cwd(),
+						home,
+						noCache,
+						scope: "project",
+					})),
+				);
+			}
+		} else if (only !== "project") {
+			results.push(
+				...(await runTechStackChecks(loaded.spec, {
+					baseDir: home,
+					home,
+					noCache,
+					scope: "machine",
+				})),
+			);
+		}
 	}
 	return results;
 }
 
 const program = new Command();
 program
-	.description("Check the current project/system-user against conform.config.json.")
+	.description("Check the current project/machine against the config in the current directory.")
 	.name("adistack-conform")
-	.option("--config <path>", "Path to conform.config.json", "conform.config.json")
-	.option("--cwd <dir>", "Working directory for project-relative paths", process.cwd())
+	.option(
+		"--config <path>",
+		"Path to conform.project.json or conform.machine.json (default: whatever config is in the cwd)",
+	)
 	.version(VERSION);
 
 program
 	.command("check")
-	.description("Check conform.config.json against the current project/system-user.")
+	.description("Check the config in the current directory against the current project/machine.")
 	.option("--json", "Print machine-readable JSON.")
 	.option("--project-only", "Only run project checks.")
-	.option("--refresh", "Re-download tech-stack blueprints/presets, ignoring the cache.")
-	.option("--system-only", "Only run system checks.")
+	.option("--no-cache", "Re-download tech-stack blueprints/presets, ignoring the cache.")
+	.option("--machine-only", "Only run machine checks.")
 	.action(
 		async (
 			cmdOptions: {
+				cache?: boolean;
 				json?: boolean;
 				projectOnly?: boolean;
-				refresh?: boolean;
-				systemOnly?: boolean;
+				machineOnly?: boolean;
 			},
 			cmd: Command,
 		) => {
 			const base = baseOptions(cmd);
-			const only = scopeOf(cmdOptions);
 			try {
-				const loaded = await loadConfig(base.config, base.cwd);
-				const results = await runAllChecks(loaded, base, only, cmdOptions.refresh === true);
+				const only = scopeOf(cmdOptions);
+				const configs = await loadConfigs(base.config);
+				const results = await runAllChecks(configs, only, cmdOptions.cache === false);
 				if (cmdOptions.json === true) {
 					const failed = results.filter((item) => !item.ok);
 					console.log(
 						JSON.stringify(
 							{
-								config: loaded.path,
+								configs: configs.map((entry) => entry.path),
 								failed: failed.length,
 								ok: failed.length === 0,
 								passed: results.length - failed.length,
@@ -115,17 +139,17 @@ program
 	.option("--dry-run", "Show what would be fixed without writing.")
 	.option("--no-diff", "Hide the diff preview.")
 	.option("--project-only", "Only fix project checks.")
-	.option("--refresh", "Re-download tech-stack blueprints/presets, ignoring the cache.")
-	.option("--system-only", "Only fix system checks.")
+	.option("--no-cache", "Re-download tech-stack blueprints/presets, ignoring the cache.")
+	.option("--machine-only", "Only fix machine checks.")
 	.action(
 		async (
 			cmdOptions: {
 				all?: boolean;
+				cache?: boolean;
 				diff?: boolean;
 				dryRun?: boolean;
 				projectOnly?: boolean;
-				refresh?: boolean;
-				systemOnly?: boolean;
+				machineOnly?: boolean;
 			},
 			cmd: Command,
 		) => {
@@ -133,8 +157,8 @@ program
 			const showDiff = cmdOptions.diff !== false;
 			try {
 				const only = scopeOf(cmdOptions);
-				const loaded = await loadConfig(base.config, base.cwd);
-				const results = await runAllChecks(loaded, base, only, cmdOptions.refresh === true);
+				const configs = await loadConfigs(base.config);
+				const results = await runAllChecks(configs, only, cmdOptions.cache === false);
 				const failed = results.filter((item) => !item.ok);
 				const fixable = failed.filter((item) => item.fixable);
 				const unfixable = failed.filter((item) => !item.fixable);
@@ -231,7 +255,7 @@ program
 					}
 				}
 
-				const rerun = await runAllChecks(loaded, base, only, cmdOptions.refresh === true);
+				const rerun = await runAllChecks(configs, only, cmdOptions.cache === false);
 				const remaining = rerun.filter((item) => !item.ok);
 				console.log(
 					`\nFixed ${applied}/${selected.length}. ${remaining.length} check(s) still failing.`,
@@ -242,89 +266,6 @@ program
 				}
 				prompts.outro("All conform checks passed.");
 				process.exit(0);
-			} catch (error) {
-				console.error(error instanceof Error ? error.message : String(error));
-				process.exit(2);
-			}
-		},
-	);
-
-program
-	.command("init")
-	.description("Create a conform.config.json snapshot from the current project/system-user.")
-	.option("--blueprint <name>", "Pre-existing tech-stack blueprint to enforce.")
-	.option("--exclude <names...>", "Tech-stack presets to drop from the blueprint.")
-	.option("--force", "Overwrite an existing config file.")
-	.option("--id <owner/repo>", "GitHub repo holding blueprints/presets (or set TECH_STACK_ID).")
-	.option("--minimal", "Only snapshot project checks (skip system-user).")
-	.option("--preset <names...>", "Tech-stack preset(s) to enforce (own blueprint).")
-	.option("--ref <ref>", "GitHub branch, tag, or commit (or set TECH_STACK_REF; default: main).")
-	.option("--source <name>", "Blueprint/preset source; only “github” is supported.")
-	.option("--stdout", "Print to stdout instead of writing a file.")
-	.action(
-		async (
-			cmdOptions: {
-				blueprint?: string;
-				exclude?: string[];
-				force?: boolean;
-				id?: string;
-				minimal?: boolean;
-				preset?: string[];
-				ref?: string;
-				source?: string;
-				stdout?: boolean;
-			},
-			cmd: Command,
-		) => {
-			const base = baseOptions(cmd);
-			try {
-				const wantsTechStack =
-					cmdOptions.blueprint !== undefined ||
-					cmdOptions.exclude !== undefined ||
-					cmdOptions.id !== undefined ||
-					cmdOptions.preset !== undefined ||
-					cmdOptions.ref !== undefined ||
-					cmdOptions.source !== undefined;
-				let techStack: TechStackSpec | undefined;
-				if (wantsTechStack) {
-					const id = cmdOptions.id ?? process.env["TECH_STACK_ID"];
-					if (id === undefined || id === "") {
-						throw new Error(
-							"Missing tech-stack repo: pass --id <owner/repo> or set TECH_STACK_ID.",
-						);
-					}
-					const source = cmdOptions.source ?? "github";
-					if (source !== "github") {
-						throw new Error(
-							`Unsupported tech-stack source: ${source} (only “github” is supported).`,
-						);
-					}
-					techStack = {
-						blueprint: cmdOptions.blueprint,
-						exclude: cmdOptions.exclude ?? [],
-						fix: "overwrite",
-						id,
-						presets: cmdOptions.preset ?? [],
-						ref: cmdOptions.ref ?? process.env["TECH_STACK_REF"] ?? "main",
-						source: "github",
-					};
-				}
-				const snapshot = await buildSnapshot(base.cwd, {
-					minimal: cmdOptions.minimal === true,
-					techStack,
-				});
-				const text = `${JSON.stringify(snapshot, null, 2)}\n`;
-				if (cmdOptions.stdout === true) {
-					console.log(text);
-					return;
-				}
-				const outPath = resolveConfigPath(base.config, base.cwd);
-				if ((await Bun.file(outPath).exists()) && cmdOptions.force !== true) {
-					console.error(`Refusing to overwrite ${outPath} (pass --force).`);
-					process.exit(2);
-				}
-				await Bun.write(outPath, text);
-				console.log(`Wrote ${outPath}`);
 			} catch (error) {
 				console.error(error instanceof Error ? error.message : String(error));
 				process.exit(2);

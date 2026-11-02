@@ -1,8 +1,11 @@
 {
 	"$schema": "./configuration_schema/machine.json",
+	"blueprint": "main",
+	"exclude": [],
+	"presets": [],
 	"source": {
 		"type": "github",
+		"ref": "main",
 		"repo": "AdityaBorkar/tech-stack"
-	},
-	"blueprint": "main"
+	}
 }

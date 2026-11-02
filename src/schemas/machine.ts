@@ -1,6 +1,11 @@
 import * as z from "zod";
 
 const MachineSourceSchema = z.object({
+	branch: z
+		.string()
+		.min(1)
+		.optional()
+		.describe("Git branch of the tech-stack repo (defaults to ref)."),
 	ref: z.string().min(1).default("main").describe("Git branch, tag, or commit."),
 	repo: z
 		.string()
@@ -19,10 +24,6 @@ export const MachineSchema = z.object({
 		.array(z.string().min(1))
 		.default([])
 		.describe("Preset names dropped from the effective set."),
-	fix: z
-		.enum(["overwrite", "report"])
-		.default("overwrite")
-		.describe("Whether preset mismatches are auto-fixable."),
 	presets: z
 		.array(z.string().min(1))
 		.default([])

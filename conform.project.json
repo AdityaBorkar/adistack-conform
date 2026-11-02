@@ -1,8 +1,11 @@
 {
 	"$schema": "./configuration_schema/project.json",
+	"blueprint": "cli-app",
+	"exclude": [],
+	"presets": [],
 	"source": {
 		"type": "github",
+		"ref": "main",
 		"repo": "AdityaBorkar/tech-stack"
-	},
-	"blueprint": "cli-app"
+	}
 }
