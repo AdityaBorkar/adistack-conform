@@ -2,10 +2,10 @@ import { difference, union } from "es-toolkit";
 
 import type { CheckResult, CheckScope } from "#/checks.js";
 import type { TechStackSpec } from "#/config.js";
-import { resolveTargetPath } from "#/config.js";
+import { resolveTargetPath } from "#/fs.js";
 import { ensureGithubRepo } from "#/techstack-cache.js";
 import { checkPresetFile, classifyTarget, skippedForTarget } from "#/techstack-check.js";
-import type { RegistryDocument } from "#/techstack-registry.js";
+import type { PresetPackage, RegistryDocument } from "#/techstack-registry.js";
 import { loadBlueprint, loadRegistry, loadRegistryDocument } from "#/techstack-registry.js";
 
 export interface TechStackRunOptions {
@@ -15,6 +15,11 @@ export interface TechStackRunOptions {
 	scope: CheckScope;
 }
 
+export interface TechCheckOutput {
+	results: CheckResult[];
+	warnings: string[];
+}
+
 const MAX_UNKNOWN_SHOWN = 10;
 
 async function resolveWantedNames(
@@ -22,7 +27,7 @@ async function resolveWantedNames(
 	scope: CheckScope,
 	repoRoot: string,
 	registryDoc: RegistryDocument,
-	registryKeys: string[],
+	registry: Map<string, PresetPackage>,
 ): Promise<string[]> {
 	let blueprintPresets: string[] = [];
 	let blueprintExcludes: string[] = [];
@@ -33,36 +38,29 @@ async function resolveWantedNames(
 	}
 	const wanted = union(blueprintPresets, spec.presets);
 	const names = difference(wanted, [...blueprintExcludes, ...spec.exclude]).toSorted();
-	const unknown = names.filter((name) => !registryKeys.includes(name));
+	const unknown = names.filter((name) => !registry.has(name));
 	if (unknown.length > 0) {
 		const shown = unknown.slice(0, MAX_UNKNOWN_SHOWN).join(", ");
 		const suffix =
 			unknown.length > MAX_UNKNOWN_SHOWN ? ` (+${unknown.length - MAX_UNKNOWN_SHOWN} more)` : "";
+		const keys = [...registry.keys()].toSorted();
 		const available =
-			registryKeys.length > MAX_UNKNOWN_SHOWN
-				? `${registryKeys.slice(0, MAX_UNKNOWN_SHOWN).join(", ")} (+${registryKeys.length - MAX_UNKNOWN_SHOWN} more)`
-				: registryKeys.toSorted().join(", ");
+			keys.length > MAX_UNKNOWN_SHOWN
+				? `${keys.slice(0, MAX_UNKNOWN_SHOWN).join(", ")} (+${keys.length - MAX_UNKNOWN_SHOWN} more)`
+				: keys.join(", ");
 		throw new Error(`Unknown tech-stack preset(s): ${shown}${suffix}. Available: ${available}.`);
 	}
 	return names;
 }
 
-export async function runTechStackChecks(
-	spec: TechStackSpec,
+function collectJobs(
+	registry: Map<string, PresetPackage>,
+	names: string[],
 	options: TechStackRunOptions,
-): Promise<CheckResult[]> {
-	const cached = await ensureGithubRepo(spec, options.noCache);
-	if (cached.stale && cached.warning !== undefined) {
-		console.warn(`Warning: using cached tech-stack ${spec.id}@${spec.ref} (${cached.warning})`);
-	}
-	const repoRoot = cached.dir;
-	const registryDoc = await loadRegistryDocument(repoRoot);
-	const registry = await loadRegistry(repoRoot, options.scope, registryDoc);
-	const names = await resolveWantedNames(spec, options.scope, repoRoot, registryDoc, [
-		...registry.keys(),
-	]);
-	const skips: CheckResult[] = [];
+	repoRoot: string,
+): { jobs: Promise<CheckResult>[]; skips: CheckResult[] } {
 	const jobs: Promise<CheckResult>[] = [];
+	const skips: CheckResult[] = [];
 	for (const name of names) {
 		const pkg = registry.get(name);
 		if (pkg === undefined) {
@@ -85,17 +83,34 @@ export async function runTechStackChecks(
 			}
 			const targetPath = resolveTargetPath(classified.path, options.baseDir, options.home);
 			jobs.push(
-				checkPresetFile(
-					name,
-					file.path,
-					file.name,
-					file.target,
+				checkPresetFile({
+					packageName: name,
+					presetFileName: file.name,
+					presetRelPath: file.path,
+					presetTarget: file.target,
 					repoRoot,
+					scope: options.scope,
 					targetPath,
-					options.scope,
-				),
+				}),
 			);
 		}
 	}
-	return [...skips, ...(await Promise.all(jobs))];
+	return { jobs, skips };
+}
+
+export async function runTechStackChecks(
+	spec: TechStackSpec,
+	options: TechStackRunOptions,
+): Promise<TechCheckOutput> {
+	const cached = await ensureGithubRepo(spec, options.noCache);
+	const warnings: string[] = [];
+	if (cached.stale && cached.warning !== undefined) {
+		warnings.push(`Warning: using cached tech-stack ${spec.id}@${spec.ref} (${cached.warning})`);
+	}
+	const repoRoot = cached.dir;
+	const registryDoc = await loadRegistryDocument(repoRoot);
+	const registry = await loadRegistry(repoRoot, options.scope, registryDoc);
+	const names = await resolveWantedNames(spec, options.scope, repoRoot, registryDoc, registry);
+	const { jobs, skips } = collectJobs(registry, names, options, repoRoot);
+	return { results: [...skips, ...(await Promise.all(jobs))], warnings };
 }

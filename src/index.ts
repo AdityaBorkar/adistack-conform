@@ -3,18 +3,20 @@ import * as prompts from "@clack/prompts";
 import { Command } from "commander";
 
 import type { CheckResult, CheckScope } from "#/checks.js";
+import { partitionResults } from "#/checks.js";
 import type { LoadedConfig } from "#/config.js";
-import { defaultHome, discoverConfigs, loadConfig } from "#/config.js";
+import { discoverConfigs, loadConfig } from "#/config.js";
+import { applySelected, resolveSelection } from "#/fix.js";
+import { defaultHome, errorMessage } from "#/fs.js";
 import {
-	applySelected,
-	partitionResults,
+	outroAllPassed,
 	printDryRun,
-	promptForSelection,
+	printJsonSummary,
+	printResults,
+	printWarning,
 	renderFixDiffs,
 	reportUnfixable,
-} from "#/fix.js";
-import { errorMessage } from "#/fs.js";
-import { printResults } from "#/output.js";
+} from "#/output.js";
 import { runTechStackChecks } from "#/techstack.js";
 
 const VERSION = "0.1.0";
@@ -48,24 +50,119 @@ function failWith(error: unknown): never {
 	process.exit(2);
 }
 
-async function runAllChecks(
-	configs: LoadedConfig[],
-	only: CheckScope | undefined,
-	noCache: boolean,
-): Promise<CheckResult[]> {
-	const cwd = process.cwd();
-	const home = defaultHome();
-	const tasks = configs
-		.filter((loaded) => only === undefined || only === loaded.kind)
+async function runAllChecks(args: {
+	configs: LoadedConfig[];
+	cwd: string;
+	home: string;
+	only: CheckScope | undefined;
+	noCache: boolean;
+}): Promise<{ results: CheckResult[]; warnings: string[] }> {
+	const tasks = args.configs
+		.filter((loaded) => args.only === undefined || args.only === loaded.kind)
 		.map((loaded) =>
 			runTechStackChecks(loaded.spec, {
-				baseDir: loaded.kind === "project" ? cwd : home,
-				home,
-				noCache,
+				baseDir: loaded.kind === "project" ? args.cwd : args.home,
+				home: args.home,
+				noCache: args.noCache,
 				scope: loaded.kind,
 			}),
 		);
-	return (await Promise.all(tasks)).flat();
+	const outputs = await Promise.all(tasks);
+	return {
+		results: outputs.flatMap((output) => output.results),
+		warnings: outputs.flatMap((output) => output.warnings),
+	};
+}
+
+function emitWarnings(warnings: string[]): void {
+	for (const warning of warnings) {
+		printWarning(warning);
+	}
+}
+
+async function runCheckCommand(
+	cmd: Command,
+	cmdOptions: CacheOptions & ScopeOptions & { json?: boolean },
+): Promise<number> {
+	const only = scopeOf(cmdOptions);
+	const configs = await loadConfigsFromCommand(cmd);
+	const cwd = process.cwd();
+	const home = defaultHome();
+	const { results, warnings } = await runAllChecks({
+		configs,
+		cwd,
+		home,
+		noCache: cmdOptions.cache === false,
+		only,
+	});
+	emitWarnings(warnings);
+	if (cmdOptions.json) {
+		printJsonSummary(
+			configs.map((entry) => entry.path),
+			results,
+		);
+	} else {
+		printResults(results);
+	}
+	return results.some((item) => !item.ok) ? 1 : 0;
+}
+
+async function runFixCommand(
+	cmd: Command,
+	cmdOptions: CacheOptions & ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean },
+): Promise<number> {
+	const only = scopeOf(cmdOptions);
+	const configs = await loadConfigsFromCommand(cmd);
+	const cwd = process.cwd();
+	const home = defaultHome();
+	const noCache = cmdOptions.cache === false;
+	const { results, warnings } = await runAllChecks({ configs, cwd, home, noCache, only });
+	emitWarnings(warnings);
+	const { failed, fixable, unfixable } = partitionResults(results);
+
+	if (failed.length === 0) {
+		console.log("All conform checks passed.");
+		return 0;
+	}
+
+	reportUnfixable(unfixable);
+
+	if (fixable.length === 0) {
+		return 1;
+	}
+
+	if (cmdOptions.diff !== false) {
+		renderFixDiffs(fixable);
+	}
+
+	if (cmdOptions.dryRun) {
+		printDryRun(fixable);
+		return 1;
+	}
+
+	const selection = await resolveSelection(fixable, cmdOptions.all);
+	if (selection.exit === "no-tty") {
+		console.error("Not a TTY: re-run with --all to apply fixes non-interactively.");
+		return 2;
+	}
+	if (selection.exit === "cancelled") {
+		prompts.outro("No fixes applied.");
+		return 1;
+	}
+	const applied = await applySelected(selection.selected);
+
+	const rerun = await runAllChecks({ configs, cwd, home, noCache, only });
+	emitWarnings(rerun.warnings);
+	const remaining = rerun.results.filter((item) => !item.ok);
+	console.log(
+		`\nFixed ${applied}/${selection.selected.length}. ${remaining.length} check(s) still failing.`,
+	);
+	if (remaining.length > 0) {
+		printResults(rerun.results);
+		return 1;
+	}
+	outroAllPassed();
+	return 0;
 }
 
 const program = new Command();
@@ -87,29 +184,7 @@ program
 	.option("--machine-only", "Only run machine checks.")
 	.action(async (cmdOptions: CacheOptions & ScopeOptions & { json?: boolean }, cmd: Command) => {
 		try {
-			const only = scopeOf(cmdOptions);
-			const configs = await loadConfigsFromCommand(cmd);
-			const results = await runAllChecks(configs, only, cmdOptions.cache === false);
-			if (cmdOptions.json) {
-				const failed = results.filter((item) => !item.ok);
-				console.log(
-					JSON.stringify(
-						{
-							configs: configs.map((entry) => entry.path),
-							failed: failed.length,
-							ok: failed.length === 0,
-							passed: results.length - failed.length,
-							results,
-							total: results.length,
-						},
-						null,
-						2,
-					),
-				);
-			} else {
-				printResults(results);
-			}
-			process.exit(results.some((item) => !item.ok) ? 1 : 0);
+			process.exit(await runCheckCommand(cmd, cmdOptions));
 		} catch (error) {
 			failWith(error);
 		}
@@ -130,57 +205,7 @@ program
 			cmd: Command,
 		) => {
 			try {
-				const only = scopeOf(cmdOptions);
-				const configs = await loadConfigsFromCommand(cmd);
-				const results = await runAllChecks(configs, only, cmdOptions.cache === false);
-				const { failed, fixable, unfixable } = partitionResults(results);
-
-				if (failed.length === 0) {
-					console.log("All conform checks passed.");
-					process.exit(0);
-				}
-
-				reportUnfixable(unfixable);
-
-				if (fixable.length === 0) {
-					process.exit(1);
-				}
-
-				if (cmdOptions.dryRun) {
-					printDryRun(fixable);
-					process.exit(1);
-				}
-
-				if (cmdOptions.diff !== false) {
-					await renderFixDiffs(fixable);
-				}
-
-				let selected: CheckResult[] = fixable;
-				if (!cmdOptions.all) {
-					const outcome = await promptForSelection(fixable);
-					if (outcome.kind === "no-tty") {
-						console.error("Not a TTY: re-run with --all to apply fixes non-interactively.");
-						process.exit(2);
-					}
-					if (outcome.kind === "cancelled") {
-						prompts.outro("No fixes applied.");
-						process.exit(1);
-					}
-					selected = outcome.selected;
-				}
-				const applied = await applySelected(selected);
-
-				const rerun = await runAllChecks(configs, only, cmdOptions.cache === false);
-				const remaining = rerun.filter((item) => !item.ok);
-				console.log(
-					`\nFixed ${applied}/${selected.length}. ${remaining.length} check(s) still failing.`,
-				);
-				if (remaining.length > 0) {
-					printResults(rerun);
-					process.exit(1);
-				}
-				prompts.outro("All conform checks passed.");
-				process.exit(0);
+				process.exit(await runFixCommand(cmd, cmdOptions));
 			} catch (error) {
 				failWith(error);
 			}

@@ -83,12 +83,11 @@ export function parseOrThrow<T>(
 	schema: z.ZodType<T>,
 	path: string,
 	parsed: unknown,
-	label?: string,
+	label: string,
 ): T {
 	const result = schema.safeParse(parsed);
 	if (!result.success) {
-		const expected = label ?? "conform.project.json or conform.machine.json format";
-		throw new Error(`Invalid ${expected} in ${path}:\n${z.prettifyError(result.error)}`);
+		throw new Error(`Invalid ${label} in ${path}:\n${z.prettifyError(result.error)}`);
 	}
 	return result.data;
 }

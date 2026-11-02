@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
 import { glob } from "tinyglobby";
-import * as z from "zod";
+import type * as z from "zod";
 
 import type { CheckScope } from "#/checks.js";
 import { readJsonFile } from "#/fs.js";
@@ -17,10 +17,12 @@ export type PresetPackage =
 	| z.infer<typeof ProjectPresetManifestSchema>["packages"][number];
 export type RegistryDocument = z.infer<typeof RegistrySchema>;
 
-function schemasFor(scope: CheckScope) {
-	return scope === "project"
-		? { blueprint: ProjectBlueprintSchema, preset: ProjectPresetManifestSchema }
-		: { blueprint: MachineBlueprintSchema, preset: MachinePresetManifestSchema };
+function presetSchemaFor(scope: CheckScope) {
+	return scope === "project" ? ProjectPresetManifestSchema : MachinePresetManifestSchema;
+}
+
+function blueprintSchemaFor(scope: CheckScope) {
+	return scope === "project" ? ProjectBlueprintSchema : MachineBlueprintSchema;
 }
 
 export async function loadRegistryDocument(repoRoot: string): Promise<RegistryDocument> {
@@ -34,20 +36,22 @@ export async function loadRegistry(
 	scope: CheckScope,
 	registry: RegistryDocument,
 ): Promise<Map<string, PresetPackage>> {
-	const { preset } = schemasFor(scope);
+	const schema = presetSchemaFor(scope);
 	const manifests = await Promise.all(
 		registry[scope].presets.map(async (dir) => {
 			const manifestPath = join(repoRoot, dir, "manifest.json");
-			const parsed = await readJsonFile(manifestPath, "tech-stack preset manifest");
 			return {
-				manifestPath,
-				parsed,
+				manifest: parseOrThrow(
+					schema,
+					manifestPath,
+					await readJsonFile(manifestPath, "tech-stack preset manifest"),
+					"tech-stack preset manifest",
+				),
 			};
 		}),
 	);
 	const byName = new Map<string, PresetPackage>();
-	for (const { manifestPath, parsed } of manifests) {
-		const manifest = parseOrThrow(preset, manifestPath, parsed, "tech-stack preset manifest");
+	for (const { manifest } of manifests) {
 		for (const pkg of manifest.packages) {
 			// First manifest wins; registry order is the source of truth.
 			if (!byName.has(pkg.name)) {
@@ -81,7 +85,7 @@ export async function loadBlueprint(
 	name: string,
 	registry: RegistryDocument,
 ): Promise<{ exclude: string[]; presets: string[] }> {
-	const { blueprint } = schemasFor(scope);
+	const schema = blueprintSchemaFor(scope);
 	const candidates = await Promise.all(
 		registry[scope].blueprints.map(async (dir) => ({
 			exists: await Bun.file(join(repoRoot, dir, name, "manifest.json")).exists(),
@@ -91,13 +95,13 @@ export async function loadBlueprint(
 	const hit = candidates.find((candidate) => candidate.exists);
 	if (hit === undefined) {
 		const available = await listBlueprints(repoRoot, scope, registry);
-		const hint = available.length > 0 ? ` Available blueprints: ${available.join(", ")}. ` : "";
-		const truncated =
+		const hint =
 			available.length > 10
 				? ` Available blueprints: ${available.slice(0, 10).join(", ")} (+${available.length - 10} more).`
-				: hint;
-		throw new Error(`Blueprint "${name}" not found in the tech-stack repo.${truncated}`);
+				: available.length > 0
+					? ` Available blueprints: ${available.join(", ")}.`
+					: "";
+		throw new Error(`Blueprint "${name}" not found in the tech-stack repo.${hint}`);
 	}
-	const parsed = await readJsonFile(hit.path, "Blueprint");
-	return parseOrThrow(blueprint, hit.path, parsed, "blueprint");
+	return parseOrThrow(schema, hit.path, await readJsonFile(hit.path, "Blueprint"), "blueprint");
 }

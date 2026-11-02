@@ -1,9 +1,6 @@
-import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 
-import untildify from "untildify";
-
-import { errorMessage, readJsonFile } from "#/fs.js";
+import { readJsonFile, resolveConfigPath } from "#/fs.js";
 import { parseOrThrow } from "#/schemas/common.js";
 import { MachineSchema } from "#/schemas/machine.js";
 import { ProjectSchema } from "#/schemas/project.js";
@@ -22,31 +19,6 @@ export interface LoadedConfig {
 	kind: "machine" | "project";
 	path: string;
 	spec: TechStackSpec;
-}
-
-function resolveAgainstBase(raw: string, base: string, expand: (value: string) => string): string {
-	const expanded = expand(raw);
-	if (isAbsolute(expanded)) {
-		return expanded;
-	}
-	return resolve(base, expanded);
-}
-
-export function resolveTargetPath(raw: string, baseDir: string, home: string): string {
-	// Expand a leading ~ against the caller's home (respects $HOME overrides,
-	// unlike untildify which caches os.homedir()). Anything else falls through
-	// to untildify for ~user handling.
-	return resolveAgainstBase(raw, baseDir, (value) =>
-		/^~($|\/)/u.test(value) && home.length > 0
-			? value === "~"
-				? home
-				: join(home, value.slice(2))
-			: untildify(value),
-	);
-}
-
-export function resolveConfigPath(raw: string): string {
-	return resolveAgainstBase(raw, process.cwd(), (value) => untildify(value));
 }
 
 function presetSpecFrom(data: {
@@ -75,25 +47,16 @@ function toLoadedConfig(path: string, kind: LoadedConfig["kind"], parsed: unknow
 	};
 }
 
-const BY_FILENAME = {
+const CONFIG_FILENAMES = {
 	"conform.machine.json": "machine",
 	"conform.project.json": "project",
-} as const;
+} as const satisfies Record<string, LoadedConfig["kind"]>;
 
 export async function loadConfig(configPath: string): Promise<LoadedConfig> {
 	const path = resolveConfigPath(configPath);
-	let parsed: unknown;
-	try {
-		parsed = await readJsonFile(path, "Config");
-	} catch (error) {
-		const detail = errorMessage(error);
-		if (detail.includes("not found")) {
-			throw new Error(`Config not found: ${path}`, { cause: error });
-		}
-		throw new Error(`Invalid JSON in ${path}: ${detail}`, { cause: error });
-	}
+	const parsed = await readJsonFile(path, "Config");
 	const fileName = basename(path);
-	const known = (BY_FILENAME as Record<string, LoadedConfig["kind"] | undefined>)[fileName];
+	const known = (CONFIG_FILENAMES as Record<string, LoadedConfig["kind"] | undefined>)[fileName];
 	if (known === undefined) {
 		// Project and machine configs share the same shape, so content-sniffing
 		// cannot distinguish them. Require a canonical filename instead of
@@ -105,7 +68,7 @@ export async function loadConfig(configPath: string): Promise<LoadedConfig> {
 	return toLoadedConfig(path, known, parsed);
 }
 
-const DISCOVER_NAMES = ["conform.project.json", "conform.machine.json"];
+const DISCOVER_NAMES = Object.keys(CONFIG_FILENAMES);
 
 export async function discoverConfigs(): Promise<LoadedConfig[]> {
 	const cwd = process.cwd();
@@ -124,9 +87,4 @@ export async function discoverConfigs(): Promise<LoadedConfig[]> {
 		throw new Error(`No config found in ${cwd} (looked for ${DISCOVER_NAMES.join(", ")}).`);
 	}
 	return found;
-}
-
-// $HOME wins over /etc/passwd so machine targets follow the caller's env.
-export function defaultHome(): string {
-	return process.env["HOME"] ?? homedir();
 }

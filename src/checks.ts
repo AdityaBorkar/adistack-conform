@@ -13,7 +13,6 @@ export interface CheckResult {
 	actual: string;
 	expected: string;
 	fix?: CheckFix;
-	fixable: boolean;
 	hint?: string;
 	id: string;
 	kind: string;
@@ -26,12 +25,16 @@ export interface CheckResult {
 
 export type CheckBase = Pick<CheckResult, "id" | "kind" | "scope" | "source" | "target">;
 
+export function isFixable(result: CheckResult): boolean {
+	return result.fix !== undefined;
+}
+
 export function pass(base: CheckBase, actual: string, expected: string): CheckResult {
-	return { actual, expected, fixable: false, ok: true, ...base };
+	return { actual, expected, ok: true, ...base };
 }
 
 export function skipped(base: CheckBase, expected: string, reason: string): CheckResult {
-	return { actual: reason, expected, fixable: false, ok: true, skipped: true, ...base };
+	return { actual: reason, expected, ok: true, skipped: true, ...base };
 }
 
 export function failFixable(
@@ -40,7 +43,7 @@ export function failFixable(
 	expected: string,
 	fix: CheckFix,
 ): CheckResult {
-	return { actual, expected, fix, fixable: true, ok: false, ...base };
+	return { actual, expected, fix, ok: false, ...base };
 }
 
 export function failManual(
@@ -49,18 +52,20 @@ export function failManual(
 	expected: string,
 	hint: string,
 ): CheckResult {
-	return { actual, expected, fixable: false, hint, ok: false, ...base };
+	return { actual, expected, hint, ok: false, ...base };
 }
 
-export async function readActualContent(result: CheckResult): Promise<string> {
-	if (result.fix?.kind === "overwrite-file") {
-		const file = Bun.file(result.fix.filePath);
-		if (!(await file.exists())) {
-			return "<missing>";
-		}
-		return file.text();
-	}
-	return result.actual;
+export function partitionResults(results: CheckResult[]): {
+	failed: CheckResult[];
+	fixable: CheckResult[];
+	unfixable: CheckResult[];
+} {
+	const failed = results.filter((item) => !item.ok);
+	return {
+		failed,
+		fixable: failed.filter((item) => isFixable(item)),
+		unfixable: failed.filter((item) => !isFixable(item)),
+	};
 }
 
 export function desiredContent(result: CheckResult): string {

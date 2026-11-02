@@ -25,18 +25,8 @@ function safeRef(ref: string): string {
 	return safe;
 }
 
-function cacheDirFor(owner: string, repo: string, ref: string): string {
-	return join(
-		envPaths("adistack-conform", { suffix: "" }).cache,
-		"github",
-		owner,
-		repo,
-		safeRef(ref),
-	);
-}
-
-function splitId(id: string): { owner: string; repo: string } {
-	const parts = id.split("/");
+function cachePaths(spec: TechStackSpec): { dir: string; metaPath: string } {
+	const parts = spec.id.split("/");
 	const owner = parts[0];
 	const repo = parts[1];
 	if (
@@ -46,9 +36,16 @@ function splitId(id: string): { owner: string; repo: string } {
 		repo === "" ||
 		parts.length !== 2
 	) {
-		throw new Error(`Invalid tech-stack id: “${id}” (expected "owner/repo").`);
+		throw new Error(`Invalid tech-stack id: “${spec.id}” (expected "owner/repo").`);
 	}
-	return { owner, repo };
+	const dir = join(
+		envPaths("adistack-conform", { suffix: "" }).cache,
+		"github",
+		owner,
+		repo,
+		safeRef(spec.ref),
+	);
+	return { dir, metaPath: join(dir, ".conform-meta.json") };
 }
 
 async function downloadTarball(id: string, ref: string, tmpPath: string): Promise<void> {
@@ -89,13 +86,14 @@ async function extractTarball(archive: string, dest: string): Promise<void> {
 	await tarExtract({ cwd: dest, file: archive, strip: 1 });
 }
 
-async function fetchAndInstall(
-	spec: TechStackSpec,
-	dir: string,
-	metaPath: string,
-	tmpArchive: string,
-	stage: string,
-): Promise<CachedRepo> {
+function scratchPaths(dir: string): { stage: string; tmpArchive: string } {
+	const nonce = `${process.pid}.${Math.random().toString(36).slice(2)}`;
+	return { stage: `${dir}.stage.${nonce}`, tmpArchive: `${dir}.tarball.${nonce}` };
+}
+
+async function fetchAndInstall(spec: TechStackSpec, dir: string): Promise<CachedRepo> {
+	const { metaPath } = cachePaths(spec);
+	const { stage, tmpArchive } = scratchPaths(dir);
 	try {
 		await downloadTarball(spec.id, spec.ref, tmpArchive);
 		await remove(stage);
@@ -119,9 +117,7 @@ async function fetchAndInstall(
 }
 
 export async function ensureGithubRepo(spec: TechStackSpec, noCache: boolean): Promise<CachedRepo> {
-	const { owner, repo } = splitId(spec.id);
-	const dir = cacheDirFor(owner, repo, spec.ref);
-	const metaPath = join(dir, ".conform-meta.json");
+	const { dir, metaPath } = cachePaths(spec);
 	if (!noCache && (await pathExists(metaPath))) {
 		try {
 			const meta = (await Bun.file(metaPath).json()) as { id?: unknown; ref?: unknown };
@@ -132,21 +128,12 @@ export async function ensureGithubRepo(spec: TechStackSpec, noCache: boolean): P
 			// Corrupt marker — fall through to re-download.
 		}
 	}
-	const key = `${spec.id}@${spec.ref}:${noCache ? "fresh" : "cached"}`;
+	const key = `${spec.id}@${spec.ref}`;
 	const pending = inflight.get(key);
 	if (pending !== undefined) {
 		return pending;
 	}
-	// Unique scratch paths per attempt so parallel project+machine runs sharing
-	// the same repo dir cannot delete each other's stage.
-	const nonce = `${process.pid}.${Math.random().toString(36).slice(2)}`;
-	const task = fetchAndInstall(
-		spec,
-		dir,
-		metaPath,
-		`${dir}.tarball.${nonce}`,
-		`${dir}.stage.${nonce}`,
-	).finally(() => {
+	const task = fetchAndInstall(spec, dir).finally(() => {
 		if (inflight.get(key) === task) {
 			inflight.delete(key);
 		}

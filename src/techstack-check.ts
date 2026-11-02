@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import type { CheckBase, CheckResult, CheckScope } from "#/checks.js";
 import { failFixable, failManual, pass, skipped } from "#/checks.js";
-import { errorMessage } from "#/fs.js";
+import { readFileSafe } from "#/fs.js";
 
 export type ClassifiedTarget = { reason: string; type: "skip" } | { path: string; type: "path" };
 
@@ -23,11 +23,6 @@ export function classifyTarget(target: string, scope: CheckScope): ClassifiedTar
 		return { path: token, type: "path" };
 	}
 	return { reason: `no concrete target ("${target}")`, type: "skip" };
-}
-
-function short(value: string, max = 160): string {
-	const flat = value.replaceAll("\n", "\\n");
-	return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 function isExampleFile(presetRelPath: string): boolean {
@@ -54,78 +49,99 @@ async function checkExample(
 	presetRelPath: string,
 	targetPath: string,
 ): Promise<CheckResult> {
-	const targetFile = Bun.file(targetPath);
-	if (await targetFile.exists()) {
+	const outcome = await readFileSafe(targetPath);
+	if (outcome.ok) {
 		return pass(base, "exists", "exists (values stay secret)");
+	}
+	if (outcome.error === "<missing>") {
+		return failManual(
+			base,
+			"<missing>",
+			"exists (values stay secret)",
+			`Copy ${presetRelPath} to ${targetPath} and fill in secret values (never commit).`,
+		);
 	}
 	return failManual(
 		base,
-		"<missing>",
+		"<unreadable>",
 		"exists (values stay secret)",
-		`Copy ${presetRelPath} to ${targetPath} and fill in secret values (never commit).`,
+		`Cannot read ${targetPath} (may need sudo): ${outcome.error}`,
 	);
 }
 
-async function readGolden(presetPath: string): Promise<{ golden?: string; error?: string }> {
-	try {
-		return { golden: await Bun.file(presetPath).text() };
-	} catch (error) {
-		return { error: errorMessage(error) };
-	}
+export interface CheckFileArgs {
+	packageName: string;
+	presetFileName: string;
+	presetRelPath: string;
+	presetTarget: string;
+	repoRoot: string;
+	scope: CheckScope;
+	targetPath: string;
 }
 
-async function readActual(targetPath: string): Promise<{ actual: string; error?: string }> {
-	try {
-		const targetFile = Bun.file(targetPath);
-		if (await targetFile.exists()) {
-			return { actual: await targetFile.text() };
-		}
-		return { actual: "<missing>" };
-	} catch (error) {
-		return {
-			actual: "<unreadable>",
-			error: `Cannot read ${targetPath} (may need sudo): ${errorMessage(error)}`,
-		};
-	}
-}
-
-export async function checkPresetFile(
-	packageName: string,
-	presetRelPath: string,
-	presetFileName: string,
-	presetTarget: string,
-	repoRoot: string,
-	targetPath: string,
-	scope: CheckScope,
-): Promise<CheckResult> {
+export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult> {
+	const { packageName, presetFileName, presetRelPath, presetTarget, repoRoot, scope, targetPath } =
+		args;
 	const base = baseFor(packageName, presetFileName, presetTarget, scope);
 	const presetPath = join(repoRoot, presetRelPath);
-	if (!(await Bun.file(presetPath).exists())) {
-		return failManual(
-			base,
-			"<preset file missing>",
-			presetRelPath,
-			`Preset file missing in tech-stack repo: ${presetPath}`,
-		);
+	const presetRead = await readFileSafe(presetPath);
+	if (!presetRead.ok) {
+		if (presetRead.error === "<missing>") {
+			return failManual(
+				base,
+				"<preset file missing>",
+				presetRelPath,
+				`Preset file missing in tech-stack repo: ${presetPath}`,
+			);
+		}
+		return failManual(base, "<unreadable preset>", presetRelPath, presetRead.error);
 	}
+	const golden = presetRead.text;
 	if (isExampleFile(presetRelPath)) {
 		return checkExample(base, presetRelPath, targetPath);
 	}
-	const { golden, error: goldenError } = await readGolden(presetPath);
-	if (golden === undefined) {
-		return failManual(base, "<unreadable preset>", presetRelPath, goldenError ?? "<unreadable>");
+	if (golden.trim() === "") {
+		const targetRead = await readFileSafe(targetPath);
+		if (!targetRead.ok && targetRead.error === "<missing>") {
+			return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
+		}
+		if (!targetRead.ok) {
+			return failManual(
+				base,
+				"<unreadable>",
+				golden,
+				`Cannot read ${targetPath} (may need sudo): ${targetRead.error}`,
+			);
+		}
+		if (targetRead.text === golden) {
+			return pass(base, "matches preset", golden);
+		}
+		return failFixable(base, targetRead.text, golden, {
+			filePath: targetPath,
+			kind: "overwrite-file",
+			newContent: golden,
+		});
 	}
-	if (golden.trim() === "" && !(await Bun.file(targetPath).exists())) {
-		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
+	const targetRead = await readFileSafe(targetPath);
+	if (!targetRead.ok) {
+		if (targetRead.error === "<missing>") {
+			return failFixable(base, "<missing>", golden, {
+				filePath: targetPath,
+				kind: "overwrite-file",
+				newContent: golden,
+			});
+		}
+		return failManual(
+			base,
+			"<unreadable>",
+			golden,
+			`Cannot read ${targetPath} (may need sudo): ${targetRead.error}`,
+		);
 	}
-	const { actual, error: actualError } = await readActual(targetPath);
-	if (actualError !== undefined) {
-		return failManual(base, actual, short(golden), actualError);
+	if (targetRead.text === golden) {
+		return pass(base, "matches preset", golden);
 	}
-	if (actual === golden) {
-		return pass(base, "matches preset", short(golden));
-	}
-	return failFixable(base, short(actual), short(golden), {
+	return failFixable(base, targetRead.text, golden, {
 		filePath: targetPath,
 		kind: "overwrite-file",
 		newContent: golden,
