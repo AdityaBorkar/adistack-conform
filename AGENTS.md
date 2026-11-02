@@ -9,7 +9,7 @@ Bun-only TypeScript CLI (compiled binary in `.output/` + npm `adistack-conform` 
 ```bash
 bun install
 bun run dev              # run CLI from source: bun ./src/index.ts
-bun run build            # regen JSON schemas, then bun build --compile to .output/adistack-conform
+bun run build            # regen JSON schemas + bun build --compile --minify --bytecode to .output/adistack-conform (concurrently)
 bun run format           # oxfmt — writes in place
 bun run check:lint       # oxlint
 bun run check:types      # tsrs (Bun typechecker, not tsc)
