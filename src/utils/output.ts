@@ -47,7 +47,7 @@ export function formatDuration(ms: number): string {
 }
 
 export function printResults(results: CheckResult[], elapsedMs?: number): void {
-	const lines = results.map((result) => formatResult(result));
+	const lines = results.filter((result) => !result.ok).map((result) => formatResult(result));
 	const { failed, fixable } = partitionResults(results);
 	const skipped = results.filter((item) => item.skipped === true);
 	const timing = elapsedMs === undefined ? "" : ` in ${formatDuration(elapsedMs)}`;

@@ -24,7 +24,7 @@ bun run gen:json-schema  # regenerate configuration_schema/ from src/schemas/*
 
 ## Layout
 
-- `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/techstack.ts`, `src/diff.ts`, `src/output.ts` — flat modules, no subdirectories in use.
+- `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/techstack*.ts` (cache/check/registry/sparse/entry) — plus `src/utils/` (`fs`, `output`, `concurrency`) and `src/schemas/`.
 - `src/schemas/*` — Valibot source of truth (`import * as v from "valibot"`). `configuration_schema/*.json` is generated — never hand-edit, it is overwritten by `build` / `gen:json-schema`.
 - This repo dogfoods itself: `conform.project.json` (`cli-app` blueprint) and `conform.machine.json` (`main` blueprint) both track `AdityaBorkar/tech-stack@main`.
 
@@ -35,8 +35,8 @@ adistack-conform check [--json] [--no-cache] [--project-only|--machine-only]  # 
 adistack-conform fix [--all] [--dry-run] [--no-diff] [--no-cache] [--project-only|--machine-only]  # space to toggle, Select-all pseudo-option first, diff preview, per-item ok/error, re-checks after apply
 ```
 
-- Without `--config`, `check`/`fix` load `conform.project.json` and/or `conform.machine.json` from the cwd. With `--config`, kind comes from the filename, otherwise the content is schema-sniffed (project first).
-- `--project-only` + `--machine-only` together is an error. `fix` needs a TTY unless `--all` or `--dry-run`.
+- Without `--config`, `check`/`fix` load `conform.project.json` and/or `conform.machine.json` from the cwd. With `--config`, the filename must be exactly `conform.project.json` or `conform.machine.json` — anything else exits 2 (no content-sniffing).
+- `--project-only` + `--machine-only` together is an error. `fix` needs a TTY unless `--all` (or `--dry-run`, which never prompts).
 - Project targets resolve against the cwd; machine targets resolve against `$HOME`.
 
 ## conform.project.json / conform.machine.json — preset desired state
@@ -58,12 +58,12 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--no-cache] [--project-onl
 - `exclude` — preset names dropped from the effective set.
 - Effective set = (blueprint ∪ presets) − (blueprint.exclude ∪ exclude). Unknown names fail with exit 2.
 - The repo tarball is downloaded from codeload (`GITHUB_TOKEN` supported for private repos / rate limits) and cached under `~/.cache/adistack-conform/github/<owner>/<repo>/<ref>/` (`XDG_CACHE_HOME` respected, unsafe refs sanitized, `.conform-meta.json` guards freshness). `--no-cache` forces a re-download; a failed download falls back to the cache with a warning.
-- Preset locations come from the root `registry.json` (`<scope>.presets` dirs, each with a `manifest.json` mapping `path` → `target`). `docs:` targets, Windows `%...%` targets, and annotation-only targets are reported as skipped (exit 0); a leading `~/...` or `/...` token is used when the target carries a human annotation. Only the project scope honors `./...`/`../...` targets (resolved against the cwd). `*.example` files assert existence only (secret values are never compared). Empty presets pass when the target is absent (empty = defaults). Unreadable targets (e.g. `/etc/...` without sudo) fail as non-fixable with a hint.
+- Preset locations come from the root `registry.json` (`<scope>.presets` dirs, each with a `manifest.json` mapping `path` → `target`). `docs:` targets, Windows `%...%` targets, and annotation-only targets are reported as skipped (exit 0); a leading `~/...`, `/...`, or bare `~` token is used when the target carries a human annotation. Only the project scope honors `./...`/`../...` targets (resolved against the cwd). `*.example` files assert existence only (secret values are never compared). Empty presets pass when the target is absent (empty = defaults). Unreadable targets (e.g. `/etc/...` without sudo) fail as non-fixable with a hint.
 
 ## Conventions
 
-- Path alias `#/*` → `./src/*` (`package.json` `imports` + `tsconfig` `paths`). No `@/*`.
+- Path alias `#/*` → `./src/*` (`package.json` `imports` + `tsconfig` `paths`). No `@/*`. Internal imports keep the `.js` suffix (e.g. `#/checks.js`).
 - `verbatimModuleSyntax` on — `import type` for type-only. Strict `noUnusedLocals`/`noUnusedParameters` — unused vars fail typecheck.
 - oxfmt: tabs, `printWidth` 100; sorts imports (`builtin`+`bun` incl. `bun:*` custom group / `external` / `internal` / `parent`+`sibling` / `style` / `unknown`); sorts `package.json` scripts.
-- oxlint: `correctness`/`pedantic`/`perf`/`suspicious` as error; `sort-keys` (case-sensitive, natural) and `import/no-unassigned-import` as error; `https?://`, `npm:`, `jsr:` imports banned; no inline suppressions — all exceptions in `.oxlintrc.json` `overrides` (currently only `no-await-in-loop` off in `src/index.ts`).
+- oxlint: `correctness`/`pedantic`/`perf`/`suspicious` as error; `sort-keys` (case-sensitive, natural) and `import/no-unassigned-import` as error; `https?://`, `npm:`, `jsr:` imports banned; no inline suppressions — exceptions live in `.oxlintrc.json` (currently no `overrides`).
 - `bunfig.toml`: `ignore-scripts=true`, `exact=true`, `minimumReleaseAge=3d`, binary lockfile (`saveTextLockfile=false`).
