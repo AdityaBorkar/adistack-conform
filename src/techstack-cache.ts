@@ -1,11 +1,9 @@
 import { join } from "node:path";
 
 import envPaths from "env-paths";
-import { ensureDir, move, pathExists, remove } from "fs-extra";
-import { x as tarExtract } from "tar";
 
 import type { TechStackSpec } from "#/config.js";
-import { errorMessage } from "#/utils/fs.js";
+import { ensureDir, errorMessage, moveOverwrite, pathExists, removePath } from "#/utils/fs.js";
 
 export interface CachedRepo {
 	dir: string;
@@ -83,6 +81,7 @@ async function downloadTarball(id: string, ref: string, tmpPath: string): Promis
 }
 
 async function extractTarball(archive: string, dest: string): Promise<void> {
+	const { x: tarExtract } = await import("tar");
 	await tarExtract({ cwd: dest, file: archive, strip: 1 });
 }
 
@@ -99,11 +98,11 @@ async function fetchAndInstall(
 	const { stage, tmpArchive } = scratchPaths(dir);
 	try {
 		await downloadTarball(spec.id, spec.ref, tmpArchive);
-		await remove(stage);
+		await removePath(stage);
 		await ensureDir(stage);
 		await extractTarball(tmpArchive, stage);
 		await ensureDir(join(dir, ".."));
-		await move(stage, dir, { overwrite: true });
+		await moveOverwrite(stage, dir);
 		await Bun.write(
 			metaPath,
 			`${JSON.stringify({ fetchedAt: new Date().toISOString(), id: spec.id, ref: spec.ref }, null, 2)}\n`,
@@ -115,7 +114,7 @@ async function fetchAndInstall(
 		}
 		throw error;
 	} finally {
-		await Promise.allSettled([remove(tmpArchive), remove(stage)]);
+		await Promise.allSettled([removePath(tmpArchive), removePath(stage)]);
 	}
 }
 

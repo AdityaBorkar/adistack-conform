@@ -11,11 +11,13 @@ export function renderDiff(
 	expected: string,
 	context = DEFAULT_CONTEXT,
 ): string {
+	const normalizedActual = actual.includes("\r") ? actual.replaceAll("\r\n", "\n") : actual;
+	const normalizedExpected = expected.includes("\r") ? expected.replaceAll("\r\n", "\n") : expected;
 	const patch = createTwoFilesPatch(
 		actualLabel,
 		expectedLabel,
-		actual.replaceAll("\r\n", "\n"),
-		expected.replaceAll("\r\n", "\n"),
+		normalizedActual,
+		normalizedExpected,
 		EMPTY_HEADER,
 		EMPTY_HEADER,
 		{

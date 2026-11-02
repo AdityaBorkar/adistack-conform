@@ -1,6 +1,5 @@
 import { join } from "node:path";
 
-import { glob } from "tinyglobby";
 import type * as z from "zod";
 
 import type { CheckScope } from "#/checks.js";
@@ -19,6 +18,8 @@ export type RegistryDocument = z.infer<typeof RegistrySchema>;
 
 export const MAX_LIST_SHOWN = 10;
 
+const registryDocCache = new Map<string, Promise<RegistryDocument>>();
+
 function presetSchemaFor(scope: CheckScope) {
 	return scope === "project" ? ProjectPresetManifestSchema : MachinePresetManifestSchema;
 }
@@ -27,10 +28,23 @@ function blueprintSchemaFor(scope: CheckScope) {
 	return scope === "project" ? ProjectBlueprintSchema : MachineBlueprintSchema;
 }
 
-export async function loadRegistryDocument(repoRoot: string): Promise<RegistryDocument> {
-	const path = join(repoRoot, "registry.json");
-	const parsed = await readJsonFile(path, "tech-stack registry");
-	return parseOrThrow(RegistrySchema, path, parsed, "tech-stack registry");
+export function loadRegistryDocument(repoRoot: string): Promise<RegistryDocument> {
+	const pending = registryDocCache.get(repoRoot);
+	if (pending !== undefined) {
+		return pending;
+	}
+	const task = (async () => {
+		const path = join(repoRoot, "registry.json");
+		const parsed = await readJsonFile(path, "tech-stack registry");
+		return parseOrThrow(RegistrySchema, path, parsed, "tech-stack registry");
+	})();
+	registryDocCache.set(repoRoot, task);
+	task.catch(() => {
+		if (registryDocCache.get(repoRoot) === task) {
+			registryDocCache.delete(repoRoot);
+		}
+	});
+	return task;
 }
 
 export async function loadRegistry(
@@ -67,6 +81,7 @@ export async function listBlueprints(
 	scope: CheckScope,
 	registry: RegistryDocument,
 ): Promise<string[]> {
+	const { glob } = await import("tinyglobby");
 	const matches = await Promise.all(
 		registry[scope].blueprints.map((dir) => glob("*/manifest.json", { cwd: join(repoRoot, dir) })),
 	);
@@ -86,22 +101,26 @@ export async function loadBlueprint(
 	registry: RegistryDocument,
 ): Promise<{ exclude: string[]; presets: string[] }> {
 	const schema = blueprintSchemaFor(scope);
-	const candidates = await Promise.all(
-		registry[scope].blueprints.map(async (dir) => ({
-			exists: await Bun.file(join(repoRoot, dir, name, "manifest.json")).exists(),
-			path: join(repoRoot, dir, name, "manifest.json"),
+	const candidates = registry[scope].blueprints.map((dir) =>
+		join(repoRoot, dir, name, "manifest.json"),
+	);
+	const attempts = await Promise.allSettled(
+		candidates.map(async (path) => ({
+			data: parseOrThrow(schema, path, await readJsonFile(path, "Blueprint"), "blueprint"),
+			path,
 		})),
 	);
-	const hit = candidates.find((candidate) => candidate.exists);
-	if (hit === undefined) {
-		const available = await listBlueprints(repoRoot, scope, registry);
-		const hint =
-			available.length > MAX_LIST_SHOWN
-				? ` Available blueprints: ${available.slice(0, MAX_LIST_SHOWN).join(", ")} (+${available.length - MAX_LIST_SHOWN} more).`
-				: available.length > 0
-					? ` Available blueprints: ${available.join(", ")}.`
-					: "";
-		throw new Error(`Blueprint "${name}" not found in the tech-stack repo.${hint}`);
+	for (const attempt of attempts) {
+		if (attempt.status === "fulfilled") {
+			return attempt.value.data;
+		}
 	}
-	return parseOrThrow(schema, hit.path, await readJsonFile(hit.path, "Blueprint"), "blueprint");
+	const available = await listBlueprints(repoRoot, scope, registry);
+	const hint =
+		available.length > MAX_LIST_SHOWN
+			? ` Available blueprints: ${available.slice(0, MAX_LIST_SHOWN).join(", ")} (+${available.length - MAX_LIST_SHOWN} more).`
+			: available.length > 0
+				? ` Available blueprints: ${available.join(", ")}.`
+				: "";
+	throw new Error(`Blueprint "${name}" not found in the tech-stack repo.${hint}`);
 }

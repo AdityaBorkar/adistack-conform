@@ -1,5 +1,6 @@
+import { mkdir, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import untildify from "untildify";
 
@@ -8,13 +9,12 @@ export function errorMessage(error: unknown): string {
 }
 
 export async function readJsonFile(path: string, label: string): Promise<unknown> {
-	const file = Bun.file(path);
-	if (!(await file.exists())) {
-		throw new Error(`${label} not found: ${path}`);
-	}
 	try {
-		return (await file.json()) as unknown;
+		return (await Bun.file(path).json()) as unknown;
 	} catch (error) {
+		if (isMissingError(error)) {
+			throw new Error(`${label} not found: ${path}`, { cause: error });
+		}
 		throw new Error(`${label} has invalid JSON in ${path}: ${errorMessage(error)}`, {
 			cause: error,
 		});
@@ -36,13 +36,50 @@ export type FileRead =
 
 export async function readFileSafe(path: string): Promise<FileRead> {
 	try {
-		if (!(await fileExists(path))) {
+		return { ok: true, text: await Bun.file(path).text() };
+	} catch (error) {
+		if (isMissingError(error)) {
 			return { ok: false, reason: "missing" };
 		}
-		return { ok: true, text: await readText(path) };
-	} catch (error) {
 		return { error: errorMessage(error), ok: false, reason: "unreadable" };
 	}
+}
+
+function isMissingError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error as { code?: unknown }).code === "ENOENT"
+	);
+}
+
+export async function pathExists(path: string): Promise<boolean> {
+	try {
+		await stat(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export async function ensureDir(dir: string): Promise<void> {
+	await mkdir(dir, { recursive: true });
+}
+
+export async function removePath(path: string): Promise<void> {
+	await rm(path, { force: true, recursive: true });
+}
+
+export async function moveOverwrite(source: string, dest: string): Promise<void> {
+	await mkdir(dirname(dest), { recursive: true });
+	await rm(dest, { force: true, recursive: true });
+	await rename(source, dest);
+}
+
+export async function writeFileEnsuringDir(path: string, content: string): Promise<void> {
+	await mkdir(dirname(path), { recursive: true });
+	await Bun.write(path, content);
 }
 
 export function expandHome(value: string, home: string): string {

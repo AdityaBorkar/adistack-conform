@@ -29,6 +29,13 @@ function isExampleFile(presetRelPath: string): boolean {
 	return presetRelPath.endsWith(".example");
 }
 
+function isBlankGolden(golden: string): boolean {
+	if (golden.length === 0) {
+		return true;
+	}
+	return /^\s*$/u.test(golden);
+}
+
 function baseFor(
 	packageName: string,
 	presetFileName: string,
@@ -44,12 +51,12 @@ function baseFor(
 	};
 }
 
-async function checkExample(
+function checkExampleOutcome(
 	base: CheckBase,
 	presetRelPath: string,
 	targetPath: string,
-): Promise<CheckResult> {
-	const outcome = await readFileSafe(targetPath);
+	outcome: Awaited<ReturnType<typeof readFileSafe>>,
+): CheckResult {
 	if (outcome.ok) {
 		return pass(base, "exists", "exists (values stay secret)");
 	}
@@ -93,7 +100,10 @@ export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult>
 		args;
 	const base = baseFor(packageName, presetFileName, presetTarget, scope);
 	const presetPath = join(repoRoot, presetRelPath);
-	const presetRead = await readFileSafe(presetPath);
+	const [presetRead, targetRead] = await Promise.all([
+		readFileSafe(presetPath),
+		readFileSafe(targetPath),
+	]);
 	if (!presetRead.ok) {
 		if (presetRead.reason === "missing") {
 			return failManual(
@@ -107,10 +117,9 @@ export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult>
 	}
 	const golden = presetRead.text;
 	if (isExampleFile(presetRelPath)) {
-		return checkExample(base, presetRelPath, targetPath);
+		return checkExampleOutcome(base, presetRelPath, targetPath, targetRead);
 	}
-	const targetRead = await readFileSafe(targetPath);
-	if (golden.trim() === "" && !targetRead.ok && targetRead.reason === "missing") {
+	if (isBlankGolden(golden) && !targetRead.ok && targetRead.reason === "missing") {
 		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
 	}
 	if (!targetRead.ok) {
@@ -130,6 +139,48 @@ export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult>
 		filePath: targetPath,
 		kind: "overwrite-file",
 		newContent: golden,
+	});
+}
+
+export async function checkPresetFileWithGolden(args: {
+	golden: string;
+	packageName: string;
+	presetFileName: string;
+	presetRelPath: string;
+	presetTarget: string;
+	scope: CheckScope;
+	targetPath: string;
+}): Promise<CheckResult> {
+	const base = baseFor(args.packageName, args.presetFileName, args.presetTarget, args.scope);
+	if (isExampleFile(args.presetRelPath)) {
+		return checkExampleOutcome(
+			base,
+			args.presetRelPath,
+			args.targetPath,
+			await readFileSafe(args.targetPath),
+		);
+	}
+	const targetRead = await readFileSafe(args.targetPath);
+	if (isBlankGolden(args.golden) && !targetRead.ok && targetRead.reason === "missing") {
+		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
+	}
+	if (!targetRead.ok) {
+		if (targetRead.reason === "missing") {
+			return failFixable(base, "<missing>", args.golden, {
+				filePath: args.targetPath,
+				kind: "overwrite-file",
+				newContent: args.golden,
+			});
+		}
+		return unreadableTarget(base, args.golden, args.targetPath, targetRead.error);
+	}
+	if (targetRead.text === args.golden) {
+		return pass(base, "matches preset", args.golden);
+	}
+	return failFixable(base, targetRead.text, args.golden, {
+		filePath: args.targetPath,
+		kind: "overwrite-file",
+		newContent: args.golden,
 	});
 }
 

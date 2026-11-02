@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import * as prompts from "@clack/prompts";
 import { Command } from "commander";
 
 import type { CheckResult, CheckScope } from "#/checks.js";
@@ -7,9 +6,10 @@ import { partitionResults } from "#/checks.js";
 import type { LoadedConfig } from "#/config.js";
 import { discoverConfigs, loadConfig } from "#/config.js";
 import { applySelected, resolveSelection } from "#/fix.js";
-import { runTechStackChecks } from "#/techstack.js";
+import { recheckSelected, runTechStackChecks } from "#/techstack.js";
 import { defaultHome, errorMessage } from "#/utils/fs.js";
 import {
+	formatDuration,
 	outroAllPassed,
 	printDryRun,
 	printJsonSummary,
@@ -94,6 +94,7 @@ async function prepareRun(cmd: Command, cmdOptions: CacheOptions & ScopeOptions)
 }
 
 async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promise<number> {
+	const start = performance.now();
 	const { configs, results, warnings } = await prepareRun(cmd, cmdOptions);
 	emitWarnings(warnings);
 	if (cmdOptions.json) {
@@ -102,12 +103,13 @@ async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promi
 			results,
 		);
 	} else {
-		printResults(results);
+		printResults(results, performance.now() - start);
 	}
 	return results.some((item) => !item.ok) ? 1 : 0;
 }
 
 async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<number> {
+	const start = performance.now();
 	const { configs, cwd, home, noCache, only, results, warnings } = await prepareRun(
 		cmd,
 		cmdOptions,
@@ -116,47 +118,90 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 	const { failed, fixable, unfixable } = partitionResults(results);
 
 	if (failed.length === 0) {
-		console.log("All conform checks passed.");
+		console.log(`All conform checks passed in ${formatDuration(performance.now() - start)}.`);
 		return 0;
 	}
 
 	reportUnfixable(unfixable);
 
 	if (fixable.length === 0) {
+		console.log(
+			`\n${failed.length} check(s) failing (0 fixable) in ${formatDuration(performance.now() - start)}.`,
+		);
 		return 1;
 	}
 
-	if (cmdOptions.diff !== false) {
-		renderFixDiffs(fixable);
-	}
-
 	if (cmdOptions.dryRun) {
-		printDryRun(fixable);
+		if (cmdOptions.diff !== false) {
+			await renderFixDiffs(fixable);
+		}
+		printDryRun(fixable, performance.now() - start);
 		return 1;
 	}
 
 	const selection = await resolveSelection(fixable, cmdOptions.all);
 	if (selection.kind === "no-tty") {
-		console.error("Not a TTY: re-run with --all to apply fixes non-interactively.");
+		console.error(
+			`Not a TTY: re-run with --all to apply fixes non-interactively. (${formatDuration(performance.now() - start)})`,
+		);
 		return 2;
 	}
 	if (selection.kind === "cancelled") {
-		prompts.outro("No fixes applied.");
+		const prompts = await import("@clack/prompts");
+		prompts.outro(`No fixes applied in ${formatDuration(performance.now() - start)}.`);
 		return 1;
+	}
+	if (cmdOptions.diff !== false) {
+		await renderFixDiffs(selection.selected);
 	}
 	const applied = await applySelected(selection.selected);
 
-	const rerun = await runAllChecks({ configs, cwd, home, noCache, only });
-	emitWarnings(rerun.warnings);
-	const remaining = rerun.results.filter((item) => !item.ok);
+	let rerunResults: CheckResult[];
+	let rerunWarnings: string[] = [];
+	try {
+		const selectedIds = new Set(selection.selected.map((item) => item.id));
+		const refreshed = await Promise.all(
+			configs
+				.filter((loaded) => only === undefined || only === loaded.kind)
+				.map(async (loaded) => {
+					const scopedIds = new Set(
+						[...selectedIds].filter((id) =>
+							selection.selected.some((item) => item.id === id && item.scope === loaded.kind),
+						),
+					);
+					if (scopedIds.size === 0) {
+						return [] as CheckResult[];
+					}
+					return await recheckSelected(
+						loaded.spec,
+						{
+							baseDir: loaded.kind === "project" ? cwd : home,
+							home,
+							noCache,
+							scope: loaded.kind,
+						},
+						scopedIds,
+					);
+				}),
+		);
+		const byId = new Map(refreshed.flat().map((item) => [item.id, item]));
+		rerunResults = results.map((item) => byId.get(item.id) ?? item);
+	} catch {
+		const rerun = await runAllChecks({ configs, cwd, home, noCache, only });
+		rerunWarnings = rerun.warnings;
+		rerunResults = rerun.results;
+		emitWarnings(rerunWarnings);
+	}
+	const remaining = rerunResults.filter((item) => !item.ok);
+	const elapsedMs = performance.now() - start;
 	console.log(
-		`\nFixed ${applied}/${selection.selected.length}. ${remaining.length} check(s) still failing.`,
+		`\nFixed ${applied}/${selection.selected.length}. ${remaining.length} check(s) still failing in ${formatDuration(elapsedMs)}.`,
 	);
 	if (remaining.length > 0) {
-		printResults(rerun.results);
+		printResults(rerunResults, elapsedMs);
 		return 1;
 	}
-	outroAllPassed();
+	await outroAllPassed(elapsedMs);
 	return 0;
 }
 

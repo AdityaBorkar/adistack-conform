@@ -1,5 +1,3 @@
-import * as prompts from "@clack/prompts";
-
 import type { CheckResult } from "#/checks.js";
 import { applyFix } from "#/checks.js";
 import { errorMessage } from "#/utils/fs.js";
@@ -13,6 +11,7 @@ export async function promptForSelection(fixable: CheckResult[]): Promise<Prompt
 	if (!process.stdin.isTTY) {
 		return { kind: "no-tty" };
 	}
+	const prompts = await import("@clack/prompts");
 	prompts.intro("Select fixes to apply (space to toggle, enter to confirm).");
 	const choice = await prompts.multiselect({
 		message: "Pick items to fix.",

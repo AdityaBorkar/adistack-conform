@@ -1,4 +1,4 @@
-import { outputFile } from "fs-extra";
+import { writeFileEnsuringDir } from "#/utils/fs.js";
 
 export type CheckScope = "project" | "machine";
 export type FixKind = "overwrite-file";
@@ -76,5 +76,5 @@ export async function applyFix(result: CheckResult): Promise<void> {
 	if (!result.fix) {
 		throw new Error(`Check ${result.id} is not fixable.`);
 	}
-	await outputFile(result.fix.filePath, result.fix.newContent);
+	await writeFileEnsuringDir(result.fix.filePath, result.fix.newContent);
 }
