@@ -6,22 +6,33 @@ export function okMark(ok: boolean): string {
 	return ok ? pc.green("✓") : pc.red("✗");
 }
 
+export function formatResult(result: CheckResult): string[] {
+	const lines: string[] = [];
+	const source = result.source === undefined ? "" : ` (${result.source})`;
+	if (result.skipped === true) {
+		return [`${pc.gray("○")} ${pc.bold(result.id)}${source} skipped: ${result.actual}`];
+	}
+	const tag = result.fixable ? ` ${pc.yellow("[fixable]")}` : "";
+	lines.push(
+		`${okMark(result.ok)} ${pc.bold(result.id)}${tag}${source}`,
+		`    target   : ${result.target}`,
+	);
+	if (!result.ok) {
+		lines.push(`    expected : ${result.expected}`, `    actual   : ${result.actual}`);
+		if (result.hint) {
+			lines.push(`    hint     : ${result.hint}`);
+		}
+		if (result.fixable) {
+			lines.push(`    fix      : overwrite ${result.fix?.filePath ?? result.target}`);
+		}
+	}
+	return lines;
+}
+
 export function printResults(results: CheckResult[]): void {
 	for (const result of results) {
-		const source = result.source === undefined ? "" : ` (${result.source})`;
-		if (result.skipped === true) {
-			console.log(`${pc.gray("○")} ${pc.bold(result.id)}${source} skipped: ${result.actual}`);
-			continue;
-		}
-		const tag = result.fixable ? ` ${pc.yellow("[fixable]")}` : "";
-		console.log(`${okMark(result.ok)} ${pc.bold(result.id)}${tag}${source}`);
-		console.log(`    target   : ${result.target}`);
-		if (!result.ok) {
-			console.log(`    expected : ${result.expected}`);
-			console.log(`    actual   : ${result.actual}`);
-			if (result.hint) {
-				console.log(`    hint     : ${result.hint}`);
-			}
+		for (const line of formatResult(result)) {
+			console.log(line);
 		}
 	}
 	const failed = results.filter((item) => !item.ok);

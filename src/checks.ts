@@ -24,6 +24,36 @@ export interface CheckResult {
 	target: string;
 }
 
+type CheckBase = Pick<CheckResult, "id" | "scope" | "source" | "target"> & {
+	kind: CheckResult["kind"];
+};
+
+export function pass(base: CheckBase, actual: string, expected: string): CheckResult {
+	return { actual, expected, fixable: false, ok: true, ...base };
+}
+
+export function skipped(base: CheckBase, expected: string, reason: string): CheckResult {
+	return { actual: reason, expected, fixable: false, ok: true, skipped: true, ...base };
+}
+
+export function failFixable(
+	base: CheckBase,
+	actual: string,
+	expected: string,
+	fix: CheckFix,
+): CheckResult {
+	return { actual, expected, fix, fixable: true, ok: false, ...base };
+}
+
+export function failManual(
+	base: CheckBase,
+	actual: string,
+	expected: string,
+	hint: string,
+): CheckResult {
+	return { actual, expected, fixable: false, hint, ok: false, ...base };
+}
+
 export async function readActualContent(result: CheckResult): Promise<string> {
 	if (result.fix?.kind === "overwrite-file") {
 		const file = Bun.file(result.fix.filePath);

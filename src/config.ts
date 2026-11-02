@@ -2,8 +2,8 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import untildify from "untildify";
-import * as z from "zod";
 
+import { parseOrThrow } from "#/schemas/common.js";
 import { MachineSchema } from "#/schemas/machine.js";
 import { ProjectSchema } from "#/schemas/project.js";
 
@@ -24,8 +24,15 @@ export interface LoadedConfig {
 }
 
 export function resolveTargetPath(raw: string, baseDir: string, home: string): string {
+	// Expand a leading ~ against the caller's home (respects $HOME overrides,
+	// unlike untildify which caches os.homedir()). Anything else falls through
+	// to untildify for ~user handling.
 	const expanded =
-		raw === "~" ? home : raw.startsWith("~/") ? join(home, raw.slice(2)) : untildify(raw);
+		/^~($|\/)/u.test(raw) && home.length > 0
+			? raw === "~"
+				? home
+				: join(home, raw.slice(2))
+			: untildify(raw);
 	if (isAbsolute(expanded)) {
 		return expanded;
 	}
@@ -33,10 +40,11 @@ export function resolveTargetPath(raw: string, baseDir: string, home: string): s
 }
 
 export function resolveConfigPath(raw: string): string {
-	if (isAbsolute(raw)) {
-		return raw;
+	const expanded = untildify(raw);
+	if (isAbsolute(expanded)) {
+		return expanded;
 	}
-	return resolve(process.cwd(), raw);
+	return resolve(process.cwd(), expanded);
 }
 
 function presetSpecFrom(data: {
@@ -55,27 +63,20 @@ function presetSpecFrom(data: {
 	};
 }
 
-function invalidConfigError(path: string, detail: string): Error {
-	return new Error(
-		`Invalid conform config in ${path} (expected conform.project.json or conform.machine.json format):\n${detail}`,
-	);
+function toLoadedConfig(path: string, kind: LoadedConfig["kind"], parsed: unknown): LoadedConfig {
+	const schema = kind === "machine" ? MachineSchema : ProjectSchema;
+	return {
+		dir: dirname(path),
+		kind,
+		path,
+		spec: presetSpecFrom(parseOrThrow(schema, path, parsed)),
+	};
 }
 
-function parseProjectConfig(path: string, parsed: unknown): z.infer<typeof ProjectSchema> {
-	const project = ProjectSchema.safeParse(parsed);
-	if (!project.success) {
-		throw invalidConfigError(path, z.prettifyError(project.error));
-	}
-	return project.data;
-}
-
-function parseMachineConfig(path: string, parsed: unknown): z.infer<typeof MachineSchema> {
-	const machine = MachineSchema.safeParse(parsed);
-	if (!machine.success) {
-		throw invalidConfigError(path, z.prettifyError(machine.error));
-	}
-	return machine.data;
-}
+const BY_FILENAME = {
+	"conform.machine.json": "machine",
+	"conform.project.json": "project",
+} as const;
 
 export async function loadConfig(configPath: string): Promise<LoadedConfig> {
 	const path = resolveConfigPath(configPath);
@@ -91,42 +92,17 @@ export async function loadConfig(configPath: string): Promise<LoadedConfig> {
 		throw new Error(`Invalid JSON in ${path}: ${detail}`, { cause: error });
 	}
 	const fileName = basename(path);
-	if (fileName === "conform.machine.json") {
-		const machine = parseMachineConfig(path, parsed);
-		return {
-			dir: dirname(path),
-			kind: "machine",
-			path,
-			spec: presetSpecFrom(machine),
-		};
+	const known = (BY_FILENAME as Record<string, LoadedConfig["kind"] | undefined>)[fileName];
+	if (known !== undefined) {
+		return toLoadedConfig(path, known, parsed);
 	}
-	if (fileName === "conform.project.json") {
-		return {
-			dir: dirname(path),
-			kind: "project",
-			path,
-			spec: presetSpecFrom(parseProjectConfig(path, parsed)),
-		};
+	for (const kind of ["project", "machine"] as const) {
+		const schema = kind === "machine" ? MachineSchema : ProjectSchema;
+		if (schema.safeParse(parsed).success) {
+			return toLoadedConfig(path, kind, parsed);
+		}
 	}
-	const project = ProjectSchema.safeParse(parsed);
-	if (project.success) {
-		return {
-			dir: dirname(path),
-			kind: "project",
-			path,
-			spec: presetSpecFrom(project.data),
-		};
-	}
-	const machine = MachineSchema.safeParse(parsed);
-	if (machine.success) {
-		return {
-			dir: dirname(path),
-			kind: "machine",
-			path,
-			spec: presetSpecFrom(machine.data),
-		};
-	}
-	throw invalidConfigError(path, z.prettifyError(project.error));
+	return toLoadedConfig(path, "project", parsed);
 }
 
 const DISCOVER_NAMES = ["conform.project.json", "conform.machine.json"];
@@ -150,6 +126,7 @@ export async function discoverConfigs(): Promise<LoadedConfig[]> {
 	return found;
 }
 
+// $HOME wins over /etc/passwd so machine targets follow the caller's env.
 export function defaultHome(): string {
 	return process.env["HOME"] ?? homedir();
 }

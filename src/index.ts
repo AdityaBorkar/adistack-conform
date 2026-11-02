@@ -2,42 +2,43 @@
 import * as prompts from "@clack/prompts";
 import { Command } from "commander";
 
-import type { CheckScope, CheckResult } from "#/checks.js";
-import { applyFix, desiredContent, readActualContent } from "#/checks.js";
+import type { CheckResult, CheckScope } from "#/checks.js";
 import type { LoadedConfig } from "#/config.js";
 import { defaultHome, discoverConfigs, loadConfig } from "#/config.js";
-import { renderDiff } from "#/diff.js";
+import {
+	applySelected,
+	printDryRun,
+	promptForSelection,
+	renderFixDiffs,
+	reportUnfixable,
+} from "#/fix.js";
 import { printResults } from "#/output.js";
 import { runTechStackChecks } from "#/techstack.js";
 
 const VERSION = "0.1.0";
 
 function scopeOf(options: {
-	projectOnly?: boolean;
 	machineOnly?: boolean;
+	projectOnly?: boolean;
 }): CheckScope | undefined {
-	if (options.projectOnly === true && options.machineOnly === true) {
+	if (options.projectOnly && options.machineOnly) {
 		throw new Error("Pass only one of --project-only / --machine-only.");
 	}
-	if (options.projectOnly === true) {
+	if (options.projectOnly) {
 		return "project";
 	}
-	if (options.machineOnly === true) {
+	if (options.machineOnly) {
 		return "machine";
 	}
 	return undefined;
 }
 
-function baseOptions(cmd: Command): { config?: string } {
-	const globals = cmd.optsWithGlobals<{ config?: string }>();
-	return { config: globals.config };
+function shouldRun(kind: CheckScope, only: CheckScope | undefined): boolean {
+	return only === undefined || only === kind;
 }
 
-async function loadConfigs(config: string | undefined): Promise<LoadedConfig[]> {
-	if (config !== undefined) {
-		return [await loadConfig(config)];
-	}
-	return discoverConfigs();
+function baseDirFor(kind: CheckScope, cwd: string, home: string): string {
+	return kind === "project" ? cwd : home;
 }
 
 async function runAllChecks(
@@ -45,32 +46,19 @@ async function runAllChecks(
 	only: CheckScope | undefined,
 	noCache: boolean,
 ): Promise<CheckResult[]> {
+	const cwd = process.cwd();
 	const home = defaultHome();
-	const results: CheckResult[] = [];
-	for (const loaded of configs) {
-		if (loaded.kind === "project") {
-			if (only !== "machine") {
-				results.push(
-					...(await runTechStackChecks(loaded.spec, {
-						baseDir: process.cwd(),
-						home,
-						noCache,
-						scope: "project",
-					})),
-				);
-			}
-		} else if (only !== "project") {
-			results.push(
-				...(await runTechStackChecks(loaded.spec, {
-					baseDir: home,
-					home,
-					noCache,
-					scope: "machine",
-				})),
-			);
-		}
-	}
-	return results;
+	const tasks = configs
+		.filter((loaded) => shouldRun(loaded.kind, only))
+		.map((loaded) =>
+			runTechStackChecks(loaded.spec, {
+				baseDir: baseDirFor(loaded.kind, cwd, home),
+				home,
+				noCache,
+				scope: loaded.kind,
+			}),
+		);
+	return (await Promise.all(tasks)).flat();
 }
 
 const program = new Command();
@@ -95,17 +83,17 @@ program
 			cmdOptions: {
 				cache?: boolean;
 				json?: boolean;
-				projectOnly?: boolean;
 				machineOnly?: boolean;
+				projectOnly?: boolean;
 			},
 			cmd: Command,
 		) => {
-			const base = baseOptions(cmd);
+			const config = cmd.optsWithGlobals<{ config?: string }>().config;
 			try {
 				const only = scopeOf(cmdOptions);
-				const configs = await loadConfigs(base.config);
+				const configs = config === undefined ? await discoverConfigs() : [await loadConfig(config)];
 				const results = await runAllChecks(configs, only, cmdOptions.cache === false);
-				if (cmdOptions.json === true) {
+				if (cmdOptions.json) {
 					const failed = results.filter((item) => !item.ok);
 					console.log(
 						JSON.stringify(
@@ -148,16 +136,16 @@ program
 				cache?: boolean;
 				diff?: boolean;
 				dryRun?: boolean;
-				projectOnly?: boolean;
 				machineOnly?: boolean;
+				projectOnly?: boolean;
 			},
 			cmd: Command,
 		) => {
-			const base = baseOptions(cmd);
+			const config = cmd.optsWithGlobals<{ config?: string }>().config;
 			const showDiff = cmdOptions.diff !== false;
 			try {
 				const only = scopeOf(cmdOptions);
-				const configs = await loadConfigs(base.config);
+				const configs = config === undefined ? await discoverConfigs() : [await loadConfig(config)];
 				const results = await runAllChecks(configs, only, cmdOptions.cache === false);
 				const failed = results.filter((item) => !item.ok);
 				const fixable = failed.filter((item) => item.fixable);
@@ -168,92 +156,23 @@ program
 					process.exit(0);
 				}
 
-				for (const item of unfixable) {
-					console.error(`✗ ${item.id} cannot be auto-fixed.`);
-					console.error(`    target   : ${item.target}`);
-					console.error(`    expected : ${item.expected}`);
-					console.error(`    actual   : ${item.actual}`);
-					if (item.hint) {
-						console.error(`    fix manually: ${item.hint}`);
-					}
-				}
+				reportUnfixable(unfixable);
 
 				if (fixable.length === 0) {
 					process.exit(1);
 				}
 
-				if (showDiff) {
-					const rendered = await Promise.all(
-						fixable.map(async (item) => {
-							const actual = await readActualContent(item);
-							return `\ndiff ${item.id} (${item.target})\n${renderDiff("actual", "expected", actual, desiredContent(item))}`;
-						}),
-					);
-					for (const text of rendered) {
-						console.log(text);
-					}
-				}
-
-				let selected: CheckResult[] = fixable;
-				if (cmdOptions.all !== true) {
-					if (cmdOptions.dryRun === true) {
-						console.log(`\nDry run: ${fixable.length} item(s) would be fixed.`);
-						for (const item of fixable) {
-							console.log(`  - ${item.id} (${item.target})`);
-						}
-						process.exit(1);
-					}
-					if (!process.stdin.isTTY) {
-						console.error("Not a TTY: re-run with --all to apply fixes non-interactively.");
-						process.exit(2);
-					}
-					prompts.intro("Select fixes to apply (space to toggle, enter to confirm).");
-					const choice = await prompts.multiselect({
-						message: "Pick items to fix.",
-						options: [
-							{ label: `Select all (${fixable.length} items)`, value: "__all" },
-							...fixable.map((item) => ({
-								hint: item.target,
-								label: item.id,
-								value: item.id,
-							})),
-						],
-						required: false,
-					});
-					if (prompts.isCancel(choice) || choice.length === 0) {
-						prompts.outro("No fixes applied.");
-						process.exit(1);
-					}
-					const ids = new Set(choice as string[]);
-					if (ids.has("__all")) {
-						selected = fixable;
-					} else {
-						selected = fixable.filter((item) => ids.has(item.id));
-					}
-					if (selected.length === 0) {
-						prompts.outro("No fixes applied.");
-						process.exit(1);
-					}
-				} else if (cmdOptions.dryRun === true) {
-					console.log(`Dry run: ${fixable.length} item(s) would be fixed.`);
-					for (const item of fixable) {
-						console.log(`  - ${item.id} (${item.target})`);
-					}
+				if (cmdOptions.dryRun) {
+					printDryRun(fixable);
 					process.exit(1);
 				}
 
-				let applied = 0;
-				for (const item of selected) {
-					try {
-						await applyFix(item);
-						applied += 1;
-						console.log(`✓ fixed ${item.id}`);
-					} catch (error) {
-						console.error(
-							`✗ not fixed ${item.id}: ${error instanceof Error ? error.message : String(error)}`,
-						);
-					}
+				if (showDiff) {
+					await renderFixDiffs(fixable);
 				}
+
+				const selected = cmdOptions.all ? fixable : await promptForSelection(fixable);
+				const applied = await applySelected(selected);
 
 				const rerun = await runAllChecks(configs, only, cmdOptions.cache === false);
 				const remaining = rerun.filter((item) => !item.ok);
