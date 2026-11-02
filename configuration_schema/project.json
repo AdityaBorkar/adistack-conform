@@ -1,10 +1,9 @@
 {
-	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"type": "object",
 	"properties": {
 		"$schema": {
-			"description": "JSON Schema reference, e.g. ./configuration_schema/project.json.",
-			"type": "string"
+			"type": "string",
+			"description": "JSON Schema reference, e.g. ./configuration_schema/project.json."
 		},
 		"blueprint": {
 			"type": "string",
@@ -12,36 +11,36 @@
 			"description": "Project blueprint name, e.g. cli-app."
 		},
 		"exclude": {
-			"default": [],
-			"description": "Preset names dropped from the effective set.",
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
-			}
+			},
+			"description": "Preset names dropped from the effective set.",
+			"default": []
 		},
 		"presets": {
-			"default": [],
-			"description": "Extra preset names merged over the blueprint.",
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
-			}
+			},
+			"description": "Extra preset names merged over the blueprint.",
+			"default": []
 		},
 		"source": {
 			"type": "object",
 			"properties": {
 				"branch": {
-					"description": "Git branch of the tech-stack repo (defaults to ref).",
 					"type": "string",
-					"minLength": 1
+					"minLength": 1,
+					"description": "Git branch of the tech-stack repo (defaults to ref)."
 				},
 				"ref": {
-					"default": "main",
-					"description": "Git branch, tag, or commit.",
 					"type": "string",
-					"minLength": 1
+					"minLength": 1,
+					"description": "Git branch, tag, or commit.",
+					"default": "main"
 				},
 				"repo": {
 					"type": "string",
@@ -49,16 +48,14 @@
 					"description": "GitHub owner/repo holding blueprints and presets."
 				},
 				"type": {
-					"type": "string",
 					"const": "github",
 					"description": "Preset source; only github is supported."
 				}
 			},
-			"required": ["ref", "repo", "type"],
-			"additionalProperties": false,
+			"required": ["repo", "type"],
 			"description": "Tech-stack repo holding blueprints and presets."
 		}
 	},
-	"required": ["blueprint", "exclude", "presets", "source"],
-	"additionalProperties": false
+	"required": ["blueprint", "source"],
+	"$schema": "https://json-schema.org/draft/2020-12/schema"
 }

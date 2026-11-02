@@ -1,10 +1,9 @@
 {
-	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"type": "object",
 	"properties": {
 		"$schema": {
-			"description": "JSON Schema reference, e.g. registry.json.",
-			"type": "string"
+			"type": "string",
+			"description": "JSON Schema reference, e.g. registry.json."
 		},
 		"machine": {
 			"type": "object",
@@ -27,7 +26,6 @@
 				}
 			},
 			"required": ["blueprints", "presets"],
-			"additionalProperties": false,
 			"description": "Machine blueprints and presets locations."
 		},
 		"project": {
@@ -51,10 +49,9 @@
 				}
 			},
 			"required": ["blueprints", "presets"],
-			"additionalProperties": false,
 			"description": "Project blueprints and presets locations."
 		}
 	},
 	"required": ["machine", "project"],
-	"additionalProperties": false
+	"$schema": "https://json-schema.org/draft/2020-12/schema"
 }

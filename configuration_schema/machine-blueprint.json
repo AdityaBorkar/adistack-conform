@@ -1,23 +1,22 @@
 {
-	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"type": "object",
 	"properties": {
 		"$schema": {
-			"description": "JSON Schema reference, e.g. machine-blueprint.json.",
-			"type": "string"
+			"type": "string",
+			"description": "JSON Schema reference, e.g. machine-blueprint.json."
 		},
 		"description": {
-			"description": "Human-readable blueprint description.",
-			"type": "string"
+			"type": "string",
+			"description": "Human-readable blueprint description."
 		},
 		"exclude": {
-			"default": [],
-			"description": "Preset names dropped from the effective set.",
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
-			}
+			},
+			"description": "Preset names dropped from the effective set.",
+			"default": []
 		},
 		"name": {
 			"type": "string",
@@ -25,20 +24,19 @@
 			"description": "Display name for the machine blueprint."
 		},
 		"presets": {
-			"default": [],
-			"description": "Preset names included by this blueprint.",
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
-			}
+			},
+			"description": "Preset names included by this blueprint.",
+			"default": []
 		},
 		"type": {
-			"type": "string",
 			"const": "machine.blueprint",
 			"description": "Discriminant for machine blueprints."
 		}
 	},
-	"required": ["exclude", "name", "presets", "type"],
-	"additionalProperties": false
+	"required": ["name", "type"],
+	"$schema": "https://json-schema.org/draft/2020-12/schema"
 }

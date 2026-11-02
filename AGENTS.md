@@ -2,7 +2,7 @@
 
 ## Stack
 
-Bun-only TypeScript CLI (compiled binary in `.output/` + npm `adistack-conform` bin) + Commander + @clack/prompts + Zod v4 + oxlint/oxfmt + tsrs + knip. No CI, no root README, no test runner (`tests/` is empty).
+Bun-only TypeScript CLI (compiled binary in `.output/` + npm `adistack-conform` bin) + Commander + @clack/prompts + Valibot + oxlint/oxfmt + tsrs + knip. No CI, no root README, no test runner (`tests/` is empty).
 
 ## Commands
 
@@ -25,7 +25,7 @@ bun run gen:json-schema  # regenerate configuration_schema/ from src/schemas/*
 ## Layout
 
 - `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/techstack.ts`, `src/diff.ts`, `src/output.ts` — flat modules, no subdirectories in use.
-- `src/schemas/*` — Zod v4 source of truth (`import * as z from "zod"`). `configuration_schema/*.json` is generated — never hand-edit, it is overwritten by `build` / `gen:json-schema`.
+- `src/schemas/*` — Valibot source of truth (`import * as v from "valibot"`). `configuration_schema/*.json` is generated — never hand-edit, it is overwritten by `build` / `gen:json-schema`.
 - This repo dogfoods itself: `conform.project.json` (`cli-app` blueprint) and `conform.machine.json` (`main` blueprint) both track `AdityaBorkar/tech-stack@main`.
 
 ## CLI (`adistack-conform [--config <path>]`)

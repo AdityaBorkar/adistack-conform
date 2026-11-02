@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import * as z from "zod";
+import { toJsonSchema } from "@valibot/to-json-schema";
 
 import { MachineBlueprintSchema } from "#/schemas/machine-blueprint.js";
 import { MachinePresetManifestSchema } from "#/schemas/machine-preset.js";
@@ -28,7 +28,8 @@ const targets = {
 await Promise.all(
 	Object.entries(targets).map(async ([file, schema]) => {
 		const outPath = join(outDir, file);
-		const jsonSchema = z.toJSONSchema(schema);
+		// JSON Schema patterns carry no flags: strip `u` like zod did (warns per regex).
+		const jsonSchema = toJsonSchema(schema, { errorMode: "warn", target: "draft-2020-12" });
 		await Bun.write(outPath, `${JSON.stringify(jsonSchema, null, 2)}\n`);
 		console.log(`Wrote ${outPath}`);
 	}),

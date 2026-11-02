@@ -1,5 +1,3 @@
-import { difference, union } from "es-toolkit";
-
 import type { CheckResult, CheckScope } from "#/checks.js";
 import type { TechStackSpec } from "#/config.js";
 import { ensureGithubRepo } from "#/techstack-cache.js";
@@ -43,8 +41,11 @@ async function resolveWantedNames(
 		blueprintExcludes = blueprint.exclude;
 		blueprintPresets = blueprint.presets;
 	}
-	const wanted = union(blueprintPresets, spec.presets);
-	const names = difference(wanted, [...blueprintExcludes, ...spec.exclude]).toSorted();
+	const wanted = new Set([...blueprintPresets, ...spec.presets]);
+	for (const excluded of [...blueprintExcludes, ...spec.exclude]) {
+		wanted.delete(excluded);
+	}
+	const names = [...wanted].toSorted();
 	const unknown = names.filter((name) => !registry.has(name));
 	if (unknown.length > 0) {
 		const shown = unknown.slice(0, MAX_LIST_SHOWN).join(", ");

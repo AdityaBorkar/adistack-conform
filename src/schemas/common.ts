@@ -1,35 +1,50 @@
-import * as z from "zod";
+import * as v from "valibot";
 
-export const TechStackSourceSchema = z.object({
-	branch: z
-		.string()
-		.min(1)
-		.optional()
-		.describe("Git branch of the tech-stack repo (defaults to ref)."),
-	ref: z.string().min(1).default("main").describe("Git branch, tag, or commit."),
-	repo: z
-		.string()
-		.regex(/^[^/\s]+\/[^/\s]+$/u)
-		.describe("GitHub owner/repo holding blueprints and presets."),
-	type: z.literal("github").describe("Preset source; only github is supported."),
+export const TechStackSourceSchema = v.object({
+	branch: v.optional(
+		v.pipe(
+			v.string(),
+			v.minLength(1),
+			v.description("Git branch of the tech-stack repo (defaults to ref)."),
+		),
+	),
+	ref: v.optional(
+		v.pipe(v.string(), v.minLength(1), v.description("Git branch, tag, or commit.")),
+		"main",
+	),
+	repo: v.pipe(
+		v.string(),
+		v.regex(/^[^/\s]+\/[^/\s]+$/u),
+		v.description("GitHub owner/repo holding blueprints and presets."),
+	),
+	type: v.pipe(v.literal("github"), v.description("Preset source; only github is supported.")),
 });
 
 export function makeConfigSchema(options: {
 	blueprintDescription: string;
 	schemaDescription: string;
 }) {
-	return z.object({
-		$schema: z.string().optional().describe(options.schemaDescription),
-		blueprint: z.string().min(1).describe(options.blueprintDescription),
-		exclude: z
-			.array(z.string().min(1))
-			.default([])
-			.describe("Preset names dropped from the effective set."),
-		presets: z
-			.array(z.string().min(1))
-			.default([])
-			.describe("Extra preset names merged over the blueprint."),
-		source: TechStackSourceSchema.describe("Tech-stack repo holding blueprints and presets."),
+	return v.object({
+		$schema: v.optional(v.pipe(v.string(), v.description(options.schemaDescription))),
+		blueprint: v.pipe(v.string(), v.minLength(1), v.description(options.blueprintDescription)),
+		exclude: v.optional(
+			v.pipe(
+				v.array(v.pipe(v.string(), v.minLength(1))),
+				v.description("Preset names dropped from the effective set."),
+			),
+			() => [],
+		),
+		presets: v.optional(
+			v.pipe(
+				v.array(v.pipe(v.string(), v.minLength(1))),
+				v.description("Extra preset names merged over the blueprint."),
+			),
+			() => [],
+		),
+		source: v.pipe(
+			TechStackSourceSchema,
+			v.description("Tech-stack repo holding blueprints and presets."),
+		),
 	});
 }
 
@@ -40,20 +55,23 @@ export function makePresetManifestSchema(options: {
 	typeDescription: string;
 	typeLiteral: string;
 }) {
-	const fileSchema = z.object({
-		name: z.string().min(1).describe("File name within the preset."),
-		path: z.string().min(1).describe(options.pathDescription),
-		target: z.string().min(1).describe("Enforcement target."),
+	const fileSchema = v.object({
+		name: v.pipe(v.string(), v.minLength(1), v.description("File name within the preset.")),
+		path: v.pipe(v.string(), v.minLength(1), v.description(options.pathDescription)),
+		target: v.pipe(v.string(), v.minLength(1), v.description("Enforcement target.")),
 	});
-	const packageSchema = z.object({
-		files: z.array(fileSchema).min(1).describe("Files belonging to this preset."),
-		name: z.string().min(1).describe("Preset name."),
-		reference: z.string().min(1).describe("Repo-relative preset directory."),
+	const packageSchema = v.object({
+		files: v.pipe(
+			v.array(fileSchema),
+			v.minLength(1),
+			v.description("Files belonging to this preset."),
+		),
+		name: v.pipe(v.string(), v.minLength(1), v.description("Preset name.")),
 	});
-	return z.object({
-		$schema: z.string().optional().describe(options.schemaDescription),
-		packages: z.array(packageSchema).describe(options.packagesDescription),
-		type: z.literal(options.typeLiteral).describe(options.typeDescription),
+	return v.object({
+		$schema: v.optional(v.pipe(v.string(), v.description(options.schemaDescription))),
+		packages: v.pipe(v.array(packageSchema), v.description(options.packagesDescription)),
+		type: v.pipe(v.literal(options.typeLiteral), v.description(options.typeDescription)),
 	});
 }
 
@@ -63,31 +81,41 @@ export function makeBlueprintSchema(options: {
 	typeDescription: string;
 	typeLiteral: string;
 }) {
-	return z.object({
-		$schema: z.string().optional().describe(options.schemaDescription),
-		description: z.string().optional().describe("Human-readable blueprint description."),
-		exclude: z
-			.array(z.string().min(1))
-			.default([])
-			.describe("Preset names dropped from the effective set."),
-		name: z.string().min(1).describe(options.nameDescription),
-		presets: z
-			.array(z.string().min(1))
-			.default([])
-			.describe("Preset names included by this blueprint."),
-		type: z.literal(options.typeLiteral).describe(options.typeDescription),
+	return v.object({
+		$schema: v.optional(v.pipe(v.string(), v.description(options.schemaDescription))),
+		description: v.optional(
+			v.pipe(v.string(), v.description("Human-readable blueprint description.")),
+		),
+		exclude: v.optional(
+			v.pipe(
+				v.array(v.pipe(v.string(), v.minLength(1))),
+				v.description("Preset names dropped from the effective set."),
+			),
+			() => [],
+		),
+		name: v.pipe(v.string(), v.minLength(1), v.description(options.nameDescription)),
+		presets: v.optional(
+			v.pipe(
+				v.array(v.pipe(v.string(), v.minLength(1))),
+				v.description("Preset names included by this blueprint."),
+			),
+			() => [],
+		),
+		type: v.pipe(v.literal(options.typeLiteral), v.description(options.typeDescription)),
 	});
 }
 
 export function parseOrThrow<T>(
-	schema: z.ZodType<T>,
+	schema: v.GenericSchema<unknown, T>,
 	path: string,
 	parsed: unknown,
 	label: string,
 ): T {
-	const result = schema.safeParse(parsed);
+	const result = v.safeParse(schema, parsed);
 	if (!result.success) {
-		throw new Error(`Invalid ${label} in ${path}:\n${z.prettifyError(result.error)}`);
+		throw new Error(
+			`Invalid ${label} in ${path}:\n${v.summarize(result.issues as [v.BaseIssue<unknown>, ...v.BaseIssue<unknown>[]])}`,
+		);
 	}
-	return result.data;
+	return result.output;
 }

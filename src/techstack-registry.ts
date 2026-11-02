@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import type * as z from "zod";
+import type * as v from "valibot";
 
 import type { CheckScope } from "#/checks.js";
 import { parseOrThrow } from "#/schemas/common.js";
@@ -12,9 +12,9 @@ import { RegistrySchema } from "#/schemas/registry.js";
 import { readJsonFile } from "#/utils/fs.js";
 
 export type PresetPackage =
-	| z.infer<typeof MachinePresetManifestSchema>["packages"][number]
-	| z.infer<typeof ProjectPresetManifestSchema>["packages"][number];
-export type RegistryDocument = z.infer<typeof RegistrySchema>;
+	| v.InferOutput<typeof MachinePresetManifestSchema>["packages"][number]
+	| v.InferOutput<typeof ProjectPresetManifestSchema>["packages"][number];
+export type RegistryDocument = v.InferOutput<typeof RegistrySchema>;
 
 export const MAX_LIST_SHOWN = 10;
 

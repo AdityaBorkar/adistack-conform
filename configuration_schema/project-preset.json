@@ -1,10 +1,9 @@
 {
-	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"type": "object",
 	"properties": {
 		"$schema": {
-			"description": "JSON Schema reference, e.g. project-preset.json.",
-			"type": "string"
+			"type": "string",
+			"description": "JSON Schema reference, e.g. project-preset.json."
 		},
 		"packages": {
 			"type": "array",
@@ -12,7 +11,6 @@
 				"type": "object",
 				"properties": {
 					"files": {
-						"minItems": 1,
 						"type": "array",
 						"items": {
 							"type": "object",
@@ -33,33 +31,26 @@
 									"description": "Enforcement target."
 								}
 							},
-							"required": ["name", "path", "target"],
-							"additionalProperties": false
+							"required": ["name", "path", "target"]
 						},
+						"minItems": 1,
 						"description": "Files belonging to this preset."
 					},
 					"name": {
 						"type": "string",
 						"minLength": 1,
 						"description": "Preset name."
-					},
-					"reference": {
-						"type": "string",
-						"minLength": 1,
-						"description": "Repo-relative preset directory."
 					}
 				},
-				"required": ["files", "name", "reference"],
-				"additionalProperties": false
+				"required": ["files", "name"]
 			},
 			"description": "All project presets."
 		},
 		"type": {
-			"type": "string",
 			"const": "project.presets",
 			"description": "Discriminant for the project presets manifest."
 		}
 	},
 	"required": ["packages", "type"],
-	"additionalProperties": false
+	"$schema": "https://json-schema.org/draft/2020-12/schema"
 }
