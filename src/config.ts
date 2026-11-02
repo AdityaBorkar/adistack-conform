@@ -1,9 +1,9 @@
 import { basename, dirname, join } from "node:path";
 
-import { readJsonFile, resolveConfigPath } from "#/fs.js";
 import { parseOrThrow } from "#/schemas/common.js";
 import { MachineSchema } from "#/schemas/machine.js";
 import { ProjectSchema } from "#/schemas/project.js";
+import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
 
 export interface TechStackSpec {
 	blueprint?: string;

@@ -1,0 +1,17 @@
+{
+	"description": "Me check repo. Repo good? Me say yes or no.",
+	"pages": [
+		"---Start---",
+		"quick-start",
+		"concepts",
+		"configuration",
+		"cli",
+		"monorepo",
+		"---Reference---",
+		"blueprints",
+		"presets",
+		"authoring",
+		"api"
+	],
+	"title": "@adistack/conform"
+}

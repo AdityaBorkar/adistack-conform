@@ -2,7 +2,7 @@ import * as prompts from "@clack/prompts";
 
 import type { CheckResult } from "#/checks.js";
 import { applyFix } from "#/checks.js";
-import { errorMessage } from "#/fs.js";
+import { errorMessage } from "#/utils/fs.js";
 
 export type PromptOutcome =
 	| { kind: "cancelled" }

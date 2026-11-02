@@ -4,13 +4,13 @@ import { glob } from "tinyglobby";
 import type * as z from "zod";
 
 import type { CheckScope } from "#/checks.js";
-import { readJsonFile } from "#/fs.js";
 import { parseOrThrow } from "#/schemas/common.js";
 import { MachineBlueprintSchema } from "#/schemas/machine-blueprint.js";
 import { MachinePresetManifestSchema } from "#/schemas/machine-preset.js";
 import { ProjectBlueprintSchema } from "#/schemas/project-blueprint.js";
 import { ProjectPresetManifestSchema } from "#/schemas/project-preset.js";
 import { RegistrySchema } from "#/schemas/registry.js";
+import { readJsonFile } from "#/utils/fs.js";
 
 export type PresetPackage =
 	| z.infer<typeof MachinePresetManifestSchema>["packages"][number]

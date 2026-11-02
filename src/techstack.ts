@@ -2,7 +2,6 @@ import { difference, union } from "es-toolkit";
 
 import type { CheckResult, CheckScope } from "#/checks.js";
 import type { TechStackSpec } from "#/config.js";
-import { resolveTargetPath } from "#/fs.js";
 import { ensureGithubRepo } from "#/techstack-cache.js";
 import { checkPresetFile, classifyTarget, skippedForTarget } from "#/techstack-check.js";
 import type { PresetPackage, RegistryDocument } from "#/techstack-registry.js";
@@ -12,6 +11,7 @@ import {
 	loadRegistry,
 	loadRegistryDocument,
 } from "#/techstack-registry.js";
+import { resolveTargetPath } from "#/utils/fs.js";
 
 export interface TechStackRunOptions {
 	baseDir: string;

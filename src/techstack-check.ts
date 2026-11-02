@@ -2,7 +2,7 @@ import { join } from "node:path";
 
 import type { CheckBase, CheckResult, CheckScope } from "#/checks.js";
 import { failFixable, failManual, pass, skipped } from "#/checks.js";
-import { readFileSafe } from "#/fs.js";
+import { readFileSafe } from "#/utils/fs.js";
 
 export type ClassifiedTarget = { reason: string; type: "skip" } | { path: string; type: "path" };
 

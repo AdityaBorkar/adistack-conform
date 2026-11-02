@@ -7,7 +7,8 @@ import { partitionResults } from "#/checks.js";
 import type { LoadedConfig } from "#/config.js";
 import { discoverConfigs, loadConfig } from "#/config.js";
 import { applySelected, resolveSelection } from "#/fix.js";
-import { defaultHome, errorMessage } from "#/fs.js";
+import { runTechStackChecks } from "#/techstack.js";
+import { defaultHome, errorMessage } from "#/utils/fs.js";
 import {
 	outroAllPassed,
 	printDryRun,
@@ -16,8 +17,7 @@ import {
 	printWarning,
 	renderFixDiffs,
 	reportUnfixable,
-} from "#/output.js";
-import { runTechStackChecks } from "#/techstack.js";
+} from "#/utils/output.js";
 
 const VERSION = "0.1.0";
 

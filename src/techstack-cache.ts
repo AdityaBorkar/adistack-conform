@@ -5,7 +5,7 @@ import { ensureDir, move, pathExists, remove } from "fs-extra";
 import { x as tarExtract } from "tar";
 
 import type { TechStackSpec } from "#/config.js";
-import { errorMessage } from "#/fs.js";
+import { errorMessage } from "#/utils/fs.js";
 
 export interface CachedRepo {
 	dir: string;

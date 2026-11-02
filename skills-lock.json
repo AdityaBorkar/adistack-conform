@@ -1,0 +1,11 @@
+{
+	"version": 1,
+	"skills": {
+		"write-adistack-docs": {
+			"source": "adityaborkar/skills",
+			"sourceType": "github",
+			"skillPath": "adistack/write-adistack-docs/SKILL.md",
+			"computedHash": "195ef7527433eb0ee4362139c1f90622707a2fa6a93ecc91c31831a33faacd57"
+		}
+	}
+}
