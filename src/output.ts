@@ -22,8 +22,8 @@ export function formatResult(result: CheckResult): string[] {
 		if (result.hint) {
 			lines.push(`    hint     : ${result.hint}`);
 		}
-		if (result.fixable) {
-			lines.push(`    fix      : overwrite ${result.fix?.filePath ?? result.target}`);
+		if (result.fixable && result.fix !== undefined) {
+			lines.push(`    fix      : overwrite ${result.fix.filePath}`);
 		}
 	}
 	return lines;

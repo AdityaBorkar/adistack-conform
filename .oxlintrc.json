@@ -10,14 +10,7 @@
 		"es2022": true,
 		"node": true
 	},
-	"overrides": [
-		{
-			"files": ["src/fix.ts", "src/index.ts"],
-			"rules": {
-				"no-await-in-loop": "off"
-			}
-		}
-	],
+	"overrides": [],
 	"plugins": ["eslint", "import", "node", "oxc", "promise", "typescript", "unicorn"],
 	"rules": {
 		"import/max-dependencies": "off",

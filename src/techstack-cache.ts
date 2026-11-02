@@ -5,6 +5,7 @@ import { ensureDir, move, pathExists, remove } from "fs-extra";
 import { x as tarExtract } from "tar";
 
 import type { TechStackSpec } from "#/config.js";
+import { errorMessage } from "#/fs.js";
 
 export interface CachedRepo {
 	dir: string;
@@ -13,6 +14,8 @@ export interface CachedRepo {
 }
 
 const FETCH_TIMEOUT_MS = 30_000;
+
+const inflight = new Map<string, Promise<CachedRepo>>();
 
 function safeRef(ref: string): string {
 	const safe = ref.replaceAll(/[^A-Za-z0-9._-]+/gu, "_");
@@ -62,10 +65,9 @@ async function downloadTarball(id: string, ref: string, tmpPath: string): Promis
 			signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 		});
 	} catch (error) {
-		throw new Error(
-			`Cannot download tech-stack ${id}@${ref}: ${error instanceof Error ? error.message : String(error)}`,
-			{ cause: error },
-		);
+		throw new Error(`Cannot download tech-stack ${id}@${ref}: ${errorMessage(error)}`, {
+			cause: error,
+		});
 	}
 	if (!response.ok) {
 		if (response.status === 404) {
@@ -87,6 +89,35 @@ async function extractTarball(archive: string, dest: string): Promise<void> {
 	await tarExtract({ cwd: dest, file: archive, strip: 1 });
 }
 
+async function fetchAndInstall(
+	spec: TechStackSpec,
+	dir: string,
+	metaPath: string,
+	tmpArchive: string,
+	stage: string,
+): Promise<CachedRepo> {
+	try {
+		await downloadTarball(spec.id, spec.ref, tmpArchive);
+		await remove(stage);
+		await ensureDir(stage);
+		await extractTarball(tmpArchive, stage);
+		await ensureDir(join(dir, ".."));
+		await move(stage, dir, { overwrite: true });
+		await Bun.write(
+			metaPath,
+			`${JSON.stringify({ fetchedAt: new Date().toISOString(), id: spec.id, ref: spec.ref }, null, 2)}\n`,
+		);
+		return { dir, stale: false };
+	} catch (error) {
+		if (await pathExists(metaPath)) {
+			return { dir, stale: true, warning: errorMessage(error) };
+		}
+		throw error;
+	} finally {
+		await Promise.allSettled([remove(tmpArchive), remove(stage)]);
+	}
+}
+
 export async function ensureGithubRepo(spec: TechStackSpec, noCache: boolean): Promise<CachedRepo> {
 	const { owner, repo } = splitId(spec.id);
 	const dir = cacheDirFor(owner, repo, spec.ref);
@@ -101,27 +132,25 @@ export async function ensureGithubRepo(spec: TechStackSpec, noCache: boolean): P
 			// Corrupt marker — fall through to re-download.
 		}
 	}
-	const tmpArchive = `${dir}.tarball`;
-	const stage = `${dir}.stage`;
-	try {
-		await downloadTarball(spec.id, spec.ref, tmpArchive);
-		await remove(stage);
-		await ensureDir(stage);
-		await extractTarball(tmpArchive, stage);
-		await ensureDir(join(dir, ".."));
-		await move(stage, dir, { overwrite: true });
-		await Bun.write(
-			metaPath,
-			`${JSON.stringify({ fetchedAt: new Date().toISOString(), id: spec.id, ref: spec.ref }, null, 2)}\n`,
-		);
-		return { dir, stale: false };
-	} catch (error) {
-		const detail = error instanceof Error ? error.message : String(error);
-		if (await pathExists(metaPath)) {
-			return { dir, stale: true, warning: detail };
-		}
-		throw error;
-	} finally {
-		await Promise.all([remove(tmpArchive), remove(stage)]);
+	const key = `${spec.id}@${spec.ref}:${noCache ? "fresh" : "cached"}`;
+	const pending = inflight.get(key);
+	if (pending !== undefined) {
+		return pending;
 	}
+	// Unique scratch paths per attempt so parallel project+machine runs sharing
+	// the same repo dir cannot delete each other's stage.
+	const nonce = `${process.pid}.${Math.random().toString(36).slice(2)}`;
+	const task = fetchAndInstall(
+		spec,
+		dir,
+		metaPath,
+		`${dir}.tarball.${nonce}`,
+		`${dir}.stage.${nonce}`,
+	).finally(() => {
+		if (inflight.get(key) === task) {
+			inflight.delete(key);
+		}
+	});
+	inflight.set(key, task);
+	return task;
 }

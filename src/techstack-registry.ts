@@ -4,13 +4,17 @@ import { glob } from "tinyglobby";
 import * as z from "zod";
 
 import type { CheckScope } from "#/checks.js";
+import { readJsonFile } from "#/fs.js";
+import { parseOrThrow } from "#/schemas/common.js";
 import { MachineBlueprintSchema } from "#/schemas/machine-blueprint.js";
 import { MachinePresetManifestSchema } from "#/schemas/machine-preset.js";
 import { ProjectBlueprintSchema } from "#/schemas/project-blueprint.js";
 import { ProjectPresetManifestSchema } from "#/schemas/project-preset.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 
-export type PresetPackage = z.infer<typeof ProjectPresetManifestSchema>["packages"][number];
+export type PresetPackage =
+	| z.infer<typeof MachinePresetManifestSchema>["packages"][number]
+	| z.infer<typeof ProjectPresetManifestSchema>["packages"][number];
 export type RegistryDocument = z.infer<typeof RegistrySchema>;
 
 function schemasFor(scope: CheckScope) {
@@ -21,21 +25,8 @@ function schemasFor(scope: CheckScope) {
 
 export async function loadRegistryDocument(repoRoot: string): Promise<RegistryDocument> {
 	const path = join(repoRoot, "registry.json");
-	const file = Bun.file(path);
-	if (!(await file.exists())) {
-		throw new Error(`tech-stack registry not found: ${path}`);
-	}
-	let parsed: unknown;
-	try {
-		parsed = await file.json();
-	} catch (error) {
-		throw new Error(`Invalid tech-stack registry in ${path}`, { cause: error });
-	}
-	const result = RegistrySchema.safeParse(parsed);
-	if (!result.success) {
-		throw new Error(`Invalid tech-stack registry in ${path}:\n${z.prettifyError(result.error)}`);
-	}
-	return result.data;
+	const parsed = await readJsonFile(path, "tech-stack registry");
+	return parseOrThrow(RegistrySchema, path, parsed, "tech-stack registry");
 }
 
 export async function loadRegistry(
@@ -47,26 +38,18 @@ export async function loadRegistry(
 	const manifests = await Promise.all(
 		registry[scope].presets.map(async (dir) => {
 			const manifestPath = join(repoRoot, dir, "manifest.json");
-			const manifestFile = Bun.file(manifestPath);
-			if (!(await manifestFile.exists())) {
-				throw new Error(`tech-stack preset manifest not found: ${manifestPath}`);
-			}
-			try {
-				return { manifestPath, parsed: (await manifestFile.json()) as unknown };
-			} catch (error) {
-				throw new Error(`Invalid tech-stack preset manifest in ${manifestPath}`, { cause: error });
-			}
+			const parsed = await readJsonFile(manifestPath, "tech-stack preset manifest");
+			return {
+				manifestPath,
+				parsed,
+			};
 		}),
 	);
 	const byName = new Map<string, PresetPackage>();
 	for (const { manifestPath, parsed } of manifests) {
-		const manifest = preset.safeParse(parsed);
-		if (!manifest.success) {
-			throw new Error(
-				`Invalid tech-stack preset manifest in ${manifestPath}:\n${z.prettifyError(manifest.error)}`,
-			);
-		}
-		for (const pkg of manifest.data.packages) {
+		const manifest = parseOrThrow(preset, manifestPath, parsed, "tech-stack preset manifest");
+		for (const pkg of manifest.packages) {
+			// First manifest wins; registry order is the source of truth.
 			if (!byName.has(pkg.name)) {
 				byName.set(pkg.name, pkg);
 			}
@@ -108,18 +91,13 @@ export async function loadBlueprint(
 	const hit = candidates.find((candidate) => candidate.exists);
 	if (hit === undefined) {
 		const available = await listBlueprints(repoRoot, scope, registry);
-		const hint = available.length > 0 ? ` Available blueprints: ${available.join(", ")}.` : "";
-		throw new Error(`Blueprint "${name}" not found in the tech-stack repo.${hint}`);
+		const hint = available.length > 0 ? ` Available blueprints: ${available.join(", ")}. ` : "";
+		const truncated =
+			available.length > 10
+				? ` Available blueprints: ${available.slice(0, 10).join(", ")} (+${available.length - 10} more).`
+				: hint;
+		throw new Error(`Blueprint "${name}" not found in the tech-stack repo.${truncated}`);
 	}
-	let parsed: unknown;
-	try {
-		parsed = await Bun.file(hit.path).json();
-	} catch (error) {
-		throw new Error(`Invalid blueprint in ${hit.path}`, { cause: error });
-	}
-	const result = blueprint.safeParse(parsed);
-	if (!result.success) {
-		throw new Error(`Invalid blueprint in ${hit.path}:\n${z.prettifyError(result.error)}`);
-	}
-	return result.data;
+	const parsed = await readJsonFile(hit.path, "Blueprint");
+	return parseOrThrow(blueprint, hit.path, parsed, "blueprint");
 }

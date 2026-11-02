@@ -1,19 +1,22 @@
 import { join } from "node:path";
 
-import type { CheckResult, CheckScope } from "#/checks.js";
+import type { CheckBase, CheckResult, CheckScope } from "#/checks.js";
 import { failFixable, failManual, pass, skipped } from "#/checks.js";
+import { errorMessage } from "#/fs.js";
 
 export type ClassifiedTarget = { reason: string; type: "skip" } | { path: string; type: "path" };
+
+const WINDOWS_ENV_PATTERN = /%[A-Za-z_][A-Za-z0-9_]*%/u;
 
 export function classifyTarget(target: string, scope: CheckScope): ClassifiedTarget {
 	if (target.startsWith("docs:")) {
 		return { reason: "docs-only, nothing to enforce", type: "skip" };
 	}
-	const [token = ""] = target.split(/\s/u);
+	const [token = ""] = target.split(/\s+/u);
 	if (token === "~" || token.startsWith("~/") || token.startsWith("/")) {
 		return { path: token, type: "path" };
 	}
-	if (token.includes("%")) {
+	if (WINDOWS_ENV_PATTERN.test(token)) {
 		return { reason: "Windows-only target", type: "skip" };
 	}
 	if (scope === "project" && (token.startsWith("./") || token.startsWith("../"))) {
@@ -27,24 +30,16 @@ function short(value: string, max = 160): string {
 	return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-function isExampleFile(presetRelPath: string, presetFileName: string): boolean {
-	return presetRelPath.endsWith(".example") || presetFileName.endsWith(".example");
+function isExampleFile(presetRelPath: string): boolean {
+	return presetRelPath.endsWith(".example");
 }
-
-type PresetBase = {
-	id: string;
-	kind: "preset";
-	scope: CheckScope;
-	source: string;
-	target: string;
-};
 
 function baseFor(
 	packageName: string,
 	presetFileName: string,
 	presetTarget: string,
 	scope: CheckScope,
-): PresetBase {
+): CheckBase {
 	return {
 		id: `preset:${packageName}:${presetFileName}`,
 		kind: "preset",
@@ -55,10 +50,10 @@ function baseFor(
 }
 
 async function checkExample(
-	base: PresetBase,
+	base: CheckBase,
 	presetRelPath: string,
 	targetPath: string,
-): Promise<CheckResult | undefined> {
+): Promise<CheckResult> {
 	const targetFile = Bun.file(targetPath);
 	if (await targetFile.exists()) {
 		return pass(base, "exists", "exists (values stay secret)");
@@ -69,6 +64,29 @@ async function checkExample(
 		"exists (values stay secret)",
 		`Copy ${presetRelPath} to ${targetPath} and fill in secret values (never commit).`,
 	);
+}
+
+async function readGolden(presetPath: string): Promise<{ golden?: string; error?: string }> {
+	try {
+		return { golden: await Bun.file(presetPath).text() };
+	} catch (error) {
+		return { error: errorMessage(error) };
+	}
+}
+
+async function readActual(targetPath: string): Promise<{ actual: string; error?: string }> {
+	try {
+		const targetFile = Bun.file(targetPath);
+		if (await targetFile.exists()) {
+			return { actual: await targetFile.text() };
+		}
+		return { actual: "<missing>" };
+	} catch (error) {
+		return {
+			actual: "<unreadable>",
+			error: `Cannot read ${targetPath} (may need sudo): ${errorMessage(error)}`,
+		};
+	}
 }
 
 export async function checkPresetFile(
@@ -82,8 +100,7 @@ export async function checkPresetFile(
 ): Promise<CheckResult> {
 	const base = baseFor(packageName, presetFileName, presetTarget, scope);
 	const presetPath = join(repoRoot, presetRelPath);
-	const presetFile = Bun.file(presetPath);
-	if (!(await presetFile.exists())) {
+	if (!(await Bun.file(presetPath).exists())) {
 		return failManual(
 			base,
 			"<preset file missing>",
@@ -91,40 +108,22 @@ export async function checkPresetFile(
 			`Preset file missing in tech-stack repo: ${presetPath}`,
 		);
 	}
-	if (isExampleFile(presetRelPath, presetFileName)) {
-		const outcome = await checkExample(base, presetRelPath, targetPath);
-		if (outcome !== undefined) {
-			return outcome;
-		}
+	if (isExampleFile(presetRelPath)) {
+		return checkExample(base, presetRelPath, targetPath);
 	}
-	let golden: string;
-	try {
-		golden = await presetFile.text();
-	} catch (error) {
-		return failManual(
-			base,
-			"<unreadable preset>",
-			presetRelPath,
-			error instanceof Error ? error.message : String(error),
-		);
+	const { golden, error: goldenError } = await readGolden(presetPath);
+	if (golden === undefined) {
+		return failManual(base, "<unreadable preset>", presetRelPath, goldenError ?? "<unreadable>");
 	}
-	const targetFile = Bun.file(targetPath);
-	if (golden.trim() === "" && !(await targetFile.exists())) {
+	if (golden.trim() === "" && !(await Bun.file(targetPath).exists())) {
 		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
 	}
-	let actual: string;
-	try {
-		actual = (await targetFile.exists()) ? await targetFile.text() : "<missing>";
-	} catch (error) {
-		return failManual(
-			base,
-			"<unreadable>",
-			short(golden),
-			`Cannot read ${targetPath} (may need sudo): ${error instanceof Error ? error.message : String(error)}`,
-		);
+	const { actual, error: actualError } = await readActual(targetPath);
+	if (actualError !== undefined) {
+		return failManual(base, actual, short(golden), actualError);
 	}
 	if (actual === golden) {
-		return { ...base, actual: "matches preset", expected: short(golden), fixable: false, ok: true };
+		return pass(base, "matches preset", short(golden));
 	}
 	return failFixable(base, short(actual), short(golden), {
 		filePath: targetPath,
@@ -141,15 +140,5 @@ export function skippedForTarget(
 	reason: string,
 	scope: CheckScope,
 ): CheckResult {
-	return skipped(
-		{
-			id: `preset:${packageName}:${presetFileName}`,
-			kind: "preset",
-			scope,
-			source: `tech-stack:${packageName}`,
-			target: presetTarget,
-		},
-		presetPath,
-		reason,
-	);
+	return skipped(baseFor(packageName, presetFileName, presetTarget, scope), presetPath, reason);
 }

@@ -3,6 +3,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import untildify from "untildify";
 
+import { errorMessage, readJsonFile } from "#/fs.js";
 import { parseOrThrow } from "#/schemas/common.js";
 import { MachineSchema } from "#/schemas/machine.js";
 import { ProjectSchema } from "#/schemas/project.js";
@@ -23,28 +24,29 @@ export interface LoadedConfig {
 	spec: TechStackSpec;
 }
 
+function resolveAgainstBase(raw: string, base: string, expand: (value: string) => string): string {
+	const expanded = expand(raw);
+	if (isAbsolute(expanded)) {
+		return expanded;
+	}
+	return resolve(base, expanded);
+}
+
 export function resolveTargetPath(raw: string, baseDir: string, home: string): string {
 	// Expand a leading ~ against the caller's home (respects $HOME overrides,
 	// unlike untildify which caches os.homedir()). Anything else falls through
 	// to untildify for ~user handling.
-	const expanded =
-		/^~($|\/)/u.test(raw) && home.length > 0
-			? raw === "~"
+	return resolveAgainstBase(raw, baseDir, (value) =>
+		/^~($|\/)/u.test(value) && home.length > 0
+			? value === "~"
 				? home
-				: join(home, raw.slice(2))
-			: untildify(raw);
-	if (isAbsolute(expanded)) {
-		return expanded;
-	}
-	return resolve(baseDir, expanded);
+				: join(home, value.slice(2))
+			: untildify(value),
+	);
 }
 
 export function resolveConfigPath(raw: string): string {
-	const expanded = untildify(raw);
-	if (isAbsolute(expanded)) {
-		return expanded;
-	}
-	return resolve(process.cwd(), expanded);
+	return resolveAgainstBase(raw, process.cwd(), (value) => untildify(value));
 }
 
 function presetSpecFrom(data: {
@@ -69,7 +71,7 @@ function toLoadedConfig(path: string, kind: LoadedConfig["kind"], parsed: unknow
 		dir: dirname(path),
 		kind,
 		path,
-		spec: presetSpecFrom(parseOrThrow(schema, path, parsed)),
+		spec: presetSpecFrom(parseOrThrow(schema, path, parsed, "conform config")),
 	};
 }
 
@@ -80,29 +82,27 @@ const BY_FILENAME = {
 
 export async function loadConfig(configPath: string): Promise<LoadedConfig> {
 	const path = resolveConfigPath(configPath);
-	const file = Bun.file(path);
-	if (!(await file.exists())) {
-		throw new Error(`Config not found: ${path}`);
-	}
 	let parsed: unknown;
 	try {
-		parsed = await file.json();
+		parsed = await readJsonFile(path, "Config");
 	} catch (error) {
-		const detail = error instanceof Error ? error.message : String(error);
+		const detail = errorMessage(error);
+		if (detail.includes("not found")) {
+			throw new Error(`Config not found: ${path}`, { cause: error });
+		}
 		throw new Error(`Invalid JSON in ${path}: ${detail}`, { cause: error });
 	}
 	const fileName = basename(path);
 	const known = (BY_FILENAME as Record<string, LoadedConfig["kind"] | undefined>)[fileName];
-	if (known !== undefined) {
-		return toLoadedConfig(path, known, parsed);
+	if (known === undefined) {
+		// Project and machine configs share the same shape, so content-sniffing
+		// cannot distinguish them. Require a canonical filename instead of
+		// silently misclassifying machine configs as project.
+		throw new Error(
+			`Cannot infer config kind from filename "${fileName}" in ${path} (expected conform.project.json or conform.machine.json). Rename the file to declare its scope.`,
+		);
 	}
-	for (const kind of ["project", "machine"] as const) {
-		const schema = kind === "machine" ? MachineSchema : ProjectSchema;
-		if (schema.safeParse(parsed).success) {
-			return toLoadedConfig(path, kind, parsed);
-		}
-	}
-	return toLoadedConfig(path, "project", parsed);
+	return toLoadedConfig(path, known, parsed);
 }
 
 const DISCOVER_NAMES = ["conform.project.json", "conform.machine.json"];

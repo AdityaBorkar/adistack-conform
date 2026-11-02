@@ -7,20 +7,22 @@ import type { LoadedConfig } from "#/config.js";
 import { defaultHome, discoverConfigs, loadConfig } from "#/config.js";
 import {
 	applySelected,
+	partitionResults,
 	printDryRun,
 	promptForSelection,
 	renderFixDiffs,
 	reportUnfixable,
 } from "#/fix.js";
+import { errorMessage } from "#/fs.js";
 import { printResults } from "#/output.js";
 import { runTechStackChecks } from "#/techstack.js";
 
 const VERSION = "0.1.0";
 
-function scopeOf(options: {
-	machineOnly?: boolean;
-	projectOnly?: boolean;
-}): CheckScope | undefined {
+type ScopeOptions = { machineOnly?: boolean; projectOnly?: boolean };
+type CacheOptions = { cache?: boolean };
+
+function scopeOf(options: ScopeOptions): CheckScope | undefined {
 	if (options.projectOnly && options.machineOnly) {
 		throw new Error("Pass only one of --project-only / --machine-only.");
 	}
@@ -33,12 +35,17 @@ function scopeOf(options: {
 	return undefined;
 }
 
-function shouldRun(kind: CheckScope, only: CheckScope | undefined): boolean {
-	return only === undefined || only === kind;
+async function loadConfigsFromCommand(cmd: Command): Promise<LoadedConfig[]> {
+	const config = cmd.optsWithGlobals<{ config?: string }>().config;
+	if (config !== undefined) {
+		return [await loadConfig(config)];
+	}
+	return discoverConfigs();
 }
 
-function baseDirFor(kind: CheckScope, cwd: string, home: string): string {
-	return kind === "project" ? cwd : home;
+function failWith(error: unknown): never {
+	console.error(errorMessage(error));
+	process.exit(2);
 }
 
 async function runAllChecks(
@@ -49,10 +56,10 @@ async function runAllChecks(
 	const cwd = process.cwd();
 	const home = defaultHome();
 	const tasks = configs
-		.filter((loaded) => shouldRun(loaded.kind, only))
+		.filter((loaded) => only === undefined || only === loaded.kind)
 		.map((loaded) =>
 			runTechStackChecks(loaded.spec, {
-				baseDir: baseDirFor(loaded.kind, cwd, home),
+				baseDir: loaded.kind === "project" ? cwd : home,
 				home,
 				noCache,
 				scope: loaded.kind,
@@ -78,47 +85,35 @@ program
 	.option("--project-only", "Only run project checks.")
 	.option("--no-cache", "Re-download tech-stack blueprints/presets, ignoring the cache.")
 	.option("--machine-only", "Only run machine checks.")
-	.action(
-		async (
-			cmdOptions: {
-				cache?: boolean;
-				json?: boolean;
-				machineOnly?: boolean;
-				projectOnly?: boolean;
-			},
-			cmd: Command,
-		) => {
-			const config = cmd.optsWithGlobals<{ config?: string }>().config;
-			try {
-				const only = scopeOf(cmdOptions);
-				const configs = config === undefined ? await discoverConfigs() : [await loadConfig(config)];
-				const results = await runAllChecks(configs, only, cmdOptions.cache === false);
-				if (cmdOptions.json) {
-					const failed = results.filter((item) => !item.ok);
-					console.log(
-						JSON.stringify(
-							{
-								configs: configs.map((entry) => entry.path),
-								failed: failed.length,
-								ok: failed.length === 0,
-								passed: results.length - failed.length,
-								results,
-								total: results.length,
-							},
-							null,
-							2,
-						),
-					);
-				} else {
-					printResults(results);
-				}
-				process.exit(results.some((item) => !item.ok) ? 1 : 0);
-			} catch (error) {
-				console.error(error instanceof Error ? error.message : String(error));
-				process.exit(2);
+	.action(async (cmdOptions: CacheOptions & ScopeOptions & { json?: boolean }, cmd: Command) => {
+		try {
+			const only = scopeOf(cmdOptions);
+			const configs = await loadConfigsFromCommand(cmd);
+			const results = await runAllChecks(configs, only, cmdOptions.cache === false);
+			if (cmdOptions.json) {
+				const failed = results.filter((item) => !item.ok);
+				console.log(
+					JSON.stringify(
+						{
+							configs: configs.map((entry) => entry.path),
+							failed: failed.length,
+							ok: failed.length === 0,
+							passed: results.length - failed.length,
+							results,
+							total: results.length,
+						},
+						null,
+						2,
+					),
+				);
+			} else {
+				printResults(results);
 			}
-		},
-	);
+			process.exit(results.some((item) => !item.ok) ? 1 : 0);
+		} catch (error) {
+			failWith(error);
+		}
+	});
 
 program
 	.command("fix")
@@ -131,25 +126,14 @@ program
 	.option("--machine-only", "Only fix machine checks.")
 	.action(
 		async (
-			cmdOptions: {
-				all?: boolean;
-				cache?: boolean;
-				diff?: boolean;
-				dryRun?: boolean;
-				machineOnly?: boolean;
-				projectOnly?: boolean;
-			},
+			cmdOptions: CacheOptions & ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean },
 			cmd: Command,
 		) => {
-			const config = cmd.optsWithGlobals<{ config?: string }>().config;
-			const showDiff = cmdOptions.diff !== false;
 			try {
 				const only = scopeOf(cmdOptions);
-				const configs = config === undefined ? await discoverConfigs() : [await loadConfig(config)];
+				const configs = await loadConfigsFromCommand(cmd);
 				const results = await runAllChecks(configs, only, cmdOptions.cache === false);
-				const failed = results.filter((item) => !item.ok);
-				const fixable = failed.filter((item) => item.fixable);
-				const unfixable = failed.filter((item) => !item.fixable);
+				const { failed, fixable, unfixable } = partitionResults(results);
 
 				if (failed.length === 0) {
 					console.log("All conform checks passed.");
@@ -167,11 +151,23 @@ program
 					process.exit(1);
 				}
 
-				if (showDiff) {
+				if (cmdOptions.diff !== false) {
 					await renderFixDiffs(fixable);
 				}
 
-				const selected = cmdOptions.all ? fixable : await promptForSelection(fixable);
+				let selected: CheckResult[] = fixable;
+				if (!cmdOptions.all) {
+					const outcome = await promptForSelection(fixable);
+					if (outcome.kind === "no-tty") {
+						console.error("Not a TTY: re-run with --all to apply fixes non-interactively.");
+						process.exit(2);
+					}
+					if (outcome.kind === "cancelled") {
+						prompts.outro("No fixes applied.");
+						process.exit(1);
+					}
+					selected = outcome.selected;
+				}
 				const applied = await applySelected(selected);
 
 				const rerun = await runAllChecks(configs, only, cmdOptions.cache === false);
@@ -186,8 +182,7 @@ program
 				prompts.outro("All conform checks passed.");
 				process.exit(0);
 			} catch (error) {
-				console.error(error instanceof Error ? error.message : String(error));
-				process.exit(2);
+				failWith(error);
 			}
 		},
 	);

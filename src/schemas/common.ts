@@ -79,12 +79,16 @@ export function makeBlueprintSchema(options: {
 	});
 }
 
-export function parseOrThrow<T>(schema: z.ZodType<T>, path: string, parsed: unknown): T {
+export function parseOrThrow<T>(
+	schema: z.ZodType<T>,
+	path: string,
+	parsed: unknown,
+	label?: string,
+): T {
 	const result = schema.safeParse(parsed);
 	if (!result.success) {
-		throw new Error(
-			`Invalid conform config in ${path} (expected conform.project.json or conform.machine.json format):\n${z.prettifyError(result.error)}`,
-		);
+		const expected = label ?? "conform.project.json or conform.machine.json format";
+		throw new Error(`Invalid ${expected} in ${path}:\n${z.prettifyError(result.error)}`);
 	}
 	return result.data;
 }

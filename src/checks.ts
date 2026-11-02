@@ -24,9 +24,7 @@ export interface CheckResult {
 	target: string;
 }
 
-type CheckBase = Pick<CheckResult, "id" | "scope" | "source" | "target"> & {
-	kind: CheckResult["kind"];
-};
+export type CheckBase = Pick<CheckResult, "id" | "kind" | "scope" | "source" | "target">;
 
 export function pass(base: CheckBase, actual: string, expected: string): CheckResult {
 	return { actual, expected, fixable: false, ok: true, ...base };
