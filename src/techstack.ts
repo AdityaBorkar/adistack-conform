@@ -6,7 +6,12 @@ import { resolveTargetPath } from "#/fs.js";
 import { ensureGithubRepo } from "#/techstack-cache.js";
 import { checkPresetFile, classifyTarget, skippedForTarget } from "#/techstack-check.js";
 import type { PresetPackage, RegistryDocument } from "#/techstack-registry.js";
-import { loadBlueprint, loadRegistry, loadRegistryDocument } from "#/techstack-registry.js";
+import {
+	MAX_LIST_SHOWN,
+	loadBlueprint,
+	loadRegistry,
+	loadRegistryDocument,
+} from "#/techstack-registry.js";
 
 export interface TechStackRunOptions {
 	baseDir: string;
@@ -19,8 +24,6 @@ export interface TechCheckOutput {
 	results: CheckResult[];
 	warnings: string[];
 }
-
-const MAX_UNKNOWN_SHOWN = 10;
 
 async function resolveWantedNames(
 	spec: TechStackSpec,
@@ -40,13 +43,13 @@ async function resolveWantedNames(
 	const names = difference(wanted, [...blueprintExcludes, ...spec.exclude]).toSorted();
 	const unknown = names.filter((name) => !registry.has(name));
 	if (unknown.length > 0) {
-		const shown = unknown.slice(0, MAX_UNKNOWN_SHOWN).join(", ");
+		const shown = unknown.slice(0, MAX_LIST_SHOWN).join(", ");
 		const suffix =
-			unknown.length > MAX_UNKNOWN_SHOWN ? ` (+${unknown.length - MAX_UNKNOWN_SHOWN} more)` : "";
+			unknown.length > MAX_LIST_SHOWN ? ` (+${unknown.length - MAX_LIST_SHOWN} more)` : "";
 		const keys = [...registry.keys()].toSorted();
 		const available =
-			keys.length > MAX_UNKNOWN_SHOWN
-				? `${keys.slice(0, MAX_UNKNOWN_SHOWN).join(", ")} (+${keys.length - MAX_UNKNOWN_SHOWN} more)`
+			keys.length > MAX_LIST_SHOWN
+				? `${keys.slice(0, MAX_LIST_SHOWN).join(", ")} (+${keys.length - MAX_LIST_SHOWN} more)`
 				: keys.join(", ");
 		throw new Error(`Unknown tech-stack preset(s): ${shown}${suffix}. Available: ${available}.`);
 	}

@@ -38,25 +38,25 @@ export async function promptForSelection(fixable: CheckResult[]): Promise<Prompt
 }
 
 export type SelectionOutcome =
-	| { exit: "cancelled" }
-	| { exit: "no-tty" }
-	| { exit?: undefined; selected: CheckResult[] };
+	| { kind: "cancelled" }
+	| { kind: "no-tty" }
+	| { kind: "selected"; selected: CheckResult[] };
 
 export async function resolveSelection(
 	fixable: CheckResult[],
 	allFlag: boolean | undefined,
 ): Promise<SelectionOutcome> {
 	if (allFlag) {
-		return { selected: fixable };
+		return { kind: "selected", selected: fixable };
 	}
 	const outcome = await promptForSelection(fixable);
 	if (outcome.kind === "no-tty") {
-		return { exit: "no-tty" };
+		return { kind: "no-tty" };
 	}
 	if (outcome.kind === "cancelled") {
-		return { exit: "cancelled" };
+		return { kind: "cancelled" };
 	}
-	return { selected: outcome.selected };
+	return { kind: "selected", selected: outcome.selected };
 }
 
 export async function applySelected(selected: CheckResult[]): Promise<number> {

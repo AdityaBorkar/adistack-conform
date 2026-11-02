@@ -17,6 +17,8 @@ export type PresetPackage =
 	| z.infer<typeof ProjectPresetManifestSchema>["packages"][number];
 export type RegistryDocument = z.infer<typeof RegistrySchema>;
 
+export const MAX_LIST_SHOWN = 10;
+
 function presetSchemaFor(scope: CheckScope) {
 	return scope === "project" ? ProjectPresetManifestSchema : MachinePresetManifestSchema;
 }
@@ -40,18 +42,16 @@ export async function loadRegistry(
 	const manifests = await Promise.all(
 		registry[scope].presets.map(async (dir) => {
 			const manifestPath = join(repoRoot, dir, "manifest.json");
-			return {
-				manifest: parseOrThrow(
-					schema,
-					manifestPath,
-					await readJsonFile(manifestPath, "tech-stack preset manifest"),
-					"tech-stack preset manifest",
-				),
-			};
+			return parseOrThrow(
+				schema,
+				manifestPath,
+				await readJsonFile(manifestPath, "tech-stack preset manifest"),
+				"tech-stack preset manifest",
+			);
 		}),
 	);
 	const byName = new Map<string, PresetPackage>();
-	for (const { manifest } of manifests) {
+	for (const manifest of manifests) {
 		for (const pkg of manifest.packages) {
 			// First manifest wins; registry order is the source of truth.
 			if (!byName.has(pkg.name)) {
@@ -96,8 +96,8 @@ export async function loadBlueprint(
 	if (hit === undefined) {
 		const available = await listBlueprints(repoRoot, scope, registry);
 		const hint =
-			available.length > 10
-				? ` Available blueprints: ${available.slice(0, 10).join(", ")} (+${available.length - 10} more).`
+			available.length > MAX_LIST_SHOWN
+				? ` Available blueprints: ${available.slice(0, MAX_LIST_SHOWN).join(", ")} (+${available.length - MAX_LIST_SHOWN} more).`
 				: available.length > 0
 					? ` Available blueprints: ${available.join(", ")}.`
 					: "";

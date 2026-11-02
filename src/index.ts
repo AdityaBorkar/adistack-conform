@@ -23,6 +23,9 @@ const VERSION = "0.1.0";
 
 type ScopeOptions = { machineOnly?: boolean; projectOnly?: boolean };
 type CacheOptions = { cache?: boolean };
+type CheckCmdOptions = CacheOptions & ScopeOptions & { json?: boolean };
+type FixCmdOptions = CacheOptions &
+	ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean };
 
 function scopeOf(options: ScopeOptions): CheckScope | undefined {
 	if (options.projectOnly && options.machineOnly) {
@@ -80,21 +83,18 @@ function emitWarnings(warnings: string[]): void {
 	}
 }
 
-async function runCheckCommand(
-	cmd: Command,
-	cmdOptions: CacheOptions & ScopeOptions & { json?: boolean },
-): Promise<number> {
+async function prepareRun(cmd: Command, cmdOptions: CacheOptions & ScopeOptions) {
 	const only = scopeOf(cmdOptions);
 	const configs = await loadConfigsFromCommand(cmd);
 	const cwd = process.cwd();
 	const home = defaultHome();
-	const { results, warnings } = await runAllChecks({
-		configs,
-		cwd,
-		home,
-		noCache: cmdOptions.cache === false,
-		only,
-	});
+	const noCache = cmdOptions.cache === false;
+	const { results, warnings } = await runAllChecks({ configs, cwd, home, noCache, only });
+	return { configs, cwd, home, noCache, only, results, warnings };
+}
+
+async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promise<number> {
+	const { configs, results, warnings } = await prepareRun(cmd, cmdOptions);
 	emitWarnings(warnings);
 	if (cmdOptions.json) {
 		printJsonSummary(
@@ -107,16 +107,11 @@ async function runCheckCommand(
 	return results.some((item) => !item.ok) ? 1 : 0;
 }
 
-async function runFixCommand(
-	cmd: Command,
-	cmdOptions: CacheOptions & ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean },
-): Promise<number> {
-	const only = scopeOf(cmdOptions);
-	const configs = await loadConfigsFromCommand(cmd);
-	const cwd = process.cwd();
-	const home = defaultHome();
-	const noCache = cmdOptions.cache === false;
-	const { results, warnings } = await runAllChecks({ configs, cwd, home, noCache, only });
+async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<number> {
+	const { configs, cwd, home, noCache, only, results, warnings } = await prepareRun(
+		cmd,
+		cmdOptions,
+	);
 	emitWarnings(warnings);
 	const { failed, fixable, unfixable } = partitionResults(results);
 
@@ -141,11 +136,11 @@ async function runFixCommand(
 	}
 
 	const selection = await resolveSelection(fixable, cmdOptions.all);
-	if (selection.exit === "no-tty") {
+	if (selection.kind === "no-tty") {
 		console.error("Not a TTY: re-run with --all to apply fixes non-interactively.");
 		return 2;
 	}
-	if (selection.exit === "cancelled") {
+	if (selection.kind === "cancelled") {
 		prompts.outro("No fixes applied.");
 		return 1;
 	}
@@ -182,7 +177,7 @@ program
 	.option("--project-only", "Only run project checks.")
 	.option("--no-cache", "Re-download tech-stack blueprints/presets, ignoring the cache.")
 	.option("--machine-only", "Only run machine checks.")
-	.action(async (cmdOptions: CacheOptions & ScopeOptions & { json?: boolean }, cmd: Command) => {
+	.action(async (cmdOptions: CheckCmdOptions, cmd: Command) => {
 		try {
 			process.exit(await runCheckCommand(cmd, cmdOptions));
 		} catch (error) {
@@ -199,17 +194,12 @@ program
 	.option("--project-only", "Only fix project checks.")
 	.option("--no-cache", "Re-download tech-stack blueprints/presets, ignoring the cache.")
 	.option("--machine-only", "Only fix machine checks.")
-	.action(
-		async (
-			cmdOptions: CacheOptions & ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean },
-			cmd: Command,
-		) => {
-			try {
-				process.exit(await runFixCommand(cmd, cmdOptions));
-			} catch (error) {
-				failWith(error);
-			}
-		},
-	);
+	.action(async (cmdOptions: FixCmdOptions, cmd: Command) => {
+		try {
+			process.exit(await runFixCommand(cmd, cmdOptions));
+		} catch (error) {
+			failWith(error);
+		}
+	});
 
 program.parseAsync(process.argv);

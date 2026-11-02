@@ -91,8 +91,11 @@ function scratchPaths(dir: string): { stage: string; tmpArchive: string } {
 	return { stage: `${dir}.stage.${nonce}`, tmpArchive: `${dir}.tarball.${nonce}` };
 }
 
-async function fetchAndInstall(spec: TechStackSpec, dir: string): Promise<CachedRepo> {
-	const { metaPath } = cachePaths(spec);
+async function fetchAndInstall(
+	spec: TechStackSpec,
+	dir: string,
+	metaPath: string,
+): Promise<CachedRepo> {
 	const { stage, tmpArchive } = scratchPaths(dir);
 	try {
 		await downloadTarball(spec.id, spec.ref, tmpArchive);
@@ -133,7 +136,7 @@ export async function ensureGithubRepo(spec: TechStackSpec, noCache: boolean): P
 	if (pending !== undefined) {
 		return pending;
 	}
-	const task = fetchAndInstall(spec, dir).finally(() => {
+	const task = fetchAndInstall(spec, dir, metaPath).finally(() => {
 		if (inflight.get(key) === task) {
 			inflight.delete(key);
 		}

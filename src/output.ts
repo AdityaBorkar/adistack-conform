@@ -52,14 +52,16 @@ export function printResults(results: CheckResult[]): void {
 
 export function printJsonSummary(configs: string[], results: CheckResult[]): void {
 	const { failed } = partitionResults(results);
+	const skipped = results.filter((item) => item.skipped === true);
 	console.log(
 		JSON.stringify(
 			{
 				configs,
 				failed: failed.length,
 				ok: failed.length === 0,
-				passed: results.length - failed.length,
+				passed: results.length - failed.length - skipped.length,
 				results,
+				skipped: skipped.length,
 				total: results.length,
 			},
 			null,
@@ -87,7 +89,7 @@ export function printDryRun(fixable: CheckResult[]): void {
 export function renderFixDiffs(fixable: CheckResult[]): void {
 	const rendered = fixable.map(
 		(item) =>
-			`\ndiff ${item.id} (${item.target})\n${renderDiff("actual", "expected", item.actual === "<missing>" ? "<missing>" : item.actual, desiredContent(item))}`,
+			`\ndiff ${item.id} (${item.target})\n${renderDiff("actual", "expected", item.actual, desiredContent(item))}`,
 	);
 	for (const text of rendered) {
 		console.log(text);

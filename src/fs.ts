@@ -29,16 +29,19 @@ export function readText(path: string): Promise<string> {
 	return Bun.file(path).text();
 }
 
-export type FileRead = { error: string; ok: false } | { ok: true; text: string };
+export type FileRead =
+	| { ok: false; reason: "missing" }
+	| { error: string; ok: false; reason: "unreadable" }
+	| { ok: true; text: string };
 
 export async function readFileSafe(path: string): Promise<FileRead> {
 	try {
 		if (!(await fileExists(path))) {
-			return { error: "<missing>", ok: false };
+			return { ok: false, reason: "missing" };
 		}
 		return { ok: true, text: await readText(path) };
 	} catch (error) {
-		return { error: errorMessage(error), ok: false };
+		return { error: errorMessage(error), ok: false, reason: "unreadable" };
 	}
 }
 

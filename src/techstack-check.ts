@@ -53,7 +53,7 @@ async function checkExample(
 	if (outcome.ok) {
 		return pass(base, "exists", "exists (values stay secret)");
 	}
-	if (outcome.error === "<missing>") {
+	if (outcome.reason === "missing") {
 		return failManual(
 			base,
 			"<missing>",
@@ -66,6 +66,15 @@ async function checkExample(
 		"<unreadable>",
 		"exists (values stay secret)",
 		`Cannot read ${targetPath} (may need sudo): ${outcome.error}`,
+	);
+}
+
+function unreadableTarget(base: CheckBase, golden: string, targetPath: string, error: string) {
+	return failManual(
+		base,
+		"<unreadable>",
+		golden,
+		`Cannot read ${targetPath} (may need sudo): ${error}`,
 	);
 }
 
@@ -86,7 +95,7 @@ export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult>
 	const presetPath = join(repoRoot, presetRelPath);
 	const presetRead = await readFileSafe(presetPath);
 	if (!presetRead.ok) {
-		if (presetRead.error === "<missing>") {
+		if (presetRead.reason === "missing") {
 			return failManual(
 				base,
 				"<preset file missing>",
@@ -100,43 +109,19 @@ export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult>
 	if (isExampleFile(presetRelPath)) {
 		return checkExample(base, presetRelPath, targetPath);
 	}
-	if (golden.trim() === "") {
-		const targetRead = await readFileSafe(targetPath);
-		if (!targetRead.ok && targetRead.error === "<missing>") {
-			return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
-		}
-		if (!targetRead.ok) {
-			return failManual(
-				base,
-				"<unreadable>",
-				golden,
-				`Cannot read ${targetPath} (may need sudo): ${targetRead.error}`,
-			);
-		}
-		if (targetRead.text === golden) {
-			return pass(base, "matches preset", golden);
-		}
-		return failFixable(base, targetRead.text, golden, {
-			filePath: targetPath,
-			kind: "overwrite-file",
-			newContent: golden,
-		});
-	}
 	const targetRead = await readFileSafe(targetPath);
+	if (golden.trim() === "" && !targetRead.ok && targetRead.reason === "missing") {
+		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
+	}
 	if (!targetRead.ok) {
-		if (targetRead.error === "<missing>") {
+		if (targetRead.reason === "missing") {
 			return failFixable(base, "<missing>", golden, {
 				filePath: targetPath,
 				kind: "overwrite-file",
 				newContent: golden,
 			});
 		}
-		return failManual(
-			base,
-			"<unreadable>",
-			golden,
-			`Cannot read ${targetPath} (may need sudo): ${targetRead.error}`,
-		);
+		return unreadableTarget(base, golden, targetPath, targetRead.error);
 	}
 	if (targetRead.text === golden) {
 		return pass(base, "matches preset", golden);
@@ -151,10 +136,10 @@ export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult>
 export function skippedForTarget(
 	packageName: string,
 	presetFileName: string,
-	presetPath: string,
+	presetRelPath: string,
 	presetTarget: string,
 	reason: string,
 	scope: CheckScope,
 ): CheckResult {
-	return skipped(baseFor(packageName, presetFileName, presetTarget, scope), presetPath, reason);
+	return skipped(baseFor(packageName, presetFileName, presetTarget, scope), presetRelPath, reason);
 }
