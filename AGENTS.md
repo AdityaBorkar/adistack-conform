@@ -24,7 +24,7 @@ bun run gen:json-schema  # regenerate configuration_schema/ from src/schemas/*
 
 ## Layout
 
-- `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/techstack*.ts` (cache/check/machine/registry/sparse) — plus `src/utils/` (`fs`, `output`, `concurrency`) and `src/schemas/`.
+- `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/techstack*.ts` (check/machine/registry/remote) — plus `src/utils/` (`fs`, `output`, `concurrency`) and `src/schemas/`.
 - `src/schemas/*` — Valibot source of truth (`import * as v from "valibot"`). `configuration_schema/*.json` is generated — never hand-edit, it is overwritten by `build` / `gen:json-schema`.
 - This repo dogfoods itself: `conform.json` (`cli-app` project blueprint + `main` nix blueprint) tracks `AdityaBorkar/tech-stack@main`.
 - The tech-stack reference checkout lives at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read blueprints/registry directly instead of guessing.
@@ -32,8 +32,8 @@ bun run gen:json-schema  # regenerate configuration_schema/ from src/schemas/*
 ## CLI (`adistack-conform [--config <path>]`)
 
 ```bash
-adistack-conform check [--json] [--no-cache] [--project-only|--machine-only]  # exit 0 ok, 1 drift, 2 config error
-adistack-conform fix [--all] [--dry-run] [--no-diff] [--no-cache] [--project-only|--machine-only]  # space to toggle, Select-all pseudo-option first, diff preview, per-item ok/error, re-checks after apply
+adistack-conform check [--json] [--project-only|--machine-only]  # exit 0 ok, 1 drift, 2 config error
+adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only|--machine-only]  # space to toggle, Select-all pseudo-option first, diff preview, per-item ok/error, re-checks after apply
 ```
 
 - Without `--config`, `check`/`fix` load `conform.json` from the cwd. With `--config`, the filename must be exactly `conform.json` — anything else exits 2.
@@ -57,9 +57,9 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--no-cache] [--project-onl
 - At least one of `machine` / `project` is required; omit the other to track only one scope (`--project-only` / `--machine-only` also filter at run time).
 - Project: `blueprint` — project blueprint matching a tech-stack root `registry.json` `projects[]` entry (by entry `name`, entry `path`, or directory basename, e.g. `cli-app`).
 - Machine: `blueprint` — machine blueprint matching a `registry.json` `machines[]` entry (by entry `name`, entry `path`, or flake directory basename, e.g. `main`). `configuration` — optional `homeConfigurations` attribute to switch to (e.g. `adityab`); omitted means home-manager auto-select from `$USER`. Machines are entirely nix-managed.
-- Default path downloads the full repo tarball from codeload (`GITHUB_TOKEN` for private repos / rate limits) into a version-suffixed cache dir (`~/.cache/adistack-conform/github/<owner>/<repo>/<ref>v2` via env-paths, `XDG_CACHE_HOME` respected, unsafe refs sanitized, `.conform-meta.json` guards freshness). Entries older than 24h are re-downloaded. `--no-cache` instead does sparse `raw.githubusercontent.com` fetches (registry/manifest/goldens only) with full-download fallback on failure. A failed download with a valid cache marker reuses the stale cache with a warning.
+- Remote fetch has no local cache: each run fetches `registry.json` once per unique `repo@ref` (shared by every spec), then each project blueprint's `manifest.json`, then only the golden files its `files[]` need (deduplicated by repo-relative path, 16-way parallel). Refs with `/` work — they are plain path segments in `raw.githubusercontent.com` URLs and `encodeURIComponent`-escaped in flake URLs.
 - Project files come from each blueprint's `manifest.json` (`files[]` with `name`/`source`/`target`). `source` starting with `./` or `../` resolves against the manifest directory, otherwise it is repo-relative. `docs:` targets, Windows `%...%` targets, and annotation-only targets are reported as skipped (exit 0); a leading `~/...`, `/...`, or bare `~` token is used when the target carries a human annotation. Only the project scope honors `./...`/`../...` targets (resolved against the cwd). `*.example` sources assert existence only (secret values are never compared). Empty goldens pass when the target is absent (empty = defaults). Unreadable targets (e.g. `/etc/...` without sudo) fail as non-fixable with a hint.
-- Machine blueprint dirs are explicit flake paths from `registry.json` (`machines[].path`) and must contain a `flake.nix` (no `manifest.json`). `check` runs `home-manager switch --flake <dir>#<configuration> --dry-run --impure` (via the `home-manager` binary, else `nix run home-manager -- …`) and reports one `nix:<blueprint>` result; `fix` runs the same switch without `--dry-run` (a `run-command` fix, applied with inherited stdio). A dry-run that prints a nix error (unknown attribute, missing env, build failure) is reported as non-fixable with a hint, since a real switch fails the same way. When neither binary is available the check fails as non-fixable with a hint.
+- Machine blueprint dirs are explicit flake paths from `registry.json` (`machines[].path`). `check` runs `home-manager switch --flake git+https://github.com/<owner>/<repo>?ref=<ref>&dir=<path>#<configuration> --dry-run --impure` (via the `home-manager` binary, else `nix run home-manager -- …`) and reports one `nix:<blueprint>` result; `fix` runs the same switch without `--dry-run` (a `run-command` fix, applied with inherited stdio). Nix fetches the flake into its own store — no repo download in this CLI. A dry-run that prints a nix error (unknown attribute, missing env, build failure) is reported as non-fixable with a hint, since a real switch fails the same way. When neither binary is available the check fails as non-fixable with a hint.
 
 ## Conventions
 

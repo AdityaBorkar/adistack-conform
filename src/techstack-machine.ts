@@ -1,9 +1,10 @@
 import type { CheckBase, CheckResult } from "#/checks.js";
 import { failFixable, failManual, pass } from "#/checks.js";
 import type { MachineRunSpec } from "#/config.js";
-import { ensureGithubRepo } from "#/techstack-cache.js";
-import { loadMachineBlueprint, loadRegistryDocument } from "#/techstack-registry.js";
-import type { TechCheckOutput, TechStackRunOptions } from "#/techstack.js";
+import { findMachineEntry, machineNotFoundError } from "#/techstack-registry.js";
+import { machineDirCandidates } from "#/techstack-registry.js";
+import type { RegistryDocument } from "#/techstack-registry.js";
+import { fetchTextOrThrow, rawUrl } from "#/techstack-remote.js";
 import { errorMessage } from "#/utils/fs.js";
 
 const SWITCH_TIMEOUT_MS = 10 * 60_000;
@@ -14,13 +15,52 @@ function nixCheckId(blueprint: string): string {
 	return `nix:${blueprint}`;
 }
 
-function flakeRef(dir: string, configuration: string | undefined): string {
-	if (configuration === undefined || configuration === "") {
-		return dir;
-	}
-	return `${dir}#${configuration}`;
+function encodeDir(dirRel: string): string {
+	return dirRel
+		.split("/")
+		.filter((segment) => segment !== "")
+		.map((segment) => encodeURIComponent(segment))
+		.join("/");
 }
 
+// Let nix fetch the flake itself instead of materializing the whole
+// tech-stack repo locally: one registry fetch resolves the flake
+// subdirectory, then nix uses its own store (no custom download/cache).
+function flakeUrl(spec: MachineRunSpec, dirRel: string): string {
+	const base = `git+https://github.com/${spec.id}?ref=${encodeURIComponent(spec.ref)}&dir=${encodeDir(dirRel)}`;
+	if (spec.configuration === undefined || spec.configuration === "") {
+		return base;
+	}
+	return `${base}#${encodeURIComponent(spec.configuration)}`;
+}
+
+async function resolveFlakeDir(spec: MachineRunSpec, entryPath: string): Promise<string> {
+	const candidates = machineDirCandidates(entryPath);
+	const primary = candidates[0];
+	if (primary === undefined) {
+		throw new Error(`Machine blueprint "${spec.blueprint}" has an empty path in the registry.`);
+	}
+	if (candidates.length === 1) {
+		return primary;
+	}
+	const checks = await Promise.all(
+		candidates.map(async (dir) => {
+			try {
+				await fetchTextOrThrow(rawUrl(spec.id, spec.ref, `${dir}/flake.nix`), "flake.nix");
+				return true;
+			} catch {
+				return false;
+			}
+		}),
+	);
+	const hit = candidates.find((_dir, index) => checks[index] === true);
+	if (hit !== undefined) {
+		return hit;
+	}
+	throw new Error(
+		`Machine blueprint "${spec.blueprint}" is not a nix flake (missing flake.nix in ${primary}).`,
+	);
+}
 function tail(text: string): string {
 	const kept = text.split("\n").slice(-OUTPUT_TAIL_LINES).join("\n");
 	return kept.length > OUTPUT_TAIL_CHARS ? `…${kept.slice(-OUTPUT_TAIL_CHARS)}` : kept;
@@ -109,16 +149,13 @@ async function runCapture(
 
 export async function runMachineChecks(
 	spec: MachineRunSpec,
-	options: TechStackRunOptions,
-): Promise<TechCheckOutput> {
-	const cached = await ensureGithubRepo(spec, options.noCache);
-	const warnings: string[] = [];
-	if (cached.stale && cached.warning !== undefined) {
-		warnings.push(`Warning: using cached tech-stack ${spec.id}@${spec.ref} (${cached.warning})`);
+	registry: RegistryDocument,
+): Promise<CheckResult[]> {
+	const entry = findMachineEntry(spec.blueprint, registry);
+	if (entry === undefined) {
+		throw machineNotFoundError(spec.blueprint, registry);
 	}
-	const registryDoc = await loadRegistryDocument(cached.dir);
-	const { dir } = await loadMachineBlueprint(cached.dir, spec.blueprint, registryDoc);
-	const flake = flakeRef(dir, spec.configuration);
+	const flake = flakeUrl(spec, await resolveFlakeDir(spec, entry.path));
 	const base: CheckBase = {
 		id: nixCheckId(spec.blueprint),
 		kind: "nix",
@@ -132,27 +169,16 @@ export async function runMachineChecks(
 	try {
 		output = await runCapture(check.command, check.args, SWITCH_TIMEOUT_MS);
 	} catch (error) {
-		return {
-			results: [
-				failManual(
-					base,
-					"<unavailable>",
-					expected,
-					`Cannot run drift check: ${errorMessage(error)}`,
-				),
-			],
-			warnings,
-		};
+		return [
+			failManual(base, "<unavailable>", expected, `Cannot run drift check: ${errorMessage(error)}`),
+		];
 	}
 	if (output.code === 0) {
-		return { results: [pass(base, expected, expected)], warnings };
+		return [pass(base, expected, expected)];
 	}
 	const detail = tail(`${output.stdout}\n${output.stderr}`.trim());
 	if (NOT_DRIFT_PATTERN.test(detail)) {
-		return {
-			results: [failManual(base, detail, expected, notDriftHint(detail, check.label))],
-			warnings,
-		};
+		return [failManual(base, detail, expected, notDriftHint(detail, check.label))];
 	}
 	const apply = switchInvocation(flake, false);
 	const result = failFixable(base, detail === "" ? "<drift detected>" : detail, expected, {
@@ -162,19 +188,19 @@ export async function runMachineChecks(
 		label: apply.label,
 	});
 	result.hint = `Apply with \`fix\` or run manually: ${apply.label}`;
-	return { results: [result], warnings };
+	return [result];
 }
 
-export async function recheckMachineSelected(
+export function recheckMachineSelected(
 	spec: MachineRunSpec,
-	options: TechStackRunOptions,
+	registry: RegistryDocument,
 	selectedIds: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	if (selectedIds.size === 0) {
-		return [];
+		return Promise.resolve([]);
 	}
 	if (!selectedIds.has(nixCheckId(spec.blueprint))) {
-		return [];
+		return Promise.resolve([]);
 	}
-	return (await runMachineChecks(spec, options)).results;
+	return runMachineChecks(spec, registry);
 }

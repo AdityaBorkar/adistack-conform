@@ -1,41 +1,43 @@
-import type { CheckResult, CheckScope } from "#/checks.js";
+import { failManual, type CheckResult, type CheckScope } from "#/checks.js";
 import type { ProjectRunSpec } from "#/config.js";
-import { ensureGithubRepo } from "#/techstack-cache.js";
-import type { CheckFileArgs } from "#/techstack-check.js";
-import { checkPresetFile, classifyTarget, skippedForTarget } from "#/techstack-check.js";
-import type { ManifestFile } from "#/techstack-registry.js";
-import {
-	loadProjectManifest,
-	loadRegistryDocument,
-	resolveSourcePath,
-} from "#/techstack-registry.js";
+import { checkPresetFileWithGolden, classifyTarget, skippedForTarget } from "#/techstack-check.js";
+import type { ManifestFile, RegistryDocument } from "#/techstack-registry.js";
+import { resolveSourceRel } from "#/techstack-registry.js";
+import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/techstack-remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { resolveTargetPath } from "#/utils/fs.js";
 
-export const CHECK_CONCURRENCY = 32;
+export const GOLDEN_FETCH_CONCURRENCY = 16;
 
 export interface TechStackRunOptions {
 	baseDir: string;
 	home: string;
-	noCache: boolean;
 	scope: CheckScope;
 }
 
-export interface TechCheckOutput {
-	results: CheckResult[];
-	warnings: string[];
+interface NeededFile {
+	blueprint: string;
+	fileName: string;
+	fileTarget: string;
+	needsGolden: boolean;
+	sourceLabel: string;
+	sourceRel: string;
+	targetPath: string;
 }
 
-function collectJobs(
+function collectNeeded(
 	blueprint: string,
 	files: ManifestFile[],
-	manifestDir: string,
-	repoRoot: string,
+	dirRel: string,
 	options: TechStackRunOptions,
-): { skips: CheckResult[]; tasks: CheckFileArgs[] } {
-	const tasks: CheckFileArgs[] = [];
+	onlyIds?: ReadonlySet<string>,
+): { needed: NeededFile[]; skips: CheckResult[] } {
+	const needed: NeededFile[] = [];
 	const skips: CheckResult[] = [];
 	for (const file of files) {
+		if (onlyIds !== undefined && !onlyIds.has(`project:${blueprint}:${file.name}`)) {
+			continue;
+		}
 		const classified = classifyTarget(file.target, options.scope);
 		if (classified.type === "skip") {
 			skips.push(
@@ -50,86 +52,115 @@ function collectJobs(
 			);
 			continue;
 		}
-		const targetPath = resolveTargetPath(classified.path, options.baseDir, options.home);
-		tasks.push({
+		needed.push({
 			blueprint,
 			fileName: file.name,
 			fileTarget: file.target,
-			goldenPath: resolveSourcePath(file.source, manifestDir, repoRoot),
-			scope: options.scope,
+			needsGolden: !file.source.endsWith(".example"),
 			sourceLabel: file.source,
-			targetPath,
+			sourceRel: resolveSourceRel(file.source, dirRel),
+			targetPath: resolveTargetPath(classified.path, options.baseDir, options.home),
 		});
 	}
-	return { skips, tasks };
+	return { needed, skips };
 }
 
-export async function runProjectChecks(
-	spec: ProjectRunSpec,
-	options: TechStackRunOptions,
-): Promise<TechCheckOutput> {
-	if (options.noCache) {
+async function fetchGoldens(
+	id: string,
+	ref: string,
+	needed: readonly NeededFile[],
+): Promise<Map<string, string>> {
+	const goldens = new Map<string, string>();
+	const toFetch = [
+		...new Set(needed.filter((item) => item.needsGolden).map((item) => item.sourceRel)),
+	];
+	await mapWithConcurrency(toFetch, GOLDEN_FETCH_CONCURRENCY, async (rel) => {
 		try {
-			const { runSparseChecks } = await import("#/techstack-sparse.js");
-			return await runSparseChecks(spec, {
-				baseDir: options.baseDir,
-				home: options.home,
-				scope: options.scope,
-			});
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			const warnings = [
-				`Warning: sparse fetch failed for tech-stack ${spec.id}@${spec.ref} (${message}); falling back to full download.`,
-			];
-			const fallback = await runDiskChecks(spec, options);
-			return { results: fallback.results, warnings: [...warnings, ...fallback.warnings] };
+			goldens.set(rel, await fetchTextOrThrow(rawUrl(id, ref, rel), `preset file ${rel}`));
+		} catch {
+			// Leave absent: caller reports "<preset file missing>".
 		}
-	}
-	return runDiskChecks(spec, options);
+	});
+	return goldens;
 }
 
-export async function recheckProjectSelected(
+function checkNeeded(
+	needed: readonly NeededFile[],
+	goldens: Map<string, string>,
+	scope: CheckScope,
+): Promise<CheckResult[]> {
+	return Promise.all(
+		needed.map((item): Promise<CheckResult> => {
+			if (!item.needsGolden) {
+				return checkPresetFileWithGolden({
+					blueprint: item.blueprint,
+					fileName: item.fileName,
+					fileTarget: item.fileTarget,
+					golden: "",
+					scope,
+					sourceLabel: item.sourceLabel,
+					targetPath: item.targetPath,
+				});
+			}
+			const golden = goldens.get(item.sourceRel);
+			if (golden === undefined) {
+				return Promise.resolve(
+					failManual(
+						{
+							id: `project:${item.blueprint}:${item.fileName}`,
+							kind: "preset",
+							scope,
+							source: `tech-stack:${item.blueprint}`,
+							target: item.fileTarget,
+						},
+						"<preset file missing>",
+						item.sourceRel,
+						`Preset file missing in tech-stack repo: ${item.sourceRel}`,
+					),
+				);
+			}
+			return checkPresetFileWithGolden({
+				blueprint: item.blueprint,
+				fileName: item.fileName,
+				fileTarget: item.fileTarget,
+				golden,
+				scope,
+				sourceLabel: item.sourceLabel,
+				targetPath: item.targetPath,
+			});
+		}),
+	);
+}
+
+async function runWithManifest(
 	spec: ProjectRunSpec,
 	options: TechStackRunOptions,
+	registry: RegistryDocument,
+	onlyIds?: ReadonlySet<string>,
+): Promise<CheckResult[]> {
+	const { dirRel, files } = await fetchProjectManifest(spec.id, spec.ref, spec.blueprint, registry);
+	const { needed, skips } = collectNeeded(spec.blueprint, files, dirRel, options, onlyIds);
+	const goldens = await fetchGoldens(spec.id, spec.ref, needed);
+	const enforced = await checkNeeded(needed, goldens, options.scope);
+	return [...skips, ...enforced];
+}
+
+export function runProjectChecks(
+	spec: ProjectRunSpec,
+	options: TechStackRunOptions,
+	registry: RegistryDocument,
+): Promise<CheckResult[]> {
+	return runWithManifest(spec, options, registry);
+}
+
+export function recheckProjectSelected(
+	spec: ProjectRunSpec,
+	options: TechStackRunOptions,
+	registry: RegistryDocument,
 	selectedIds: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	if (selectedIds.size === 0) {
-		return [];
+		return Promise.resolve([]);
 	}
-	if (options.noCache) {
-		const { recheckSparseSelected } = await import("#/techstack-sparse.js");
-		return recheckSparseSelected(spec, options, selectedIds);
-	}
-	const cached = await ensureGithubRepo(spec, false);
-	const repoRoot = cached.dir;
-	const registryDoc = await loadRegistryDocument(repoRoot);
-	const { dir, files } = await loadProjectManifest(repoRoot, spec.blueprint, registryDoc);
-	const { tasks } = collectJobs(spec.blueprint, files, dir, repoRoot, options);
-	const filtered = tasks.filter((task) =>
-		selectedIds.has(`project:${task.blueprint}:${task.fileName}`),
-	);
-	if (filtered.length <= CHECK_CONCURRENCY) {
-		return Promise.all(filtered.map((task) => checkPresetFile(task)));
-	}
-	return mapWithConcurrency(filtered, CHECK_CONCURRENCY, (task) => checkPresetFile(task));
-}
-
-async function runDiskChecks(
-	spec: ProjectRunSpec,
-	options: TechStackRunOptions,
-): Promise<TechCheckOutput> {
-	const cached = await ensureGithubRepo(spec, options.noCache);
-	const warnings: string[] = [];
-	if (cached.stale && cached.warning !== undefined) {
-		warnings.push(`Warning: using cached tech-stack ${spec.id}@${spec.ref} (${cached.warning})`);
-	}
-	const repoRoot = cached.dir;
-	const registryDoc = await loadRegistryDocument(repoRoot);
-	const { dir, files } = await loadProjectManifest(repoRoot, spec.blueprint, registryDoc);
-	const { skips, tasks } = collectJobs(spec.blueprint, files, dir, repoRoot, options);
-	const enforced =
-		tasks.length <= CHECK_CONCURRENCY
-			? await Promise.all(tasks.map((task) => checkPresetFile(task)))
-			: await mapWithConcurrency(tasks, CHECK_CONCURRENCY, (task) => checkPresetFile(task));
-	return { results: [...skips, ...enforced], warnings };
+	return runWithManifest(spec, options, registry, selectedIds);
 }

@@ -1,4 +1,4 @@
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
@@ -44,29 +44,6 @@ function isMissingError(error: unknown): boolean {
 		"code" in error &&
 		(error as { code?: unknown }).code === "ENOENT"
 	);
-}
-
-export async function pathExists(path: string): Promise<boolean> {
-	try {
-		await stat(path);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-export async function ensureDir(dir: string): Promise<void> {
-	await mkdir(dir, { recursive: true });
-}
-
-export async function removePath(path: string): Promise<void> {
-	await rm(path, { force: true, recursive: true });
-}
-
-export async function moveOverwrite(source: string, dest: string): Promise<void> {
-	await mkdir(dirname(dest), { recursive: true });
-	await rm(dest, { force: true, recursive: true });
-	await rename(source, dest);
 }
 
 export async function writeFileEnsuringDir(path: string, content: string): Promise<void> {

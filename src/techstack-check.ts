@@ -28,10 +28,7 @@ function isExampleFile(sourceLabel: string): boolean {
 }
 
 function isBlankGolden(golden: string): boolean {
-	if (golden.length === 0) {
-		return true;
-	}
-	return /^\s*$/u.test(golden);
+	return golden.trim() === "";
 }
 
 function baseFor(
@@ -81,61 +78,6 @@ function unreadableTarget(base: CheckBase, golden: string, targetPath: string, e
 		golden,
 		`Cannot read ${targetPath} (may need sudo): ${error}`,
 	);
-}
-
-export interface CheckFileArgs {
-	blueprint: string;
-	fileName: string;
-	fileTarget: string;
-	goldenPath: string;
-	scope: CheckScope;
-	sourceLabel: string;
-	targetPath: string;
-}
-
-export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult> {
-	const { blueprint, fileName, fileTarget, goldenPath, scope, sourceLabel, targetPath } = args;
-	const base = baseFor(blueprint, fileName, fileTarget, scope);
-	const [presetRead, targetRead] = await Promise.all([
-		readFileSafe(goldenPath),
-		readFileSafe(targetPath),
-	]);
-	if (!presetRead.ok) {
-		if (presetRead.reason === "missing") {
-			return failManual(
-				base,
-				"<preset file missing>",
-				sourceLabel,
-				`Preset file missing in tech-stack repo: ${goldenPath}`,
-			);
-		}
-		return failManual(base, "<unreadable preset>", sourceLabel, presetRead.error);
-	}
-	const golden = presetRead.text;
-	if (isExampleFile(sourceLabel)) {
-		return checkExampleOutcome(base, sourceLabel, targetPath, targetRead);
-	}
-	if (isBlankGolden(golden) && !targetRead.ok && targetRead.reason === "missing") {
-		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
-	}
-	if (!targetRead.ok) {
-		if (targetRead.reason === "missing") {
-			return failFixable(base, "<missing>", golden, {
-				filePath: targetPath,
-				kind: "overwrite-file",
-				newContent: golden,
-			});
-		}
-		return unreadableTarget(base, golden, targetPath, targetRead.error);
-	}
-	if (targetRead.text === golden) {
-		return pass(base, "matches preset", golden);
-	}
-	return failFixable(base, targetRead.text, golden, {
-		filePath: targetPath,
-		kind: "overwrite-file",
-		newContent: golden,
-	});
 }
 
 export async function checkPresetFileWithGolden(args: {

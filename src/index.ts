@@ -7,6 +7,8 @@ import type { LoadedConform } from "#/config.js";
 import { discoverConfigs, loadConfig, machineSpecOf, projectSpecOf } from "#/config.js";
 import { applySelected, resolveSelection } from "#/fix.js";
 import { recheckMachineSelected, runMachineChecks } from "#/techstack-machine.js";
+import type { RegistryDocument } from "#/techstack-registry.js";
+import { fetchRegistry, repoKey } from "#/techstack-remote.js";
 import { recheckProjectSelected, runProjectChecks } from "#/techstack.js";
 import { defaultHome, errorMessage } from "#/utils/fs.js";
 import {
@@ -15,7 +17,6 @@ import {
 	printDryRun,
 	printJsonSummary,
 	printResults,
-	printWarning,
 	renderFixDiffs,
 	reportUnfixable,
 } from "#/utils/output.js";
@@ -23,10 +24,8 @@ import {
 const VERSION = "0.1.0";
 
 type ScopeOptions = { machineOnly?: boolean; projectOnly?: boolean };
-type CacheOptions = { cache?: boolean };
-type CheckCmdOptions = CacheOptions & ScopeOptions & { json?: boolean };
-type FixCmdOptions = CacheOptions &
-	ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean };
+type CheckCmdOptions = ScopeOptions & { json?: boolean };
+type FixCmdOptions = ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean };
 
 function scopeOf(options: ScopeOptions): CheckScope | undefined {
 	if (options.projectOnly && options.machineOnly) {
@@ -60,45 +59,69 @@ async function timed<T>(task: Promise<T>): Promise<{ elapsedMs: number; value: T
 	return { elapsedMs: performance.now() - start, value };
 }
 
+// One registry fetch per unique repo@ref, shared by every spec in the run.
+// This replaces the old module-global memo maps with an explicit batch
+// scoped to a single command: no hidden state, no stale entries.
+async function fetchRegistries(
+	configs: readonly LoadedConform[],
+	only: CheckScope | undefined,
+): Promise<Map<string, RegistryDocument>> {
+	const wanted = new Map<string, { id: string; ref: string }>();
+	for (const loaded of configs) {
+		if (only === undefined || only === "project") {
+			const spec = projectSpecOf(loaded);
+			if (spec !== undefined) {
+				wanted.set(repoKey(spec.id, spec.ref), { id: spec.id, ref: spec.ref });
+			}
+		}
+		if (only === undefined || only === "machine") {
+			const spec = machineSpecOf(loaded);
+			if (spec !== undefined) {
+				wanted.set(repoKey(spec.id, spec.ref), { id: spec.id, ref: spec.ref });
+			}
+		}
+	}
+	const entries = await Promise.all(
+		[...wanted].map(async ([key, spec]): Promise<[string, RegistryDocument]> => [
+			key,
+			await fetchRegistry(spec.id, spec.ref),
+		]),
+	);
+	return new Map(entries);
+}
+
 async function runAllChecks(args: {
 	configs: LoadedConform[];
 	cwd: string;
 	home: string;
 	only: CheckScope | undefined;
-	noCache: boolean;
+	registries: Map<string, RegistryDocument>;
 }): Promise<{
 	machineElapsedMs: number | undefined;
 	projectElapsedMs: number | undefined;
 	results: CheckResult[];
-	warnings: string[];
 }> {
-	const projectTasks: Promise<{ results: CheckResult[]; warnings: string[] }>[] = [];
-	const machineTasks: Promise<{ results: CheckResult[]; warnings: string[] }>[] = [];
+	const projectTasks: Promise<CheckResult[]>[] = [];
+	const machineTasks: Promise<CheckResult[]>[] = [];
 	for (const loaded of args.configs) {
 		if (args.only === undefined || args.only === "project") {
 			const spec = projectSpecOf(loaded);
 			if (spec !== undefined) {
+				const registry = args.registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument;
 				projectTasks.push(
-					runProjectChecks(spec, {
-						baseDir: args.cwd,
-						home: args.home,
-						noCache: args.noCache,
-						scope: "project",
-					}),
+					runProjectChecks(
+						spec,
+						{ baseDir: args.cwd, home: args.home, scope: "project" },
+						registry,
+					),
 				);
 			}
 		}
 		if (args.only === undefined || args.only === "machine") {
 			const spec = machineSpecOf(loaded);
 			if (spec !== undefined) {
-				machineTasks.push(
-					runMachineChecks(spec, {
-						baseDir: args.home,
-						home: args.home,
-						noCache: args.noCache,
-						scope: "machine",
-					}),
-				);
+				const registry = args.registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument;
+				machineTasks.push(runMachineChecks(spec, registry));
 			}
 		}
 	}
@@ -106,44 +129,28 @@ async function runAllChecks(args: {
 		timed(Promise.all(projectTasks)),
 		timed(Promise.all(machineTasks)),
 	]);
-	const projectOutputs = project.value;
-	const machineOutputs = machine.value;
 	return {
 		machineElapsedMs: machineTasks.length > 0 ? machine.elapsedMs : undefined,
 		projectElapsedMs: projectTasks.length > 0 ? project.elapsedMs : undefined,
-		results: [
-			...projectOutputs.flatMap((output) => output.results),
-			...machineOutputs.flatMap((output) => output.results),
-		],
-		warnings: [
-			...projectOutputs.flatMap((output) => output.warnings),
-			...machineOutputs.flatMap((output) => output.warnings),
-		],
+		results: [...project.value.flat(), ...machine.value.flat()],
 	};
 }
 
-function emitWarnings(warnings: string[]): void {
-	for (const warning of warnings) {
-		printWarning(warning);
-	}
-}
-
-async function prepareRun(cmd: Command, cmdOptions: CacheOptions & ScopeOptions) {
+async function prepareRun(cmd: Command, cmdOptions: ScopeOptions) {
 	const only = scopeOf(cmdOptions);
 	const configs = await loadConfigsFromCommand(cmd);
 	const cwd = process.cwd();
 	const home = defaultHome();
-	const noCache = cmdOptions.cache === false;
-	const run = await runAllChecks({ configs, cwd, home, noCache, only });
-	return { configs, cwd, home, noCache, only, ...run };
+	const registries = await fetchRegistries(configs, only);
+	const run = await runAllChecks({ configs, cwd, home, only, registries });
+	return { configs, cwd, home, only, registries, ...run };
 }
 
 async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promise<number> {
-	const { configs, machineElapsedMs, projectElapsedMs, results, warnings } = await prepareRun(
+	const { configs, machineElapsedMs, projectElapsedMs, results } = await prepareRun(
 		cmd,
 		cmdOptions,
 	);
-	emitWarnings(warnings);
 	if (cmdOptions.json) {
 		printJsonSummary(
 			configs.map((entry) => entry.path),
@@ -157,11 +164,7 @@ async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promi
 
 async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<number> {
 	const start = performance.now();
-	const { configs, cwd, home, noCache, only, results, warnings } = await prepareRun(
-		cmd,
-		cmdOptions,
-	);
-	emitWarnings(warnings);
+	const { configs, cwd, home, only, registries, results } = await prepareRun(cmd, cmdOptions);
 	const { failed, fixable, unfixable } = partitionResults(results);
 
 	if (failed.length === 0) {
@@ -204,7 +207,6 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 	const applied = await applySelected(selection.selected);
 
 	let rerunResults: CheckResult[];
-	let rerunWarnings: string[] = [];
 	try {
 		const selectedIds = new Set(selection.selected.map((item) => item.id));
 		const refreshed = await Promise.all(
@@ -220,7 +222,8 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 							reruns.push(
 								await recheckProjectSelected(
 									spec,
-									{ baseDir: cwd, home, noCache, scope: "project" },
+									{ baseDir: cwd, home, scope: "project" },
+									registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument,
 									scopedIds,
 								),
 							);
@@ -237,7 +240,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 							reruns.push(
 								await recheckMachineSelected(
 									spec,
-									{ baseDir: home, home, noCache, scope: "machine" },
+									registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument,
 									scopedIds,
 								),
 							);
@@ -250,10 +253,8 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 		const byId = new Map(refreshed.flat().map((item) => [item.id, item]));
 		rerunResults = results.map((item) => byId.get(item.id) ?? item);
 	} catch {
-		const rerun = await runAllChecks({ configs, cwd, home, noCache, only });
-		rerunWarnings = rerun.warnings;
+		const rerun = await runAllChecks({ configs, cwd, home, only, registries });
 		rerunResults = rerun.results;
-		emitWarnings(rerunWarnings);
 	}
 	const remaining = rerunResults.filter((item) => !item.ok);
 	const elapsedMs = performance.now() - start;
@@ -280,7 +281,6 @@ program
 	.description("Check the config in the current directory against the current project/machine.")
 	.option("--json", "Print machine-readable JSON.")
 	.option("--project-only", "Only run project checks.")
-	.option("--no-cache", "Re-download tech-stack blueprints/flakes, ignoring the cache.")
 	.option("--machine-only", "Only run machine checks.")
 	.action(async (cmdOptions: CheckCmdOptions, cmd: Command) => {
 		try {
@@ -297,7 +297,6 @@ program
 	.option("--dry-run", "Show what would be fixed without writing.")
 	.option("--no-diff", "Hide the diff preview.")
 	.option("--project-only", "Only fix project checks.")
-	.option("--no-cache", "Re-download tech-stack blueprints/flakes, ignoring the cache.")
 	.option("--machine-only", "Only fix machine checks.")
 	.action(async (cmdOptions: FixCmdOptions, cmd: Command) => {
 		try {

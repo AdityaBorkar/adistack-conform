@@ -147,10 +147,6 @@ export async function renderFixDiffs(fixable: CheckResult[]): Promise<void> {
 	process.stdout.write(`${rendered.join("\n")}\n`);
 }
 
-export function printWarning(message: string): void {
-	console.warn(message);
-}
-
 export async function outroAllPassed(elapsedMs?: number): Promise<void> {
 	const { outro } = await import("@clack/prompts");
 	const timing = elapsedMs === undefined ? "" : ` in ${formatDuration(elapsedMs)}`;
