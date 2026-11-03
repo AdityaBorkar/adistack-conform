@@ -1,0 +1,40 @@
+{
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"description": "JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/project-manifest.json."
+		},
+		"description": {
+			"type": "string",
+			"description": "Human-readable blueprint description."
+		},
+		"files": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string",
+						"minLength": 1,
+						"description": "File name within the blueprint."
+					},
+					"source": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Source path of the golden file. Relative to the manifest directory when starting with ./ or ../, otherwise relative to the tech-stack root."
+					},
+					"target": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Enforcement target."
+					}
+				},
+				"required": ["name", "source", "target"]
+			},
+			"description": "Files enforced by this blueprint."
+		}
+	},
+	"required": ["files"],
+	"$schema": "https://json-schema.org/draft/2020-12/schema"
+}

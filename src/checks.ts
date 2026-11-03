@@ -1,13 +1,21 @@
 import { writeFileEnsuringDir } from "#/utils/fs.js";
 
 export type CheckScope = "project" | "machine";
-export type FixKind = "overwrite-file";
 
-export interface CheckFix {
+export interface OverwriteFileFix {
 	filePath: string;
-	kind: FixKind;
+	kind: "overwrite-file";
 	newContent: string;
 }
+
+export interface RunCommandFix {
+	args: string[];
+	command: string;
+	kind: "run-command";
+	label: string;
+}
+
+export type CheckFix = OverwriteFileFix | RunCommandFix;
 
 export interface CheckResult {
 	actual: string;
@@ -69,6 +77,9 @@ export function partitionResults(results: CheckResult[]): {
 }
 
 export function desiredContent(result: CheckResult): string {
+	if (result.fix?.kind === "run-command") {
+		return result.fix.label;
+	}
 	return result.fix?.newContent ?? result.expected;
 }
 
@@ -76,5 +87,17 @@ export async function applyFix(result: CheckResult): Promise<void> {
 	if (!result.fix) {
 		throw new Error(`Check ${result.id} is not fixable.`);
 	}
-	await writeFileEnsuringDir(result.fix.filePath, result.fix.newContent);
+	if (result.fix.kind === "overwrite-file") {
+		await writeFileEnsuringDir(result.fix.filePath, result.fix.newContent);
+		return;
+	}
+	const proc = Bun.spawn([result.fix.command, ...result.fix.args], {
+		stderr: "inherit",
+		stdin: "inherit",
+		stdout: "inherit",
+	});
+	const code = await proc.exited;
+	if (code !== 0) {
+		throw new Error(`Command failed with exit code ${code}: ${result.fix.label}`);
+	}
 }

@@ -15,95 +15,12 @@ export const TechStackSourceSchema = v.object({
 	repo: v.pipe(
 		v.string(),
 		v.regex(/^[^/\s]+\/[^/\s]+$/u),
-		v.description("GitHub owner/repo holding blueprints and presets."),
+		v.description(
+			"GitHub owner/repo holding blueprints and presets (project) or nix flakes (machine).",
+		),
 	),
-	type: v.pipe(v.literal("github"), v.description("Preset source; only github is supported.")),
+	type: v.pipe(v.literal("github"), v.description("Tech-stack source; only github is supported.")),
 });
-
-export function makeConfigSchema(options: {
-	blueprintDescription: string;
-	schemaDescription: string;
-}) {
-	return v.object({
-		$schema: v.optional(v.pipe(v.string(), v.description(options.schemaDescription))),
-		blueprint: v.pipe(v.string(), v.minLength(1), v.description(options.blueprintDescription)),
-		exclude: v.optional(
-			v.pipe(
-				v.array(v.pipe(v.string(), v.minLength(1))),
-				v.description("Preset names dropped from the effective set."),
-			),
-			() => [],
-		),
-		presets: v.optional(
-			v.pipe(
-				v.array(v.pipe(v.string(), v.minLength(1))),
-				v.description("Extra preset names merged over the blueprint."),
-			),
-			() => [],
-		),
-		source: v.pipe(
-			TechStackSourceSchema,
-			v.description("Tech-stack repo holding blueprints and presets."),
-		),
-	});
-}
-
-export function makePresetManifestSchema(options: {
-	packagesDescription: string;
-	pathDescription: string;
-	schemaDescription: string;
-	typeDescription: string;
-	typeLiteral: string;
-}) {
-	const fileSchema = v.object({
-		name: v.pipe(v.string(), v.minLength(1), v.description("File name within the preset.")),
-		path: v.pipe(v.string(), v.minLength(1), v.description(options.pathDescription)),
-		target: v.pipe(v.string(), v.minLength(1), v.description("Enforcement target.")),
-	});
-	const packageSchema = v.object({
-		files: v.pipe(
-			v.array(fileSchema),
-			v.minLength(1),
-			v.description("Files belonging to this preset."),
-		),
-		name: v.pipe(v.string(), v.minLength(1), v.description("Preset name.")),
-	});
-	return v.object({
-		$schema: v.optional(v.pipe(v.string(), v.description(options.schemaDescription))),
-		packages: v.pipe(v.array(packageSchema), v.description(options.packagesDescription)),
-		type: v.pipe(v.literal(options.typeLiteral), v.description(options.typeDescription)),
-	});
-}
-
-export function makeBlueprintSchema(options: {
-	nameDescription: string;
-	schemaDescription: string;
-	typeDescription: string;
-	typeLiteral: string;
-}) {
-	return v.object({
-		$schema: v.optional(v.pipe(v.string(), v.description(options.schemaDescription))),
-		description: v.optional(
-			v.pipe(v.string(), v.description("Human-readable blueprint description.")),
-		),
-		exclude: v.optional(
-			v.pipe(
-				v.array(v.pipe(v.string(), v.minLength(1))),
-				v.description("Preset names dropped from the effective set."),
-			),
-			() => [],
-		),
-		name: v.pipe(v.string(), v.minLength(1), v.description(options.nameDescription)),
-		presets: v.optional(
-			v.pipe(
-				v.array(v.pipe(v.string(), v.minLength(1))),
-				v.description("Preset names included by this blueprint."),
-			),
-			() => [],
-		),
-		type: v.pipe(v.literal(options.typeLiteral), v.description(options.typeDescription)),
-	});
-}
 
 export function parseOrThrow<T>(
 	schema: v.GenericSchema<unknown, T>,

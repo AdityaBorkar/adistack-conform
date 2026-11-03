@@ -2,31 +2,18 @@ import { join } from "node:path";
 
 import type * as v from "valibot";
 
-import type { CheckScope } from "#/checks.js";
 import { parseOrThrow } from "#/schemas/common.js";
-import { MachineBlueprintSchema } from "#/schemas/machine-blueprint.js";
-import { MachinePresetManifestSchema } from "#/schemas/machine-preset.js";
-import { ProjectBlueprintSchema } from "#/schemas/project-blueprint.js";
-import { ProjectPresetManifestSchema } from "#/schemas/project-preset.js";
+import { ManifestSchema } from "#/schemas/manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
-import { readJsonFile } from "#/utils/fs.js";
+import { pathExists, readJsonFile } from "#/utils/fs.js";
 
-export type PresetPackage =
-	| v.InferOutput<typeof MachinePresetManifestSchema>["packages"][number]
-	| v.InferOutput<typeof ProjectPresetManifestSchema>["packages"][number];
+export type ManifestFile = v.InferOutput<typeof ManifestSchema>["files"][number];
 export type RegistryDocument = v.InferOutput<typeof RegistrySchema>;
+export type RegistryEntry = RegistryDocument["projects"][number];
 
 export const MAX_LIST_SHOWN = 10;
 
 const registryDocCache = new Map<string, Promise<RegistryDocument>>();
-
-function presetSchemaFor(scope: CheckScope) {
-	return scope === "project" ? ProjectPresetManifestSchema : MachinePresetManifestSchema;
-}
-
-function blueprintSchemaFor(scope: CheckScope) {
-	return scope === "project" ? ProjectBlueprintSchema : MachineBlueprintSchema;
-}
 
 export function loadRegistryDocument(repoRoot: string): Promise<RegistryDocument> {
 	const pending = registryDocCache.get(repoRoot);
@@ -47,80 +34,168 @@ export function loadRegistryDocument(repoRoot: string): Promise<RegistryDocument
 	return task;
 }
 
-export async function loadRegistry(
-	repoRoot: string,
-	scope: CheckScope,
-	registry: RegistryDocument,
-): Promise<Map<string, PresetPackage>> {
-	const schema = presetSchemaFor(scope);
-	const manifests = await Promise.all(
-		registry[scope].presets.map(async (dir) => {
-			const manifestPath = join(repoRoot, dir, "manifest.json");
-			return parseOrThrow(
-				schema,
-				manifestPath,
-				await readJsonFile(manifestPath, "tech-stack preset manifest"),
-				"tech-stack preset manifest",
-			);
-		}),
-	);
-	const byName = new Map<string, PresetPackage>();
-	for (const manifest of manifests) {
-		for (const pkg of manifest.packages) {
-			// First manifest wins; registry order is the source of truth.
-			if (!byName.has(pkg.name)) {
-				byName.set(pkg.name, pkg);
-			}
-		}
-	}
-	return byName;
+function normalizeEntryPath(value: string): string {
+	return value.replace(/\/+$/u, "").replace(/^\.\//u, "").replace(/^\/+/u, "");
 }
 
-export async function listBlueprints(
-	repoRoot: string,
-	scope: CheckScope,
-	registry: RegistryDocument,
-): Promise<string[]> {
-	const { glob } = await import("tinyglobby");
-	const matches = await Promise.all(
-		registry[scope].blueprints.map((dir) => glob("*/manifest.json", { cwd: join(repoRoot, dir) })),
-	);
-	const names = new Set<string>();
-	for (const entries of matches) {
-		for (const entry of entries) {
-			names.add(entry.slice(0, -"/manifest.json".length));
-		}
-	}
-	return [...names].toSorted();
+function dirKey(value: string): string {
+	const segments = normalizeEntryPath(value)
+		.split("/")
+		.filter((part) => part !== "");
+	return segments.at(-1) ?? "";
 }
 
-export async function loadBlueprint(
-	repoRoot: string,
-	scope: CheckScope,
+function findEntry(name: string, entries: readonly RegistryEntry[]): RegistryEntry | undefined {
+	const want = name.trim();
+	if (want === "") {
+		return undefined;
+	}
+	const exact = entries.find((entry) => entry.name === want);
+	if (exact !== undefined) {
+		return exact;
+	}
+	const wantPath = normalizeEntryPath(want);
+	const byPath = entries.find((entry) => normalizeEntryPath(entry.path) === wantPath);
+	if (byPath !== undefined) {
+		return byPath;
+	}
+	const byDir = entries.find((entry) => dirKey(entry.path) === want);
+	if (byDir !== undefined) {
+		return byDir;
+	}
+	const wantDir = dirKey(want);
+	if (wantDir !== "") {
+		const byWantDir = entries.find((entry) => dirKey(entry.path) === wantDir);
+		if (byWantDir !== undefined) {
+			return byWantDir;
+		}
+	}
+	return undefined;
+}
+
+function hint(names: string[], label: string): string {
+	if (names.length > MAX_LIST_SHOWN) {
+		return ` Available ${label}: ${names.slice(0, MAX_LIST_SHOWN).join(", ")} (+${names.length - MAX_LIST_SHOWN} more).`;
+	}
+	if (names.length > 0) {
+		return ` Available ${label}: ${names.join(", ")}.`;
+	}
+	return "";
+}
+
+export function listMachineBlueprintNames(registry: RegistryDocument): string[] {
+	return registry.machines.map((entry) => entry.name).toSorted();
+}
+
+export function listProjectBlueprintNames(registry: RegistryDocument): string[] {
+	return registry.projects.map((entry) => entry.name).toSorted();
+}
+
+export function findProjectEntry(
 	name: string,
 	registry: RegistryDocument,
-): Promise<{ exclude: string[]; presets: string[] }> {
-	const schema = blueprintSchemaFor(scope);
-	const candidates = registry[scope].blueprints.map((dir) =>
-		join(repoRoot, dir, name, "manifest.json"),
-	);
-	const attempts = await Promise.allSettled(
-		candidates.map(async (path) => ({
-			data: parseOrThrow(schema, path, await readJsonFile(path, "Blueprint"), "blueprint"),
-			path,
-		})),
-	);
-	for (const attempt of attempts) {
-		if (attempt.status === "fulfilled") {
-			return attempt.value.data;
-		}
+): RegistryEntry | undefined {
+	return findEntry(name, registry.projects);
+}
+
+export function findMachineEntry(
+	name: string,
+	registry: RegistryDocument,
+): RegistryEntry | undefined {
+	return findEntry(name, registry.machines);
+}
+
+export async function loadProjectManifest(
+	repoRoot: string,
+	name: string,
+	registry: RegistryDocument,
+): Promise<{ dir: string; files: ManifestFile[] }> {
+	const entry = findProjectEntry(name, registry);
+	if (entry === undefined) {
+		throw new Error(
+			`Blueprint "${name}" not found in the tech-stack repo.${hint(listProjectBlueprintNames(registry), "blueprints")}`,
+		);
 	}
-	const available = await listBlueprints(repoRoot, scope, registry);
-	const hint =
-		available.length > MAX_LIST_SHOWN
-			? ` Available blueprints: ${available.slice(0, MAX_LIST_SHOWN).join(", ")} (+${available.length - MAX_LIST_SHOWN} more).`
-			: available.length > 0
-				? ` Available blueprints: ${available.join(", ")}.`
-				: "";
-	throw new Error(`Blueprint "${name}" not found in the tech-stack repo.${hint}`);
+	const dir = join(repoRoot, entry.path);
+	const path = join(dir, "manifest.json");
+	if (!(await pathExists(path))) {
+		throw new Error(
+			`Blueprint "${entry.name}" has no manifest.json in ${dir}.${hint(listProjectBlueprintNames(registry), "blueprints")}`,
+		);
+	}
+	const data = parseOrThrow(
+		ManifestSchema,
+		path,
+		await readJsonFile(path, "Blueprint"),
+		"blueprint",
+	);
+	return { dir, files: data.files };
+}
+
+function swapMachinePlural(path: string): string | undefined {
+	if (/(^|\/)machines\//u.test(path)) {
+		return path.replace(/(^|\/)machines\//u, "$1machine/");
+	}
+	if (/(^|\/)machine\//u.test(path)) {
+		return path.replace(/(^|\/)machine\//u, "$1machines/");
+	}
+	return undefined;
+}
+
+export async function loadMachineBlueprint(
+	repoRoot: string,
+	name: string,
+	registry: RegistryDocument,
+): Promise<{ dir: string }> {
+	const entry = findMachineEntry(name, registry);
+	if (entry === undefined) {
+		throw new Error(
+			`Machine blueprint "${name}" not found in the tech-stack repo.${hint(listMachineBlueprintNames(registry), "machine blueprints")}`,
+		);
+	}
+	const candidates = [join(repoRoot, entry.path)];
+	const swapped = swapMachinePlural(entry.path);
+	if (swapped !== undefined) {
+		candidates.push(join(repoRoot, swapped));
+	}
+	const checks = await Promise.all(candidates.map((dir) => pathExists(join(dir, "flake.nix"))));
+	const hit = candidates.find((_dir, index) => checks[index] === true);
+	if (hit !== undefined) {
+		return { dir: hit };
+	}
+	throw new Error(
+		`Machine blueprint "${entry.name}" is not a nix flake (missing flake.nix in ${candidates[0]}).`,
+	);
+}
+
+// Manifest `source` values starting with ./ or ../ resolve against the
+// manifest directory; anything else is repo-relative.
+export function resolveSourcePath(source: string, manifestDir: string, repoRoot: string): string {
+	if (source.startsWith("./") || source.startsWith("../")) {
+		return join(manifestDir, source);
+	}
+	return join(repoRoot, source);
+}
+
+// Repo-relative form of a manifest source, for sparse raw fetches.
+export function resolveSourceRel(source: string, dirRel: string): string {
+	if (source.startsWith("./") || source.startsWith("../")) {
+		const parts: string[] = [];
+		for (const segment of [...dirRel.split("/"), ...source.split("/")]) {
+			if (segment === "" || segment === ".") {
+				continue;
+			}
+			if (segment === "..") {
+				parts.pop();
+				continue;
+			}
+			parts.push(segment);
+		}
+		return parts.join("/");
+	}
+	return source.replace(/^\.\//u, "").replace(/^\/+/u, "");
+}
+
+export function manifestDirRel(entryPath: string): string {
+	return normalizeEntryPath(entryPath);
 }

@@ -3,55 +3,49 @@
 	"properties": {
 		"$schema": {
 			"type": "string",
-			"description": "JSON Schema reference, e.g. registry.json."
+			"description": "JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/registry.json."
 		},
-		"machine": {
-			"type": "object",
-			"properties": {
-				"blueprints": {
-					"type": "array",
-					"items": {
+		"machines": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
 						"type": "string",
-						"minLength": 1
+						"minLength": 1,
+						"description": "Display name for the blueprint."
 					},
-					"description": "Blueprint locations relative to tech-stack root."
+					"path": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Blueprint directory relative to the tech-stack root, e.g. ./projects/cli-app/."
+					}
 				},
-				"presets": {
-					"type": "array",
-					"items": {
-						"type": "string",
-						"minLength": 1
-					},
-					"description": "Preset locations relative to tech-stack root."
-				}
+				"required": ["name", "path"]
 			},
-			"required": ["blueprints", "presets"],
-			"description": "Machine blueprints and presets locations."
+			"description": "Machine blueprints as explicit name/path entries."
 		},
-		"project": {
-			"type": "object",
-			"properties": {
-				"blueprints": {
-					"type": "array",
-					"items": {
+		"projects": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
 						"type": "string",
-						"minLength": 1
+						"minLength": 1,
+						"description": "Display name for the blueprint."
 					},
-					"description": "Blueprint locations relative to tech-stack root."
+					"path": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Blueprint directory relative to the tech-stack root, e.g. ./projects/cli-app/."
+					}
 				},
-				"presets": {
-					"type": "array",
-					"items": {
-						"type": "string",
-						"minLength": 1
-					},
-					"description": "Preset locations relative to tech-stack root."
-				}
+				"required": ["name", "path"]
 			},
-			"required": ["blueprints", "presets"],
-			"description": "Project blueprints and presets locations."
+			"description": "Project blueprints as explicit name/path entries."
 		}
 	},
-	"required": ["machine", "project"],
+	"required": ["machines", "projects"],
 	"$schema": "https://json-schema.org/draft/2020-12/schema"
 }

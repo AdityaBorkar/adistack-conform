@@ -31,7 +31,11 @@ export function formatResult(result: CheckResult): string {
 			lines.push(`    hint     : ${short(result.hint)}`);
 		}
 		if (result.fix !== undefined) {
-			lines.push(`    fix      : overwrite ${result.fix.filePath}`);
+			lines.push(
+				result.fix.kind === "overwrite-file"
+					? `    fix      : overwrite ${result.fix.filePath}`
+					: `    fix      : run ${result.fix.label}`,
+			);
 		}
 	}
 	return lines.join("\n");
@@ -97,10 +101,12 @@ export function printDryRun(fixable: CheckResult[], elapsedMs?: number): void {
 
 export async function renderFixDiffs(fixable: CheckResult[]): Promise<void> {
 	const { renderDiff } = await import("#/diff.js");
-	const rendered = fixable.map(
-		(item) =>
-			`\ndiff ${item.id} (${item.target})\n${renderDiff("actual", "expected", item.actual, desiredContent(item))}`,
-	);
+	const rendered = fixable.map((item) => {
+		if (item.fix?.kind === "run-command") {
+			return `\nrun ${item.id} (${item.target})\n${item.fix.label}`;
+		}
+		return `\ndiff ${item.id} (${item.target})\n${renderDiff("actual", "expected", item.actual, desiredContent(item))}`;
+	});
 	process.stdout.write(`${rendered.join("\n")}\n`);
 }
 

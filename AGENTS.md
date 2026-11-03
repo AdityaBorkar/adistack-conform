@@ -24,9 +24,9 @@ bun run gen:json-schema  # regenerate configuration_schema/ from src/schemas/*
 
 ## Layout
 
-- `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/techstack*.ts` (cache/check/registry/sparse/entry) — plus `src/utils/` (`fs`, `output`, `concurrency`) and `src/schemas/`.
+- `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/techstack*.ts` (cache/check/machine/registry/sparse) — plus `src/utils/` (`fs`, `output`, `concurrency`) and `src/schemas/`.
 - `src/schemas/*` — Valibot source of truth (`import * as v from "valibot"`). `configuration_schema/*.json` is generated — never hand-edit, it is overwritten by `build` / `gen:json-schema`.
-- This repo dogfoods itself: `conform.project.json` (`cli-app` blueprint) and `conform.machine.json` (`main` blueprint) both track `AdityaBorkar/tech-stack@main`.
+- This repo dogfoods itself: `conform.json` (`cli-app` project blueprint + `main` nix blueprint, `homeConfigurations.adityab`) tracks `AdityaBorkar/tech-stack@main`.
 
 ## CLI (`adistack-conform [--config <path>]`)
 
@@ -35,30 +35,30 @@ adistack-conform check [--json] [--no-cache] [--project-only|--machine-only]  # 
 adistack-conform fix [--all] [--dry-run] [--no-diff] [--no-cache] [--project-only|--machine-only]  # space to toggle, Select-all pseudo-option first, diff preview, per-item ok/error, re-checks after apply
 ```
 
-- Without `--config`, `check`/`fix` load `conform.project.json` and/or `conform.machine.json` from the cwd. With `--config`, the filename must be exactly `conform.project.json` or `conform.machine.json` — anything else exits 2 (no content-sniffing).
+- Without `--config`, `check`/`fix` load `conform.json` from the cwd. With `--config`, the filename must be exactly `conform.json` — anything else exits 2.
 - `--project-only` + `--machine-only` together is an error. `fix` needs a TTY unless `--all` (or `--dry-run`, which never prompts).
-- Project targets resolve against the cwd; machine targets resolve against `$HOME`.
+- Project targets resolve against the cwd. Machine checks shell out to home-manager (which owns `$HOME`), so there are no machine file targets.
 
-## conform.project.json / conform.machine.json — preset desired state
+## conform.json — project + machine desired state
 
-```json
+```jsonc
+// conform.json
 {
-	"blueprint": "main",
-	"presets": ["git", "shell"],
-	"exclude": ["wsl"],
-	"source": { "type": "github", "repo": "myorg/tech-stack", "ref": "main" }
+	"machine": { "blueprint": "main", "configuration": "adityab" },
+	"project": { "blueprint": "cli-app" },
+	"source": { "type": "github", "repo": "myorg/tech-stack", "ref": "main" },
 }
 ```
 
-- `source.type` — always `"github"`. `source.repo` — `"owner/repo"` holding blueprints/presets.
+- `source.type` — always `"github"`. `source.repo` — `"owner/repo"` holding project blueprints and machine nix flakes.
 - `source.ref` — branch, tag, or commit (default `main`; pin a tag/commit for reproducibility).
 - `source.branch` — overrides `source.ref` as the ref to download.
-- `blueprint` — base preset list from `<registry-dir>/<name>/manifest.json` (dirs listed in the tech-stack root `registry.json`, per scope).
-- `presets` — extra preset names, merged over the blueprint.
-- `exclude` — preset names dropped from the effective set.
-- Effective set = (blueprint ∪ presets) − (blueprint.exclude ∪ exclude). Unknown names fail with exit 2.
-- The repo tarball is downloaded from codeload (`GITHUB_TOKEN` supported for private repos / rate limits) and cached under `~/.cache/adistack-conform/github/<owner>/<repo>/<ref>/` (`XDG_CACHE_HOME` respected, unsafe refs sanitized, `.conform-meta.json` guards freshness). `--no-cache` forces a re-download; a failed download falls back to the cache with a warning.
-- Preset locations come from the root `registry.json` (`<scope>.presets` dirs, each with a `manifest.json` mapping `path` → `target`). `docs:` targets, Windows `%...%` targets, and annotation-only targets are reported as skipped (exit 0); a leading `~/...`, `/...`, or bare `~` token is used when the target carries a human annotation. Only the project scope honors `./...`/`../...` targets (resolved against the cwd). `*.example` files assert existence only (secret values are never compared). Empty presets pass when the target is absent (empty = defaults). Unreadable targets (e.g. `/etc/...` without sudo) fail as non-fixable with a hint.
+- At least one of `machine` / `project` is required; omit the other to track only one scope (`--project-only` / `--machine-only` also filter at run time).
+- Project: `blueprint` — project blueprint matching a tech-stack root `registry.json` `projects[]` entry (by entry `name`, entry `path`, or directory basename, e.g. `cli-app`).
+- Machine: `blueprint` — machine blueprint matching a `registry.json` `machines[]` entry (by entry `name`, entry `path`, or flake directory basename, e.g. `main`). `configuration` — optional `homeConfigurations` attribute to switch to (e.g. `adityab`); omitted means home-manager auto-select from `$USER`. Machines are entirely nix-managed.
+- The repo tarball is downloaded from codeload (`GITHUB_TOKEN` supported for private repos / rate limits) and cached under `~/.cache/adistack-conform/github/<owner>/<repo>/<ref>/` (`XDG_CACHE_HOME` respected, unsafe refs sanitized, `.conform-meta.json` guards freshness). `--no-cache` re-resolves via sparse `raw.githubusercontent.com` fetches with full-download fallback; a failed download falls back to the cache with a warning.
+- Project files come from each blueprint's `manifest.json` (`files[]` with `name`/`source`/`target`). `source` starting with `./` or `../` resolves against the manifest directory, otherwise it is repo-relative. `docs:` targets, Windows `%...%` targets, and annotation-only targets are reported as skipped (exit 0); a leading `~/...`, `/...`, or bare `~` token is used when the target carries a human annotation. Only the project scope honors `./...`/`../...` targets (resolved against the cwd). `*.example` sources assert existence only (secret values are never compared). Empty goldens pass when the target is absent (empty = defaults). Unreadable targets (e.g. `/etc/...` without sudo) fail as non-fixable with a hint.
+- Machine blueprint dirs are explicit flake paths from `registry.json` (`machines[].path`) and must contain a `flake.nix` (no `manifest.json`). `check` runs `home-manager switch --flake <dir>#<configuration> --dry-run` (via the `home-manager` binary, else `nix run home-manager -- …`) and reports one `nix:<blueprint>` result; `fix` runs the same switch without `--dry-run` (a `run-command` fix, applied with inherited stdio). When neither binary is available the check fails as non-fixable with a hint.
 
 ## Conventions
 

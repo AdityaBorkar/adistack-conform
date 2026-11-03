@@ -1,90 +1,101 @@
 import { basename, dirname, join } from "node:path";
 
 import { parseOrThrow } from "#/schemas/common.js";
-import { MachineSchema } from "#/schemas/machine.js";
-import { ProjectSchema } from "#/schemas/project.js";
+import { ConformSchema } from "#/schemas/conform.js";
 import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
 
-export interface TechStackSpec {
-	blueprint?: string;
-	exclude: string[];
+export interface ConformSource {
 	id: string;
-	presets: string[];
 	ref: string;
 	source: "github";
 }
 
-export interface LoadedConfig {
-	dir: string;
-	kind: "machine" | "project";
-	path: string;
-	spec: TechStackSpec;
-}
-
-function presetSpecFrom(data: {
+export interface ConformMachine {
 	blueprint: string;
-	exclude: string[];
-	presets: string[];
-	source: { branch?: string; ref: string; repo: string };
-}): TechStackSpec {
-	return {
-		blueprint: data.blueprint,
-		exclude: data.exclude,
-		id: data.source.repo,
-		presets: data.presets,
-		ref: data.source.branch ?? data.source.ref,
-		source: "github",
-	};
+	configuration?: string;
 }
 
-function toLoadedConfig(path: string, kind: LoadedConfig["kind"], parsed: unknown): LoadedConfig {
-	const schema = kind === "machine" ? MachineSchema : ProjectSchema;
-	return {
-		dir: dirname(path),
-		kind,
-		path,
-		spec: presetSpecFrom(parseOrThrow(schema, path, parsed, "conform config")),
-	};
+export interface ConformProject {
+	blueprint: string;
 }
 
-const CONFIG_FILENAMES = {
-	"conform.machine.json": "machine",
-	"conform.project.json": "project",
-} as const satisfies Record<string, LoadedConfig["kind"]>;
+export interface LoadedConform {
+	dir: string;
+	machine?: ConformMachine;
+	path: string;
+	project?: ConformProject;
+	source: ConformSource;
+}
 
-export async function loadConfig(configPath: string): Promise<LoadedConfig> {
-	const path = resolveConfigPath(configPath);
-	const parsed = await readJsonFile(path, "Config");
-	const fileName = basename(path);
-	const known = (CONFIG_FILENAMES as Record<string, LoadedConfig["kind"] | undefined>)[fileName];
-	if (known === undefined) {
-		// Project and machine configs share the same shape, so content-sniffing
-		// cannot distinguish them. Require a canonical filename instead of
-		// silently misclassifying machine configs as project.
+export interface ProjectRunSpec {
+	blueprint: string;
+	id: string;
+	ref: string;
+}
+
+export interface MachineRunSpec {
+	blueprint: string;
+	configuration?: string;
+	id: string;
+	ref: string;
+}
+
+function toLoadedConfig(path: string, parsed: unknown): LoadedConform {
+	const data = parseOrThrow(ConformSchema, path, parsed, "conform config");
+	if (data.machine === undefined && data.project === undefined) {
 		throw new Error(
-			`Cannot infer config kind from filename "${fileName}" in ${path} (expected conform.project.json or conform.machine.json). Rename the file to declare its scope.`,
+			`Invalid conform config in ${path}: set at least one of "machine" or "project".`,
 		);
 	}
-	return toLoadedConfig(path, known, parsed);
+	return {
+		dir: dirname(path),
+		machine: data.machine,
+		path,
+		project: data.project,
+		source: {
+			id: data.source.repo,
+			ref: data.source.branch ?? data.source.ref,
+			source: "github",
+		},
+	};
 }
 
-const DISCOVER_NAMES = Object.keys(CONFIG_FILENAMES);
+const CONFIG_FILENAME = "conform.json";
 
-export async function discoverConfigs(): Promise<LoadedConfig[]> {
-	const cwd = process.cwd();
-	const candidates = await Promise.all(
-		DISCOVER_NAMES.map(async (name) => ({
-			exists: await Bun.file(join(cwd, name)).exists(),
-			name,
-		})),
-	);
-	const found = await Promise.all(
-		candidates
-			.filter((candidate) => candidate.exists)
-			.map((candidate) => loadConfig(join(cwd, candidate.name))),
-	);
-	if (found.length === 0) {
-		throw new Error(`No config found in ${cwd} (looked for ${DISCOVER_NAMES.join(", ")}).`);
+export async function loadConfig(configPath: string): Promise<LoadedConform> {
+	const path = resolveConfigPath(configPath);
+	const parsed = await readJsonFile(path, "Config");
+	if (basename(path) !== CONFIG_FILENAME) {
+		throw new Error(
+			`Cannot load config from "${basename(path)}" in ${path} (expected ${CONFIG_FILENAME}).`,
+		);
 	}
-	return found;
+	return toLoadedConfig(path, parsed);
+}
+
+export async function discoverConfigs(): Promise<LoadedConform[]> {
+	const path = join(process.cwd(), CONFIG_FILENAME);
+	if (!(await Bun.file(path).exists())) {
+		throw new Error(`No config found in ${process.cwd()} (looked for ${CONFIG_FILENAME}).`);
+	}
+	return [await loadConfig(path)];
+}
+
+export function projectSpecOf(loaded: LoadedConform): ProjectRunSpec | undefined {
+	if (loaded.project === undefined) {
+		return undefined;
+	}
+	return { blueprint: loaded.project.blueprint, id: loaded.source.id, ref: loaded.source.ref };
+}
+
+export function machineSpecOf(loaded: LoadedConform): MachineRunSpec | undefined {
+	if (loaded.machine === undefined) {
+		return undefined;
+	}
+	return {
+		blueprint: loaded.machine.blueprint,
+		configuration: loaded.machine.configuration,
+		id: loaded.source.id,
+		ref: loaded.source.ref,
+	};
 }

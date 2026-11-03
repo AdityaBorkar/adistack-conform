@@ -2,7 +2,6 @@ import { join } from "node:path";
 
 import envPaths from "env-paths";
 
-import type { TechStackSpec } from "#/config.js";
 import { ensureDir, errorMessage, moveOverwrite, pathExists, removePath } from "#/utils/fs.js";
 
 export interface CachedRepo {
@@ -23,7 +22,11 @@ function safeRef(ref: string): string {
 	return safe;
 }
 
-function cachePaths(spec: TechStackSpec): { dir: string; metaPath: string } {
+// Bump when the consumed tech-stack layout changes, so caches holding the
+// previous layout are re-downloaded instead of failing to parse.
+const CACHE_VERSION = "v2";
+
+function cachePaths(spec: { id: string; ref: string }): { dir: string; metaPath: string } {
 	const parts = spec.id.split("/");
 	const owner = parts[0];
 	const repo = parts[1];
@@ -41,7 +44,7 @@ function cachePaths(spec: TechStackSpec): { dir: string; metaPath: string } {
 		"github",
 		owner,
 		repo,
-		safeRef(spec.ref),
+		safeRef(spec.ref) + CACHE_VERSION,
 	);
 	return { dir, metaPath: join(dir, ".conform-meta.json") };
 }
@@ -91,7 +94,7 @@ function scratchPaths(dir: string): { stage: string; tmpArchive: string } {
 }
 
 async function fetchAndInstall(
-	spec: TechStackSpec,
+	spec: { id: string; ref: string },
 	dir: string,
 	metaPath: string,
 ): Promise<CachedRepo> {
@@ -118,7 +121,10 @@ async function fetchAndInstall(
 	}
 }
 
-export async function ensureGithubRepo(spec: TechStackSpec, noCache: boolean): Promise<CachedRepo> {
+export async function ensureGithubRepo(
+	spec: { id: string; ref: string },
+	noCache: boolean,
+): Promise<CachedRepo> {
 	const { dir, metaPath } = cachePaths(spec);
 	if (!noCache && (await pathExists(metaPath))) {
 		try {

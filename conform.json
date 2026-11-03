@@ -1,0 +1,15 @@
+{
+	"$schema": "./configuration_schema/conform.json",
+	"machine": {
+		"blueprint": "main",
+		"configuration": "adityab"
+	},
+	"project": {
+		"blueprint": "cli-app"
+	},
+	"source": {
+		"type": "github",
+		"ref": "main",
+		"repo": "AdityaBorkar/tech-stack"
+	}
+}

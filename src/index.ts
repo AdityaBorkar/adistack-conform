@@ -3,10 +3,11 @@ import { Command } from "commander";
 
 import type { CheckResult, CheckScope } from "#/checks.js";
 import { partitionResults } from "#/checks.js";
-import type { LoadedConfig } from "#/config.js";
-import { discoverConfigs, loadConfig } from "#/config.js";
+import type { LoadedConform } from "#/config.js";
+import { discoverConfigs, loadConfig, machineSpecOf, projectSpecOf } from "#/config.js";
 import { applySelected, resolveSelection } from "#/fix.js";
-import { recheckSelected, runTechStackChecks } from "#/techstack.js";
+import { recheckMachineSelected, runMachineChecks } from "#/techstack-machine.js";
+import { recheckProjectSelected, runProjectChecks } from "#/techstack.js";
 import { defaultHome, errorMessage } from "#/utils/fs.js";
 import {
 	formatDuration,
@@ -40,7 +41,7 @@ function scopeOf(options: ScopeOptions): CheckScope | undefined {
 	return undefined;
 }
 
-async function loadConfigsFromCommand(cmd: Command): Promise<LoadedConfig[]> {
+async function loadConfigsFromCommand(cmd: Command): Promise<LoadedConform[]> {
 	const config = cmd.optsWithGlobals<{ config?: string }>().config;
 	if (config !== undefined) {
 		return [await loadConfig(config)];
@@ -54,22 +55,41 @@ function failWith(error: unknown): never {
 }
 
 async function runAllChecks(args: {
-	configs: LoadedConfig[];
+	configs: LoadedConform[];
 	cwd: string;
 	home: string;
 	only: CheckScope | undefined;
 	noCache: boolean;
 }): Promise<{ results: CheckResult[]; warnings: string[] }> {
-	const tasks = args.configs
-		.filter((loaded) => args.only === undefined || args.only === loaded.kind)
-		.map((loaded) =>
-			runTechStackChecks(loaded.spec, {
-				baseDir: loaded.kind === "project" ? args.cwd : args.home,
-				home: args.home,
-				noCache: args.noCache,
-				scope: loaded.kind,
-			}),
-		);
+	const tasks: Promise<{ results: CheckResult[]; warnings: string[] }>[] = [];
+	for (const loaded of args.configs) {
+		if (args.only === undefined || args.only === "project") {
+			const spec = projectSpecOf(loaded);
+			if (spec !== undefined) {
+				tasks.push(
+					runProjectChecks(spec, {
+						baseDir: args.cwd,
+						home: args.home,
+						noCache: args.noCache,
+						scope: "project",
+					}),
+				);
+			}
+		}
+		if (args.only === undefined || args.only === "machine") {
+			const spec = machineSpecOf(loaded);
+			if (spec !== undefined) {
+				tasks.push(
+					runMachineChecks(spec, {
+						baseDir: args.home,
+						home: args.home,
+						noCache: args.noCache,
+						scope: "machine",
+					}),
+				);
+			}
+		}
+	}
 	const outputs = await Promise.all(tasks);
 	return {
 		results: outputs.flatMap((output) => output.results),
@@ -161,28 +181,44 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 	try {
 		const selectedIds = new Set(selection.selected.map((item) => item.id));
 		const refreshed = await Promise.all(
-			configs
-				.filter((loaded) => only === undefined || only === loaded.kind)
-				.map(async (loaded) => {
-					const scopedIds = new Set(
-						[...selectedIds].filter((id) =>
-							selection.selected.some((item) => item.id === id && item.scope === loaded.kind),
-						),
-					);
-					if (scopedIds.size === 0) {
-						return [] as CheckResult[];
+			configs.map(async (loaded) => {
+				const reruns: CheckResult[][] = [];
+				if (only === undefined || only === "project") {
+					const spec = projectSpecOf(loaded);
+					if (spec !== undefined) {
+						const scopedIds = new Set(
+							[...selectedIds].filter((id) => id.startsWith(`project:${spec.blueprint}:`)),
+						);
+						if (scopedIds.size > 0) {
+							reruns.push(
+								await recheckProjectSelected(
+									spec,
+									{ baseDir: cwd, home, noCache, scope: "project" },
+									scopedIds,
+								),
+							);
+						}
 					}
-					return await recheckSelected(
-						loaded.spec,
-						{
-							baseDir: loaded.kind === "project" ? cwd : home,
-							home,
-							noCache,
-							scope: loaded.kind,
-						},
-						scopedIds,
-					);
-				}),
+				}
+				if (only === undefined || only === "machine") {
+					const spec = machineSpecOf(loaded);
+					if (spec !== undefined) {
+						const scopedIds = new Set(
+							[...selectedIds].filter((id) => id === `nix:${spec.blueprint}`),
+						);
+						if (scopedIds.size > 0) {
+							reruns.push(
+								await recheckMachineSelected(
+									spec,
+									{ baseDir: home, home, noCache, scope: "machine" },
+									scopedIds,
+								),
+							);
+						}
+					}
+				}
+				return reruns.flat();
+			}),
 		);
 		const byId = new Map(refreshed.flat().map((item) => [item.id, item]));
 		rerunResults = results.map((item) => byId.get(item.id) ?? item);
@@ -209,10 +245,7 @@ const program = new Command();
 program
 	.description("Check the current project/machine against the config in the current directory.")
 	.name("adistack-conform")
-	.option(
-		"--config <path>",
-		"Path to conform.project.json or conform.machine.json (default: whatever config is in the cwd)",
-	)
+	.option("--config <path>", "Path to conform.json (default: ./conform.json in the cwd)")
 	.version(VERSION);
 
 program
@@ -220,7 +253,7 @@ program
 	.description("Check the config in the current directory against the current project/machine.")
 	.option("--json", "Print machine-readable JSON.")
 	.option("--project-only", "Only run project checks.")
-	.option("--no-cache", "Re-download tech-stack blueprints/presets, ignoring the cache.")
+	.option("--no-cache", "Re-download tech-stack blueprints/flakes, ignoring the cache.")
 	.option("--machine-only", "Only run machine checks.")
 	.action(async (cmdOptions: CheckCmdOptions, cmd: Command) => {
 		try {
@@ -237,7 +270,7 @@ program
 	.option("--dry-run", "Show what would be fixed without writing.")
 	.option("--no-diff", "Hide the diff preview.")
 	.option("--project-only", "Only fix project checks.")
-	.option("--no-cache", "Re-download tech-stack blueprints/presets, ignoring the cache.")
+	.option("--no-cache", "Re-download tech-stack blueprints/flakes, ignoring the cache.")
 	.option("--machine-only", "Only fix machine checks.")
 	.action(async (cmdOptions: FixCmdOptions, cmd: Command) => {
 		try {

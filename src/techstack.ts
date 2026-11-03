@@ -1,14 +1,13 @@
 import type { CheckResult, CheckScope } from "#/checks.js";
-import type { TechStackSpec } from "#/config.js";
+import type { ProjectRunSpec } from "#/config.js";
 import { ensureGithubRepo } from "#/techstack-cache.js";
 import type { CheckFileArgs } from "#/techstack-check.js";
 import { checkPresetFile, classifyTarget, skippedForTarget } from "#/techstack-check.js";
-import type { PresetPackage, RegistryDocument } from "#/techstack-registry.js";
+import type { ManifestFile } from "#/techstack-registry.js";
 import {
-	MAX_LIST_SHOWN,
-	loadBlueprint,
-	loadRegistry,
+	loadProjectManifest,
 	loadRegistryDocument,
+	resolveSourcePath,
 } from "#/techstack-registry.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { resolveTargetPath } from "#/utils/fs.js";
@@ -27,85 +26,46 @@ export interface TechCheckOutput {
 	warnings: string[];
 }
 
-async function resolveWantedNames(
-	spec: TechStackSpec,
-	scope: CheckScope,
-	repoRoot: string,
-	registryDoc: RegistryDocument,
-	registry: Map<string, PresetPackage>,
-): Promise<string[]> {
-	let blueprintPresets: string[] = [];
-	let blueprintExcludes: string[] = [];
-	if (spec.blueprint !== undefined) {
-		const blueprint = await loadBlueprint(repoRoot, scope, spec.blueprint, registryDoc);
-		blueprintExcludes = blueprint.exclude;
-		blueprintPresets = blueprint.presets;
-	}
-	const wanted = new Set([...blueprintPresets, ...spec.presets]);
-	for (const excluded of [...blueprintExcludes, ...spec.exclude]) {
-		wanted.delete(excluded);
-	}
-	const names = [...wanted].toSorted();
-	const unknown = names.filter((name) => !registry.has(name));
-	if (unknown.length > 0) {
-		const shown = unknown.slice(0, MAX_LIST_SHOWN).join(", ");
-		const suffix =
-			unknown.length > MAX_LIST_SHOWN ? ` (+${unknown.length - MAX_LIST_SHOWN} more)` : "";
-		const keys = [...registry.keys()].toSorted();
-		const available =
-			keys.length > MAX_LIST_SHOWN
-				? `${keys.slice(0, MAX_LIST_SHOWN).join(", ")} (+${keys.length - MAX_LIST_SHOWN} more)`
-				: keys.join(", ");
-		throw new Error(`Unknown tech-stack preset(s): ${shown}${suffix}. Available: ${available}.`);
-	}
-	return names;
-}
-
 function collectJobs(
-	registry: Map<string, PresetPackage>,
-	names: string[],
-	options: TechStackRunOptions,
+	blueprint: string,
+	files: ManifestFile[],
+	manifestDir: string,
 	repoRoot: string,
+	options: TechStackRunOptions,
 ): { skips: CheckResult[]; tasks: CheckFileArgs[] } {
 	const tasks: CheckFileArgs[] = [];
 	const skips: CheckResult[] = [];
-	for (const name of names) {
-		const pkg = registry.get(name);
-		if (pkg === undefined) {
-			throw new Error(`Preset "${name}" disappeared from the tech-stack registry.`);
+	for (const file of files) {
+		const classified = classifyTarget(file.target, options.scope);
+		if (classified.type === "skip") {
+			skips.push(
+				skippedForTarget(
+					blueprint,
+					file.name,
+					file.source,
+					file.target,
+					classified.reason,
+					options.scope,
+				),
+			);
+			continue;
 		}
-		for (const file of pkg.files) {
-			const classified = classifyTarget(file.target, options.scope);
-			if (classified.type === "skip") {
-				skips.push(
-					skippedForTarget(
-						name,
-						file.name,
-						file.path,
-						file.target,
-						classified.reason,
-						options.scope,
-					),
-				);
-				continue;
-			}
-			const targetPath = resolveTargetPath(classified.path, options.baseDir, options.home);
-			tasks.push({
-				packageName: name,
-				presetFileName: file.name,
-				presetRelPath: file.path,
-				presetTarget: file.target,
-				repoRoot,
-				scope: options.scope,
-				targetPath,
-			});
-		}
+		const targetPath = resolveTargetPath(classified.path, options.baseDir, options.home);
+		tasks.push({
+			blueprint,
+			fileName: file.name,
+			fileTarget: file.target,
+			goldenPath: resolveSourcePath(file.source, manifestDir, repoRoot),
+			scope: options.scope,
+			sourceLabel: file.source,
+			targetPath,
+		});
 	}
 	return { skips, tasks };
 }
 
-export async function runTechStackChecks(
-	spec: TechStackSpec,
+export async function runProjectChecks(
+	spec: ProjectRunSpec,
 	options: TechStackRunOptions,
 ): Promise<TechCheckOutput> {
 	if (options.noCache) {
@@ -128,8 +88,8 @@ export async function runTechStackChecks(
 	return runDiskChecks(spec, options);
 }
 
-export async function recheckSelected(
-	spec: TechStackSpec,
+export async function recheckProjectSelected(
+	spec: ProjectRunSpec,
 	options: TechStackRunOptions,
 	selectedIds: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
@@ -143,11 +103,10 @@ export async function recheckSelected(
 	const cached = await ensureGithubRepo(spec, false);
 	const repoRoot = cached.dir;
 	const registryDoc = await loadRegistryDocument(repoRoot);
-	const registry = await loadRegistry(repoRoot, options.scope, registryDoc);
-	const names = await resolveWantedNames(spec, options.scope, repoRoot, registryDoc, registry);
-	const { tasks } = collectJobs(registry, names, options, repoRoot);
+	const { dir, files } = await loadProjectManifest(repoRoot, spec.blueprint, registryDoc);
+	const { tasks } = collectJobs(spec.blueprint, files, dir, repoRoot, options);
 	const filtered = tasks.filter((task) =>
-		selectedIds.has(`preset:${task.packageName}:${task.presetFileName}`),
+		selectedIds.has(`project:${task.blueprint}:${task.fileName}`),
 	);
 	if (filtered.length <= CHECK_CONCURRENCY) {
 		return Promise.all(filtered.map((task) => checkPresetFile(task)));
@@ -156,7 +115,7 @@ export async function recheckSelected(
 }
 
 async function runDiskChecks(
-	spec: TechStackSpec,
+	spec: ProjectRunSpec,
 	options: TechStackRunOptions,
 ): Promise<TechCheckOutput> {
 	const cached = await ensureGithubRepo(spec, options.noCache);
@@ -166,9 +125,8 @@ async function runDiskChecks(
 	}
 	const repoRoot = cached.dir;
 	const registryDoc = await loadRegistryDocument(repoRoot);
-	const registry = await loadRegistry(repoRoot, options.scope, registryDoc);
-	const names = await resolveWantedNames(spec, options.scope, repoRoot, registryDoc, registry);
-	const { skips, tasks } = collectJobs(registry, names, options, repoRoot);
+	const { dir, files } = await loadProjectManifest(repoRoot, spec.blueprint, registryDoc);
+	const { skips, tasks } = collectJobs(spec.blueprint, files, dir, repoRoot, options);
 	const enforced =
 		tasks.length <= CHECK_CONCURRENCY
 			? await Promise.all(tasks.map((task) => checkPresetFile(task)))

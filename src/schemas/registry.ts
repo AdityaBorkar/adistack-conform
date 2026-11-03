@@ -1,26 +1,29 @@
 import * as v from "valibot";
 
-const RegistrySectionSchema = v.object({
-	blueprints: v.pipe(
-		v.array(v.pipe(v.string(), v.minLength(1))),
-		v.description("Blueprint locations relative to tech-stack root."),
-	),
-	presets: v.pipe(
-		v.array(v.pipe(v.string(), v.minLength(1))),
-		v.description("Preset locations relative to tech-stack root."),
+const RegistryEntrySchema = v.object({
+	name: v.pipe(v.string(), v.minLength(1), v.description("Display name for the blueprint.")),
+	path: v.pipe(
+		v.string(),
+		v.minLength(1),
+		v.description("Blueprint directory relative to the tech-stack root, e.g. ./projects/cli-app/."),
 	),
 });
 
 export const RegistrySchema = v.object({
 	$schema: v.optional(
-		v.pipe(v.string(), v.description("JSON Schema reference, e.g. registry.json.")),
+		v.pipe(
+			v.string(),
+			v.description(
+				"JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/registry.json.",
+			),
+		),
 	),
-	machine: v.pipe(
-		RegistrySectionSchema,
-		v.description("Machine blueprints and presets locations."),
+	machines: v.pipe(
+		v.array(RegistryEntrySchema),
+		v.description("Machine blueprints as explicit name/path entries."),
 	),
-	project: v.pipe(
-		RegistrySectionSchema,
-		v.description("Project blueprints and presets locations."),
+	projects: v.pipe(
+		v.array(RegistryEntrySchema),
+		v.description("Project blueprints as explicit name/path entries."),
 	),
 });

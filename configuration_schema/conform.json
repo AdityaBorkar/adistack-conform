@@ -1,0 +1,67 @@
+{
+	"type": "object",
+	"properties": {
+		"$schema": {
+			"type": "string",
+			"description": "JSON Schema reference, e.g. ./configuration_schema/conform.json."
+		},
+		"machine": {
+			"type": "object",
+			"properties": {
+				"blueprint": {
+					"type": "string",
+					"minLength": 1,
+					"description": "Machine blueprint from the tech-stack registry (entry name or directory, e.g. main)."
+				},
+				"configuration": {
+					"type": "string",
+					"minLength": 1,
+					"description": "homeConfigurations attribute to switch to, e.g. adityab. Defaults to home-manager auto-select ($USER)."
+				}
+			},
+			"required": ["blueprint"],
+			"description": "Machine desired state."
+		},
+		"project": {
+			"type": "object",
+			"properties": {
+				"blueprint": {
+					"type": "string",
+					"minLength": 1,
+					"description": "Project blueprint name, e.g. cli-app."
+				}
+			},
+			"required": ["blueprint"],
+			"description": "Project desired state."
+		},
+		"source": {
+			"type": "object",
+			"properties": {
+				"branch": {
+					"type": "string",
+					"minLength": 1,
+					"description": "Git branch of the tech-stack repo (defaults to ref)."
+				},
+				"ref": {
+					"type": "string",
+					"minLength": 1,
+					"description": "Git branch, tag, or commit.",
+					"default": "main"
+				},
+				"repo": {
+					"type": "string",
+					"pattern": "^[^/\\s]+\\/[^/\\s]+$",
+					"description": "GitHub owner/repo holding blueprints and presets (project) or nix flakes (machine)."
+				},
+				"type": {
+					"const": "github",
+					"description": "Tech-stack source; only github is supported."
+				}
+			},
+			"required": ["repo", "type"],
+			"description": "Tech-stack repo holding blueprints and nix flakes."
+		}
+	},
+	"required": ["source"],
+	"$schema": "https://json-schema.org/draft/2020-12/schema"
+}

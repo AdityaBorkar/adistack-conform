@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 import type { CheckBase, CheckResult, CheckScope } from "#/checks.js";
 import { failFixable, failManual, pass, skipped } from "#/checks.js";
 import { readFileSafe } from "#/utils/fs.js";
@@ -25,8 +23,8 @@ export function classifyTarget(target: string, scope: CheckScope): ClassifiedTar
 	return { reason: `no concrete target ("${target}")`, type: "skip" };
 }
 
-function isExampleFile(presetRelPath: string): boolean {
-	return presetRelPath.endsWith(".example");
+function isExampleFile(sourceLabel: string): boolean {
+	return sourceLabel.endsWith(".example");
 }
 
 function isBlankGolden(golden: string): boolean {
@@ -37,23 +35,23 @@ function isBlankGolden(golden: string): boolean {
 }
 
 function baseFor(
-	packageName: string,
-	presetFileName: string,
-	presetTarget: string,
+	blueprint: string,
+	fileName: string,
+	fileTarget: string,
 	scope: CheckScope,
 ): CheckBase {
 	return {
-		id: `preset:${packageName}:${presetFileName}`,
+		id: `project:${blueprint}:${fileName}`,
 		kind: "preset",
 		scope,
-		source: `tech-stack:${packageName}`,
-		target: presetTarget,
+		source: `tech-stack:${blueprint}`,
+		target: fileTarget,
 	};
 }
 
 function checkExampleOutcome(
 	base: CheckBase,
-	presetRelPath: string,
+	sourceLabel: string,
 	targetPath: string,
 	outcome: Awaited<ReturnType<typeof readFileSafe>>,
 ): CheckResult {
@@ -65,7 +63,7 @@ function checkExampleOutcome(
 			base,
 			"<missing>",
 			"exists (values stay secret)",
-			`Copy ${presetRelPath} to ${targetPath} and fill in secret values (never commit).`,
+			`Copy ${sourceLabel} to ${targetPath} and fill in secret values (never commit).`,
 		);
 	}
 	return failManual(
@@ -86,22 +84,20 @@ function unreadableTarget(base: CheckBase, golden: string, targetPath: string, e
 }
 
 export interface CheckFileArgs {
-	packageName: string;
-	presetFileName: string;
-	presetRelPath: string;
-	presetTarget: string;
-	repoRoot: string;
+	blueprint: string;
+	fileName: string;
+	fileTarget: string;
+	goldenPath: string;
 	scope: CheckScope;
+	sourceLabel: string;
 	targetPath: string;
 }
 
 export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult> {
-	const { packageName, presetFileName, presetRelPath, presetTarget, repoRoot, scope, targetPath } =
-		args;
-	const base = baseFor(packageName, presetFileName, presetTarget, scope);
-	const presetPath = join(repoRoot, presetRelPath);
+	const { blueprint, fileName, fileTarget, goldenPath, scope, sourceLabel, targetPath } = args;
+	const base = baseFor(blueprint, fileName, fileTarget, scope);
 	const [presetRead, targetRead] = await Promise.all([
-		readFileSafe(presetPath),
+		readFileSafe(goldenPath),
 		readFileSafe(targetPath),
 	]);
 	if (!presetRead.ok) {
@@ -109,15 +105,15 @@ export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult>
 			return failManual(
 				base,
 				"<preset file missing>",
-				presetRelPath,
-				`Preset file missing in tech-stack repo: ${presetPath}`,
+				sourceLabel,
+				`Preset file missing in tech-stack repo: ${goldenPath}`,
 			);
 		}
-		return failManual(base, "<unreadable preset>", presetRelPath, presetRead.error);
+		return failManual(base, "<unreadable preset>", sourceLabel, presetRead.error);
 	}
 	const golden = presetRead.text;
-	if (isExampleFile(presetRelPath)) {
-		return checkExampleOutcome(base, presetRelPath, targetPath, targetRead);
+	if (isExampleFile(sourceLabel)) {
+		return checkExampleOutcome(base, sourceLabel, targetPath, targetRead);
 	}
 	if (isBlankGolden(golden) && !targetRead.ok && targetRead.reason === "missing") {
 		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
@@ -143,19 +139,19 @@ export async function checkPresetFile(args: CheckFileArgs): Promise<CheckResult>
 }
 
 export async function checkPresetFileWithGolden(args: {
+	blueprint: string;
+	fileName: string;
+	fileTarget: string;
 	golden: string;
-	packageName: string;
-	presetFileName: string;
-	presetRelPath: string;
-	presetTarget: string;
 	scope: CheckScope;
+	sourceLabel: string;
 	targetPath: string;
 }): Promise<CheckResult> {
-	const base = baseFor(args.packageName, args.presetFileName, args.presetTarget, args.scope);
-	if (isExampleFile(args.presetRelPath)) {
+	const base = baseFor(args.blueprint, args.fileName, args.fileTarget, args.scope);
+	if (isExampleFile(args.sourceLabel)) {
 		return checkExampleOutcome(
 			base,
-			args.presetRelPath,
+			args.sourceLabel,
 			args.targetPath,
 			await readFileSafe(args.targetPath),
 		);
@@ -185,12 +181,12 @@ export async function checkPresetFileWithGolden(args: {
 }
 
 export function skippedForTarget(
-	packageName: string,
-	presetFileName: string,
-	presetRelPath: string,
-	presetTarget: string,
+	blueprint: string,
+	fileName: string,
+	sourceLabel: string,
+	fileTarget: string,
 	reason: string,
 	scope: CheckScope,
 ): CheckResult {
-	return skipped(baseFor(packageName, presetFileName, presetTarget, scope), presetRelPath, reason);
+	return skipped(baseFor(blueprint, fileName, fileTarget, scope), sourceLabel, reason);
 }
