@@ -47,11 +47,15 @@ async function apiJson(
 	options: { allowStatuses?: readonly number[]; body?: unknown; method?: string } = {},
 ): Promise<unknown> {
 	const method = options.method ?? "GET";
+	const headers = apiHeaders();
+	if (options.body !== undefined) {
+		headers["Content-Type"] = "application/json";
+	}
 	let response: Response;
 	try {
 		response = await fetch(`${GITHUB_API}${path}`, {
 			body: options.body === undefined ? undefined : JSON.stringify(options.body),
-			headers: apiHeaders(),
+			headers,
 			method,
 			signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 		});
@@ -225,7 +229,6 @@ async function checkGeneral(
 	const state: GeneralState = { actual: {}, body: {}, diffs: [], target };
 	compareField(state, actual, "default_branch", golden.defaultBranch, "default_branch");
 	compareField(state, actual, "has_issues", golden.features.issues, "has_issues");
-	compareField(state, actual, "has_discussions", golden.features.discussions, "has_discussions");
 	compareField(state, actual, "has_wiki", golden.features.wiki, "has_wiki");
 	compareField(state, actual, "has_projects", golden.features.projects, "has_projects");
 	compareField(state, actual, "allow_merge_commit", golden.merge.mergeCommit, "allow_merge_commit");
@@ -274,14 +277,36 @@ async function checkGeneral(
 		golden.signoffRequired,
 		"web_commit_signoff_required",
 	);
-	if (state.diffs.length === 0) {
+	let discussionsNote = "";
+	if (!Object.is(actual["has_discussions"], golden.features.discussions)) {
+		discussionsNote = `has_discussions: ${String(actual["has_discussions"])} → ${String(golden.features.discussions)} (set in Settings → General → Features)`;
+	}
+	if (state.diffs.length === 0 && discussionsNote === "") {
 		return pass(base, "repo settings match", "repo settings match");
+	}
+	if (state.diffs.length === 0) {
+		return failManual(
+			base,
+			discussionsNote,
+			"repo settings match",
+			"Toggle Discussions in Settings → General → Features, then re-run check.",
+		);
 	}
 	const step: GithubApiStep = { body: state.body, method: "PATCH", path: repoPath(repo, "") };
 	const fix: GithubApiFix = { kind: "github-api", label: `github PATCH ${repo}`, steps: [step] };
-	const result = failFixable(base, diffSummary(state.diffs), "repo settings match", fix);
-	// shortcut: has_discussions PATCH is undocumented and may be rejected; then toggle it in the UI or via GraphQL updateRepository.
-	result.hint = "Apply with `fix` (needs GITHUB_TOKEN with admin scope).";
+	const result = failFixable(
+		base,
+		discussionsNote === ""
+			? diffSummary(state.diffs)
+			: `${diffSummary(state.diffs)}; ${discussionsNote}`,
+		"repo settings match",
+		fix,
+	);
+	// has_discussions has no documented PATCH field; the fix covers the rest.
+	result.hint =
+		discussionsNote === ""
+			? "Apply with `fix` (needs GITHUB_TOKEN with admin scope)."
+			: "Apply with `fix` for the rest (needs GITHUB_TOKEN with admin scope); toggle Discussions in Settings → General → Features.";
 	return result;
 }
 
@@ -1148,24 +1173,37 @@ export async function runGithubChecks(
 		];
 	}
 	const { golden } = preset;
-	const read = await readProtection(repo, golden.defaultBranch);
-	return [
-		await checkGeneral(spec.blueprint, repo, golden, target),
-		await checkReleases(spec.blueprint, repo, golden, target),
-		await checkCodeowners(spec.blueprint, repo, golden, target),
-		await checkIssueTemplates(spec.blueprint, repo, golden, target),
-		await checkPrChecks(spec.blueprint, repo, golden, read, target),
-		await checkReviews(spec.blueprint, repo, golden, read, target),
-		await checkRulesets(spec.blueprint, repo, golden, target),
-		await checkActionsPermissions(spec.blueprint, repo, golden, target),
-		await checkActionsWorkflow(spec.blueprint, repo, golden, target),
-		await checkActionsRetention(spec.blueprint, repo, golden, target),
-		await checkActionsOidc(spec.blueprint, repo, golden, target),
-		await checkEnvironments(spec.blueprint, repo, golden, target),
-		...(await checkSecurity(spec.blueprint, repo, golden, target)),
-		await checkSecrets(spec.blueprint, repo, golden, target),
-		...checkUiOnly(spec.blueprint, golden, target),
-	];
+	try {
+		const read = await readProtection(repo, golden.defaultBranch);
+		return [
+			await checkGeneral(spec.blueprint, repo, golden, target),
+			await checkReleases(spec.blueprint, repo, golden, target),
+			await checkCodeowners(spec.blueprint, repo, golden, target),
+			await checkIssueTemplates(spec.blueprint, repo, golden, target),
+			await checkPrChecks(spec.blueprint, repo, golden, read, target),
+			await checkReviews(spec.blueprint, repo, golden, read, target),
+			await checkRulesets(spec.blueprint, repo, golden, target),
+			await checkActionsPermissions(spec.blueprint, repo, golden, target),
+			await checkActionsWorkflow(spec.blueprint, repo, golden, target),
+			await checkActionsRetention(spec.blueprint, repo, golden, target),
+			await checkActionsOidc(spec.blueprint, repo, golden, target),
+			await checkEnvironments(spec.blueprint, repo, golden, target),
+			...(await checkSecurity(spec.blueprint, repo, golden, target)),
+			await checkSecrets(spec.blueprint, repo, golden, target),
+			...checkUiOnly(spec.blueprint, golden, target),
+		];
+	} catch (error) {
+		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+			return [
+				skipped(
+					baseFor(spec.blueprint, "auth", target),
+					"cannot read repo settings",
+					"set GITHUB_TOKEN to verify (private repo or rate limit)",
+				),
+			];
+		}
+		throw error;
+	}
 }
 
 export function recheckGithubSelected(
