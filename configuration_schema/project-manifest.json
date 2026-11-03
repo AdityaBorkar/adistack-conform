@@ -9,6 +9,26 @@
 			"type": "string",
 			"description": "Human-readable blueprint description."
 		},
+		"directories": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Directory name within the blueprint."
+					},
+					"target": {
+						"type": "string",
+						"minLength": 1,
+						"description": "Enforcement target."
+					}
+				},
+				"required": ["name", "target"]
+			},
+			"description": "Directories enforced by this blueprint."
+		},
 		"files": {
 			"type": "array",
 			"items": {
@@ -18,6 +38,36 @@
 						"type": "string",
 						"minLength": 1,
 						"description": "File name within the blueprint."
+					},
+					"packages": {
+						"type": "array",
+						"items": {
+							"anyOf": [
+								{
+									"type": "string",
+									"minLength": 1,
+									"description": "Package required in devDependencies."
+								},
+								{
+									"type": "object",
+									"properties": {
+										"name": {
+											"type": "string",
+											"minLength": 1,
+											"description": "Required package name."
+										},
+										"section": {
+											"enum": ["dependencies", "devDependencies", "peerDependencies"],
+											"type": "string",
+											"default": "devDependencies"
+										}
+									},
+									"required": ["name"]
+								}
+							],
+							"description": "Packages this file needs installed in package.json."
+						},
+						"description": "Packages this file needs installed."
 					},
 					"source": {
 						"type": "string",

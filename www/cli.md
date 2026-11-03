@@ -34,7 +34,7 @@ Exit codes: `0` everything ok, `1` drift, `2` config/loading error (missing file
 }
 ```
 
-Each result carries `id`, `kind` (`preset` | `nix`), `scope`, `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, or `run-command` with `command`/`args`/`label`) or `hint` when manual, and `skipped: true` when skipped.
+Each result carries `id` (`project:<blueprint>:<name>`, deps use `project:<blueprint>:deps:<pkg>`), `kind` (`preset` | `package` | `nix`), `scope`, `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, or `run-command` with `command`/`args`/`label`) or `hint` when manual, and `skipped: true` when skipped.
 
 ## `fix`
 

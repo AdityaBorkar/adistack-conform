@@ -15,8 +15,8 @@ Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` 
 
 ```jsonc
 {
-	"id": "project:cli-app:Bun Config", // or "nix:main"
-	"kind": "preset", // "preset" | "nix"
+	"id": "project:cli-app:Bun Config", // or "project:cli-app:deps:oxlint" or "nix:main"
+	"kind": "preset", // "preset" | "package" | "nix"
 	"scope": "project", // "project" | "machine"
 	"source": "tech-stack:cli-app",
 	"target": "bunfig.toml",

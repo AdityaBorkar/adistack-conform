@@ -1,6 +1,19 @@
 import * as v from "valibot";
 
-import { TechStackSourceSchema } from "#/schemas/common.js";
+const TechStackSourceSchema = v.object({
+	ref: v.optional(
+		v.pipe(v.string(), v.minLength(1), v.description("Git branch, tag, or commit.")),
+		"main",
+	),
+	repo: v.pipe(
+		v.string(),
+		v.regex(/^[^/\s]+\/[^/\s]+$/u),
+		v.description(
+			"GitHub owner/repo holding blueprints and presets (project) or nix flakes (machine).",
+		),
+	),
+	type: v.pipe(v.literal("github"), v.description("Tech-stack source; only github is supported.")),
+});
 
 export const ConformMachineSectionSchema = v.object({
 	blueprint: v.pipe(

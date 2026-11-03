@@ -4,6 +4,9 @@ import type { ManifestSchema } from "#/schemas/manifest.js";
 import type { RegistrySchema } from "#/schemas/registry.js";
 
 export type ManifestFile = v.InferOutput<typeof ManifestSchema>["files"][number];
+export type ManifestDirectory = NonNullable<
+	v.InferOutput<typeof ManifestSchema>["directories"]
+>[number];
 export type RegistryDocument = v.InferOutput<typeof RegistrySchema>;
 export type RegistryEntry = RegistryDocument["projects"][number];
 

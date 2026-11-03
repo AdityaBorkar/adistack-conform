@@ -1,8 +1,8 @@
 import { basename, dirname, join } from "node:path";
 
-import { parseOrThrow } from "#/schemas/common.js";
 import { ConformSchema } from "#/schemas/conform.js";
 import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
+import { parseOrThrow } from "#/utils/schema.js";
 
 export interface ConformSource {
 	id: string;

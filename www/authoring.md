@@ -15,7 +15,7 @@ machines/main/{flake.nix,home.nix,…}
 machines/main/files/                 # dotfile payloads (sops templates read from here)
 ```
 
-Reference the blueprint directories in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Manifest `files[]` use `source` relative to the manifest dir (`../$presets/<file>`) and `target` as the destination path in generated projects.
+Reference the blueprint directories in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Manifest `files[]` use `source` relative to the manifest dir (`../$presets/<file>`) and `target` as the destination path in generated projects. A `files[]` entry may declare `packages[]` (plain names, or `{ "name", "section" }`) for what the generated `package.json` must install for that config. Manifest `directories[]` use `name` + `target` (no `source`) for required directories.
 
 ## Rules
 
