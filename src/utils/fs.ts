@@ -21,14 +21,6 @@ export async function readJsonFile(path: string, label: string): Promise<unknown
 	}
 }
 
-export function fileExists(path: string): Promise<boolean> {
-	return Bun.file(path).exists();
-}
-
-export function readText(path: string): Promise<string> {
-	return Bun.file(path).text();
-}
-
 export type FileRead =
 	| { ok: false; reason: "missing" }
 	| { error: string; ok: false; reason: "unreadable" }

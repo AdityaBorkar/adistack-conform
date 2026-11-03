@@ -2,7 +2,7 @@
 
 ## Stack
 
-Bun-only TypeScript CLI (compiled binary in `.output/` + npm `adistack-conform` bin) + Commander + @clack/prompts + Valibot + oxlint/oxfmt + tsrs + knip. No CI, no root README, no test runner (`tests/` is empty).
+Bun-only TypeScript CLI (compiled binary in `.output/` + npm `adistack-conform` bin) + Commander + @clack/prompts + Valibot + oxlint/oxfmt + tsrs + knip. No CI, no tests, no root README (only `www/README.md`).
 
 ## Commands
 
@@ -19,14 +19,15 @@ bun run gen:json-schema  # regenerate configuration_schema/ from src/schemas/*
 ```
 
 - Always `bun run <script>`, not `npm`/`npx`.
-- `verify` is the full pre-push gate.
+- `verify` (`format` → `check:lint` → `check:types` → `build`) is the full gate before pushing. `format` writes in place, so run it first.
 - Pre-commit hook runs `bun fmt --staged` (Bun's builtin formatter, not oxfmt); commit messages must pass commitlint conventional-commit with the restricted types in `.commitlintrc.json`.
 
 ## Layout
 
 - `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/techstack*.ts` (cache/check/machine/registry/sparse) — plus `src/utils/` (`fs`, `output`, `concurrency`) and `src/schemas/`.
 - `src/schemas/*` — Valibot source of truth (`import * as v from "valibot"`). `configuration_schema/*.json` is generated — never hand-edit, it is overwritten by `build` / `gen:json-schema`.
-- This repo dogfoods itself: `conform.json` (`cli-app` project blueprint + `main` nix blueprint, `homeConfigurations.adityab`) tracks `AdityaBorkar/tech-stack@main`.
+- This repo dogfoods itself: `conform.json` (`cli-app` project blueprint + `main` nix blueprint) tracks `AdityaBorkar/tech-stack@main`.
+- The tech-stack reference checkout lives at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read blueprints/registry directly instead of guessing.
 
 ## CLI (`adistack-conform [--config <path>]`)
 
@@ -56,9 +57,9 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--no-cache] [--project-onl
 - At least one of `machine` / `project` is required; omit the other to track only one scope (`--project-only` / `--machine-only` also filter at run time).
 - Project: `blueprint` — project blueprint matching a tech-stack root `registry.json` `projects[]` entry (by entry `name`, entry `path`, or directory basename, e.g. `cli-app`).
 - Machine: `blueprint` — machine blueprint matching a `registry.json` `machines[]` entry (by entry `name`, entry `path`, or flake directory basename, e.g. `main`). `configuration` — optional `homeConfigurations` attribute to switch to (e.g. `adityab`); omitted means home-manager auto-select from `$USER`. Machines are entirely nix-managed.
-- The repo tarball is downloaded from codeload (`GITHUB_TOKEN` supported for private repos / rate limits) and cached under `~/.cache/adistack-conform/github/<owner>/<repo>/<ref>/` (`XDG_CACHE_HOME` respected, unsafe refs sanitized, `.conform-meta.json` guards freshness). `--no-cache` re-resolves via sparse `raw.githubusercontent.com` fetches with full-download fallback; a failed download falls back to the cache with a warning.
+- Default path downloads the full repo tarball from codeload (`GITHUB_TOKEN` for private repos / rate limits) into a version-suffixed cache dir (`~/.cache/adistack-conform/github/<owner>/<repo>/<ref>v2` via env-paths, `XDG_CACHE_HOME` respected, unsafe refs sanitized, `.conform-meta.json` guards freshness). Entries older than 24h are re-downloaded. `--no-cache` instead does sparse `raw.githubusercontent.com` fetches (registry/manifest/goldens only) with full-download fallback on failure. A failed download with a valid cache marker reuses the stale cache with a warning.
 - Project files come from each blueprint's `manifest.json` (`files[]` with `name`/`source`/`target`). `source` starting with `./` or `../` resolves against the manifest directory, otherwise it is repo-relative. `docs:` targets, Windows `%...%` targets, and annotation-only targets are reported as skipped (exit 0); a leading `~/...`, `/...`, or bare `~` token is used when the target carries a human annotation. Only the project scope honors `./...`/`../...` targets (resolved against the cwd). `*.example` sources assert existence only (secret values are never compared). Empty goldens pass when the target is absent (empty = defaults). Unreadable targets (e.g. `/etc/...` without sudo) fail as non-fixable with a hint.
-- Machine blueprint dirs are explicit flake paths from `registry.json` (`machines[].path`) and must contain a `flake.nix` (no `manifest.json`). `check` runs `home-manager switch --flake <dir>#<configuration> --dry-run` (via the `home-manager` binary, else `nix run home-manager -- …`) and reports one `nix:<blueprint>` result; `fix` runs the same switch without `--dry-run` (a `run-command` fix, applied with inherited stdio). When neither binary is available the check fails as non-fixable with a hint.
+- Machine blueprint dirs are explicit flake paths from `registry.json` (`machines[].path`) and must contain a `flake.nix` (no `manifest.json`). `check` runs `home-manager switch --flake <dir>#<configuration> --dry-run --impure` (via the `home-manager` binary, else `nix run home-manager -- …`) and reports one `nix:<blueprint>` result; `fix` runs the same switch without `--dry-run` (a `run-command` fix, applied with inherited stdio). A dry-run that prints a nix error (unknown attribute, missing env, build failure) is reported as non-fixable with a hint, since a real switch fails the same way. When neither binary is available the check fails as non-fixable with a hint.
 
 ## Conventions
 

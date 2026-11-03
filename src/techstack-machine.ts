@@ -26,11 +26,29 @@ function tail(text: string): string {
 	return kept.length > OUTPUT_TAIL_CHARS ? `…${kept.slice(-OUTPUT_TAIL_CHARS)}` : kept;
 }
 
+// A failing dry-run that prints a nix error never computed a new generation,
+// so a real switch fails the same way: report it as manual instead of
+// offering it as a fix. Anything else is a drift plan (or transient output)
+// and stays fixable. (Nix indents nested errors, so match without ^.)
+const NOT_DRIFT_PATTERN =
+	/does not provide attribute|is not set\. Run with|cannot build|builder failed/iu;
+
+function notDriftHint(detail: string, label: string): string {
+	if (/does not provide attribute/u.test(detail)) {
+		return `Flake has no such homeConfiguration; fix machine.configuration (omit it for $USER auto-select) or run manually: ${label}`;
+	}
+	if (/is not set\. Run with/u.test(detail)) {
+		return `Flake needs env the check lacks; export it (e.g. GIT_NAME/GIT_EMAIL) or run manually: ${label}`;
+	}
+	return `Flake evaluation failed (not drift); resolve the error or run manually: ${label}`;
+}
+
 function switchInvocation(
 	flake: string,
 	dryRun: boolean,
 ): { args: string[]; command: string; label: string } {
-	const args = ["switch", "--flake", flake, ...(dryRun ? ["--dry-run"] : [])];
+	// The machine flake reads $USER/GIT_NAME/GIT_EMAIL via getEnv, so evaluation needs --impure.
+	const args = ["switch", "--flake", flake, ...(dryRun ? ["--dry-run"] : []), "--impure"];
 	const label = `home-manager ${args.join(" ")}`;
 	const hm = Bun.which("home-manager");
 	if (hm !== null) {
@@ -108,7 +126,7 @@ export async function runMachineChecks(
 		source: `tech-stack:${spec.blueprint}`,
 		target: flake,
 	};
-	const expected = "home-manager switch --dry-run clean";
+	const expected = "home-manager switch --dry-run --impure clean";
 	const check = switchInvocation(flake, true);
 	let output: { code: number; stderr: string; stdout: string };
 	try {
@@ -130,6 +148,12 @@ export async function runMachineChecks(
 		return { results: [pass(base, expected, expected)], warnings };
 	}
 	const detail = tail(`${output.stdout}\n${output.stderr}`.trim());
+	if (NOT_DRIFT_PATTERN.test(detail)) {
+		return {
+			results: [failManual(base, detail, expected, notDriftHint(detail, check.label))],
+			warnings,
+		};
+	}
 	const apply = switchInvocation(flake, false);
 	const result = failFixable(base, detail === "" ? "<drift detected>" : detail, expected, {
 		args: apply.args,

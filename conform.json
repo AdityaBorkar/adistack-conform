@@ -1,8 +1,7 @@
 {
 	"$schema": "./configuration_schema/conform.json",
 	"machine": {
-		"blueprint": "main",
-		"configuration": "adityab"
+		"blueprint": "main"
 	},
 	"project": {
 		"blueprint": "cli-app"

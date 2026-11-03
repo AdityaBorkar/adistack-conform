@@ -12,6 +12,10 @@ export interface CachedRepo {
 
 const FETCH_TIMEOUT_MS = 30_000;
 
+// Entries older than this are re-downloaded; a failed refresh reuses the
+// stale copy with a warning (see fetchAndInstall).
+const MAX_CACHE_AGE_MS = 24 * 60 * 60_000;
+
 const inflight = new Map<string, Promise<CachedRepo>>();
 
 function safeRef(ref: string): string {
@@ -128,10 +132,20 @@ export async function ensureGithubRepo(
 	const { dir, metaPath } = cachePaths(spec);
 	if (!noCache && (await pathExists(metaPath))) {
 		try {
-			const meta = (await Bun.file(metaPath).json()) as { id?: unknown; ref?: unknown };
-			if (meta.id === spec.id && meta.ref === spec.ref) {
+			const meta = (await Bun.file(metaPath).json()) as {
+				fetchedAt?: unknown;
+				id?: unknown;
+				ref?: unknown;
+			};
+			if (
+				meta.id === spec.id &&
+				meta.ref === spec.ref &&
+				typeof meta.fetchedAt === "string" &&
+				Date.now() - Date.parse(meta.fetchedAt) < MAX_CACHE_AGE_MS
+			) {
 				return { dir, stale: false };
 			}
+			// Expired or corrupt marker — fall through to re-download.
 		} catch {
 			// Corrupt marker — fall through to re-download.
 		}

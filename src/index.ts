@@ -54,19 +54,31 @@ function failWith(error: unknown): never {
 	process.exit(2);
 }
 
+async function timed<T>(task: Promise<T>): Promise<{ elapsedMs: number; value: T }> {
+	const start = performance.now();
+	const value = await task;
+	return { elapsedMs: performance.now() - start, value };
+}
+
 async function runAllChecks(args: {
 	configs: LoadedConform[];
 	cwd: string;
 	home: string;
 	only: CheckScope | undefined;
 	noCache: boolean;
-}): Promise<{ results: CheckResult[]; warnings: string[] }> {
-	const tasks: Promise<{ results: CheckResult[]; warnings: string[] }>[] = [];
+}): Promise<{
+	machineElapsedMs: number | undefined;
+	projectElapsedMs: number | undefined;
+	results: CheckResult[];
+	warnings: string[];
+}> {
+	const projectTasks: Promise<{ results: CheckResult[]; warnings: string[] }>[] = [];
+	const machineTasks: Promise<{ results: CheckResult[]; warnings: string[] }>[] = [];
 	for (const loaded of args.configs) {
 		if (args.only === undefined || args.only === "project") {
 			const spec = projectSpecOf(loaded);
 			if (spec !== undefined) {
-				tasks.push(
+				projectTasks.push(
 					runProjectChecks(spec, {
 						baseDir: args.cwd,
 						home: args.home,
@@ -79,7 +91,7 @@ async function runAllChecks(args: {
 		if (args.only === undefined || args.only === "machine") {
 			const spec = machineSpecOf(loaded);
 			if (spec !== undefined) {
-				tasks.push(
+				machineTasks.push(
 					runMachineChecks(spec, {
 						baseDir: args.home,
 						home: args.home,
@@ -90,10 +102,23 @@ async function runAllChecks(args: {
 			}
 		}
 	}
-	const outputs = await Promise.all(tasks);
+	const [project, machine] = await Promise.all([
+		timed(Promise.all(projectTasks)),
+		timed(Promise.all(machineTasks)),
+	]);
+	const projectOutputs = project.value;
+	const machineOutputs = machine.value;
 	return {
-		results: outputs.flatMap((output) => output.results),
-		warnings: outputs.flatMap((output) => output.warnings),
+		machineElapsedMs: machineTasks.length > 0 ? machine.elapsedMs : undefined,
+		projectElapsedMs: projectTasks.length > 0 ? project.elapsedMs : undefined,
+		results: [
+			...projectOutputs.flatMap((output) => output.results),
+			...machineOutputs.flatMap((output) => output.results),
+		],
+		warnings: [
+			...projectOutputs.flatMap((output) => output.warnings),
+			...machineOutputs.flatMap((output) => output.warnings),
+		],
 	};
 }
 
@@ -109,13 +134,15 @@ async function prepareRun(cmd: Command, cmdOptions: CacheOptions & ScopeOptions)
 	const cwd = process.cwd();
 	const home = defaultHome();
 	const noCache = cmdOptions.cache === false;
-	const { results, warnings } = await runAllChecks({ configs, cwd, home, noCache, only });
-	return { configs, cwd, home, noCache, only, results, warnings };
+	const run = await runAllChecks({ configs, cwd, home, noCache, only });
+	return { configs, cwd, home, noCache, only, ...run };
 }
 
 async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promise<number> {
-	const start = performance.now();
-	const { configs, results, warnings } = await prepareRun(cmd, cmdOptions);
+	const { configs, machineElapsedMs, projectElapsedMs, results, warnings } = await prepareRun(
+		cmd,
+		cmdOptions,
+	);
 	emitWarnings(warnings);
 	if (cmdOptions.json) {
 		printJsonSummary(
@@ -123,7 +150,7 @@ async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promi
 			results,
 		);
 	} else {
-		printResults(results, performance.now() - start);
+		printResults(results, { machine: machineElapsedMs, project: projectElapsedMs });
 	}
 	return results.some((item) => !item.ok) ? 1 : 0;
 }
@@ -234,7 +261,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 		`\nFixed ${applied}/${selection.selected.length}. ${remaining.length} check(s) still failing in ${formatDuration(elapsedMs)}.`,
 	);
 	if (remaining.length > 0) {
-		printResults(rerunResults, elapsedMs);
+		printResults(rerunResults);
 		return 1;
 	}
 	await outroAllPassed(elapsedMs);

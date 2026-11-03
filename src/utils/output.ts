@@ -1,6 +1,6 @@
 import pc from "picocolors";
 
-import type { CheckResult } from "#/checks.js";
+import type { CheckResult, CheckScope } from "#/checks.js";
 import { desiredContent, isFixable, partitionResults } from "#/checks.js";
 
 export function okMark(ok: boolean): string {
@@ -9,7 +9,12 @@ export function okMark(ok: boolean): string {
 
 function short(value: string, max = 160): string {
 	const flat = value.replaceAll("\n", "\\n");
-	return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+	if (flat.length <= max) {
+		return flat;
+	}
+	// Keep both ends so a long single-line error still shows its cause.
+	const head = Math.ceil((max - 1) / 2);
+	return `${flat.slice(0, head)}…${flat.slice(head - max + 1)}`;
 }
 
 export function formatResult(result: CheckResult): string {
@@ -50,14 +55,46 @@ export function formatDuration(ms: number): string {
 	return `${(safe / 1000).toFixed(2)}s`;
 }
 
-export function printResults(results: CheckResult[], elapsedMs?: number): void {
+function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefined {
+	// Scopes that did not run are omitted by the caller.
+	if (items.length === 0) {
+		return undefined;
+	}
+	// The machine scope is always a single nix check, so report its state in
+	// words instead of a meaningless "1 passed".
+	if (scope === "machine") {
+		const failed = items.filter((item) => !item.ok);
+		if (failed.length === 0) {
+			return `${okMark(true)} machine: in sync`;
+		}
+		return failed.some((item) => isFixable(item))
+			? `${okMark(false)} machine: drift (fixable)`
+			: `${okMark(false)} machine: error (see above)`;
+	}
+	const { failed, fixable } = partitionResults(items);
+	const skipped = items.filter((item) => item.skipped === true).length;
+	const passed = items.length - failed.length - skipped;
+	return `${okMark(failed.length === 0)} project: ${passed} passed, ${failed.length} failed (${fixable.length} fixable), ${skipped} skipped`;
+}
+
+export function printResults(
+	results: CheckResult[],
+	timings?: Partial<Record<CheckScope, number | undefined>>,
+): void {
 	const lines = results.filter((result) => !result.ok).map((result) => formatResult(result));
-	const { failed, fixable } = partitionResults(results);
-	const skipped = results.filter((item) => item.skipped === true);
-	const timing = elapsedMs === undefined ? "" : ` in ${formatDuration(elapsedMs)}`;
-	lines.push(
-		`\n${results.length - failed.length - skipped.length} passed, ${failed.length} failed (${fixable.length} fixable), ${skipped.length} skipped${timing}.`,
-	);
+	const summaries: string[] = [];
+	for (const scope of ["project", "machine"] as const) {
+		const summary = scopeSummary(
+			scope,
+			results.filter((result) => result.scope === scope),
+		);
+		if (summary === undefined) {
+			continue;
+		}
+		const elapsedMs = timings?.[scope];
+		summaries.push(elapsedMs === undefined ? summary : `${summary} (${formatDuration(elapsedMs)})`);
+	}
+	lines.push("", ...(summaries.length > 0 ? summaries : ["No checks ran."]));
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 

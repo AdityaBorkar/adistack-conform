@@ -15,8 +15,7 @@
 			["parent", "sibling", "index", "subpath"],
 			["style", "side_effect_style", "side_effect"],
 			"unknown"
-		],
-		"ignoreCase": false
+		]
 	},
 	"sortPackageJson": {
 		"sortScripts": true
