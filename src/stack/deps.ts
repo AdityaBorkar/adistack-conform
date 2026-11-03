@@ -33,12 +33,12 @@ function removeCommand(pm: string, pkg: string): string {
 	return `${pm} ${pmCommands(pm).remove} ${pkg}`;
 }
 
-function requiredDeps(js: ManifestJs): Map<string, DepSection> {
-	const needed = new Map<string, DepSection>();
+function requiredDeps(js: ManifestJs): Map<string, { section: DepSection; version: string }> {
+	const needed = new Map<string, { section: DepSection; version: string }>();
 	for (const section of SECTIONS) {
-		for (const pkg of js[section]) {
+		for (const [pkg, version] of Object.entries(js[section])) {
 			if (!needed.has(pkg)) {
-				needed.set(pkg, section);
+				needed.set(pkg, { section, version });
 			}
 		}
 	}
@@ -63,7 +63,6 @@ export function checkToolchainDeps(args: {
 	blueprint: string;
 	js: ManifestJs | undefined;
 	localPkg: Record<string, unknown> | undefined;
-	presetVersions: Record<string, string>;
 	scope: CheckScope;
 	onlyIds?: ReadonlySet<string>;
 }): CheckResult[] {
@@ -73,7 +72,10 @@ export function checkToolchainDeps(args: {
 	const pm = args.js.pm;
 	const needed = requiredDeps(args.js);
 	const results: CheckResult[] = [];
-	for (const [pkg, section] of needed) {
+	for (const [pkg, req] of needed) {
+		const section = req.section;
+		const expected = req.version;
+		const versionHint = expected === "" ? "" : `@${expected}`;
 		const id = `project:${args.blueprint}:deps:${pkg}`;
 		if (args.onlyIds !== undefined && !args.onlyIds.has(id)) {
 			continue;
@@ -96,16 +98,29 @@ export function checkToolchainDeps(args: {
 			);
 			continue;
 		}
-		if (pkg in readSection(args.localPkg, section)) {
-			const version = readSection(args.localPkg, section)[pkg] as string;
+		const sections: Record<DepSection, Record<string, string>> = {
+			dependencies: readSection(args.localPkg, "dependencies"),
+			devDependencies: readSection(args.localPkg, "devDependencies"),
+			peerDependencies: readSection(args.localPkg, "peerDependencies"),
+		};
+		if (Object.hasOwn(sections[section], pkg)) {
+			const version = sections[section][pkg] as string;
+			if (expected !== "" && version !== expected) {
+				results.push(
+					failManual(
+						base,
+						version,
+						`${section} has ${pkg}@${expected}`,
+						`Update ${pkg} in ${section} from ${version} to ${expected} (declared in manifest js.${section}): ${installCommand(pm, section, pkg, versionHint)}.`,
+					),
+				);
+				continue;
+			}
 			results.push(pass(base, version, `installed in ${section}`));
 			continue;
 		}
-		const version = args.presetVersions[pkg];
-		const versionHint = version === undefined ? "" : `@${version}`;
 		const found = SECTIONS.filter(
-			(other) =>
-				other !== section && pkg in readSection(args.localPkg as Record<string, unknown>, other),
+			(other) => other !== section && Object.hasOwn(sections[other], pkg),
 		);
 		if (found.length > 0) {
 			const [actual = ""] = found;
@@ -129,22 +144,6 @@ export function checkToolchainDeps(args: {
 		);
 	}
 	return results;
-}
-
-export function presetDepVersions(presetPkgText: string | undefined): Record<string, string> {
-	if (presetPkgText === undefined) {
-		return {};
-	}
-	try {
-		const parsed = JSON.parse(presetPkgText) as Record<string, unknown>;
-		return {
-			...readSection(parsed, "peerDependencies"),
-			...readSection(parsed, "dependencies"),
-			...readSection(parsed, "devDependencies"),
-		};
-	} catch {
-		return {};
-	}
 }
 
 export function parseLocalPackageJson(

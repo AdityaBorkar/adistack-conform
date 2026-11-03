@@ -95,6 +95,20 @@ export function desiredContent(result: CheckResult): string {
 	return result.fix?.newContent ?? result.expected;
 }
 
+export function describeFix(result: CheckResult): string {
+	const fix = result.fix;
+	if (fix === undefined) {
+		return "manual";
+	}
+	if (fix.kind === "overwrite-file") {
+		return `overwrite ${fix.filePath}`;
+	}
+	if (fix.kind === "github-api") {
+		return `api ${fix.label}`;
+	}
+	return `run ${fix.command} ${fix.args.join(" ")}`.trim();
+}
+
 export async function applyFix(result: CheckResult): Promise<void> {
 	if (!result.fix) {
 		throw new Error(`Check ${result.id} is not fixable.`);

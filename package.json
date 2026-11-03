@@ -1,7 +1,7 @@
 {
 	"name": "@adistack/conform",
 	"version": "0.1.0",
-	"description": "CLI tool that checks repositories against conformance presets",
+	"description": "CLI that checks project files, machine config, and GitHub repo settings against tech-stack blueprints",
 	"keywords": [
 		"check",
 		"conform"
@@ -39,7 +39,6 @@
 		".output",
 		"package.json",
 		"configuration_schema",
-		"README.md",
 		"skills",
 		"www"
 	],
@@ -64,11 +63,11 @@
 		"gen:json-schema": "bun ./scripts/generate-json-schema.ts",
 		"prepare": "husky",
 		"review:knip": "knip",
-		"verify": "bun format && bun check:lint && bun check:types && bun run build"
+		"test": "bun test",
+		"verify": "bun format && bun check:lint && bun check:types && bun test && bun run build"
 	},
 	"dependencies": {
 		"@clack/prompts": "1.8.1",
-		"@valibot/to-json-schema": "1.8.0",
 		"commander": "15.0.0",
 		"diff": "9.0.0",
 		"picocolors": "1.1.1",
@@ -80,6 +79,7 @@
 		"@commitlint/config-conventional": "21.2.4",
 		"@types/bun": "1.4.4",
 		"@types/node": "26.6.6",
+		"@valibot/to-json-schema": "1.8.0",
 		"husky": "9.1.7",
 		"knip": "6.43.0",
 		"oxfmt": "0.75.0",

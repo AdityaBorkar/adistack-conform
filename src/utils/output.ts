@@ -82,8 +82,11 @@ function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefin
 export function printResults(
 	results: CheckResult[],
 	timings?: Partial<Record<CheckScope, number | undefined>>,
+	options?: { verbose?: boolean },
 ): void {
-	const lines = results.filter((result) => !result.ok).map((result) => formatResult(result));
+	const verbose = options?.verbose === true;
+	const visible = verbose ? results : results.filter((result) => !result.ok);
+	const lines = visible.map((result) => formatResult(result));
 	const summaries: string[] = [];
 	for (const scope of ["project", "machine", "github"] as const) {
 		const summary = scopeSummary(

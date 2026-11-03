@@ -8,12 +8,12 @@ import type { RegistryDocument } from "#/stack/registry.js";
 import { resolveSourceRel } from "#/stack/registry.js";
 import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { errorMessage } from "#/utils/fs.js";
+import { FETCH_TIMEOUT_MS, apiHeaders, githubToken } from "#/utils/net.js";
 import { parseOrThrow } from "#/utils/schema.js";
 
 export type GithubPreset = v.InferOutput<typeof GithubSchema>;
 
 const GITHUB_API = "https://api.github.com";
-const FETCH_TIMEOUT_MS = 30_000;
 
 class ApiError extends Error {
 	status: number;
@@ -22,24 +22,6 @@ class ApiError extends Error {
 		super(message);
 		this.status = status;
 	}
-}
-
-function githubToken(): string | undefined {
-	const token = process.env["GITHUB_TOKEN"];
-	return token !== undefined && token !== "" ? token : undefined;
-}
-
-function apiHeaders(): Record<string, string> {
-	const headers: Record<string, string> = {
-		Accept: "application/vnd.github+json",
-		"User-Agent": "adistack-conform",
-		"X-GitHub-Api-Version": "2022-11-28",
-	};
-	const token = githubToken();
-	if (token !== undefined) {
-		headers["Authorization"] = `Bearer ${token}`;
-	}
-	return headers;
 }
 
 async function apiJson(
@@ -84,7 +66,74 @@ async function apiJson(
 		return undefined;
 	}
 	const text = await response.text();
-	return text === "" ? undefined : (JSON.parse(text) as unknown);
+	if (text === "") {
+		return undefined;
+	}
+	try {
+		return JSON.parse(text) as unknown;
+	} catch (error) {
+		throw new Error(
+			`GitHub API ${method} ${path} returned invalid JSON (HTTP ${response.status}): ${errorMessage(error)}`,
+			{ cause: error },
+		);
+	}
+}
+
+async function apiJsonPaged(path: string): Promise<unknown[]> {
+	const all: unknown[] = [];
+	let next: string | undefined = path.includes("?") ? path : `${path}?per_page=100`;
+	while (next !== undefined) {
+		const headers = apiHeaders();
+		let response: Response;
+		try {
+			response = await fetch(`${GITHUB_API}${next}`, {
+				headers,
+				method: "GET",
+				signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+			});
+		} catch (error) {
+			throw new Error(`Cannot reach GitHub API GET ${next}: ${errorMessage(error)}`, {
+				cause: error,
+			});
+		}
+		if (!response.ok) {
+			const excerpt = (await response.text().catch(() => "")).slice(0, 300);
+			if (response.status === 401 || response.status === 403) {
+				throw new ApiError(
+					response.status,
+					`GitHub API refused GET ${next}: HTTP ${response.status} (private repo or rate limit — set GITHUB_TOKEN). ${excerpt}`,
+				);
+			}
+			throw new ApiError(
+				response.status,
+				`GitHub API GET ${next} failed: HTTP ${response.status}. ${excerpt}`,
+			);
+		}
+		const text = await response.text();
+		let parsed: unknown = [];
+		try {
+			parsed = text === "" ? [] : (JSON.parse(text) as unknown);
+		} catch (error) {
+			throw new Error(`GitHub API GET ${next} returned invalid JSON: ${errorMessage(error)}`, {
+				cause: error,
+			});
+		}
+		const items = Array.isArray(parsed)
+			? parsed
+			: ((parsed as { environments?: unknown[]; secrets?: unknown[]; variables?: unknown[] })
+					.environments ??
+				(parsed as { secrets?: unknown[] }).secrets ??
+				(parsed as { variables?: unknown[] }).variables ??
+				[]);
+		all.push(...(items as unknown[]));
+		const link = response.headers.get("link") ?? "";
+		const match = /<([^>]+)>;\s*rel="next"/u.exec(link);
+		next = match?.[1]?.startsWith(GITHUB_API) ? match[1].slice(GITHUB_API.length) : match?.[1];
+		if (all.length > 1000) {
+			break;
+		}
+	}
+	return all;
 }
 
 export async function applyGithubApiFix(fix: GithubApiFix): Promise<void> {
@@ -97,10 +146,16 @@ export async function applyGithubApiFix(fix: GithubApiFix): Promise<void> {
 }
 
 function parseRepoSlug(text: string): string | undefined {
-	const cleaned = text.trim().replace(/\.git$/u, "");
-	const match =
-		/github\.com[/:]([^/\s]+\/[^/\s]+)$/u.exec(cleaned) ?? /^([^/\s]+\/[^/\s]+)$/u.exec(cleaned);
-	return match?.[1];
+	const cleaned = text
+		.trim()
+		.replace(/\.git$/u, "")
+		.replace(/\/+$/u, "");
+	const withPath = /github\.com(?::\d+)?[/:]([^/\s]+\/[^/\s]+?)(?:[/?#].*)?$/iu.exec(cleaned);
+	if (withPath?.[1] !== undefined) {
+		return withPath[1];
+	}
+	const bare = /^([^/\s]+\/[^/\s]+)$/u.exec(cleaned);
+	return bare?.[1];
 }
 
 function resolveTargetRepo(configured: string | undefined): string {
@@ -146,8 +201,11 @@ async function fetchGithubPreset(
 	let text: string;
 	try {
 		text = await fetchTextOrThrow(rawUrl(id, ref, rel), `github preset ${rel}`);
-	} catch {
-		return { rel };
+	} catch (error) {
+		if (errorMessage(error).includes("HTTP 404") || errorMessage(error).includes("not found")) {
+			return { rel };
+		}
+		throw error;
 	}
 	let parsed: unknown;
 	try {
@@ -325,9 +383,6 @@ async function checkReleases(
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
 			return skipped(base, "cannot read immutable releases", "set GITHUB_TOKEN to verify");
 		}
-		if (error instanceof ApiError && error.status === 404 && githubToken() === undefined) {
-			return skipped(base, "immutable releases", "endpoint unavailable — verify in Settings");
-		}
 		throw error;
 	}
 	if (enabled === golden.releasesImmutable) {
@@ -466,6 +521,27 @@ function toLoginList(value: unknown): string[] | undefined {
 	});
 }
 
+function nonEmptyList(entry: unknown): boolean {
+	return Array.isArray(entry) && entry.length > 0;
+}
+
+function isRestrictionsEnabled(value: unknown): boolean {
+	if (value === null || value === undefined) {
+		return false;
+	}
+	if (typeof value === "object") {
+		const record = value as Record<string, unknown>;
+		const teams = record["teams"];
+		const users = record["users"];
+		const apps = record["apps"];
+		if ("teams" in record || "users" in record || "apps" in record) {
+			return nonEmptyList(teams) || nonEmptyList(users) || nonEmptyList(apps);
+		}
+		return true;
+	}
+	return false;
+}
+
 function protectionPutBody(
 	current: Record<string, unknown> | undefined,
 	input: ProtectionInput,
@@ -474,6 +550,9 @@ function protectionPutBody(
 	const curChecks = (current?.["required_status_checks"] as Record<string, unknown>) ?? {};
 	const flag = (key: string, fallback: boolean): boolean => {
 		const entry = current?.[key];
+		if (typeof entry === "boolean") {
+			return entry;
+		}
 		if (typeof entry === "object" && entry !== null && "enabled" in entry) {
 			return (entry as { enabled?: unknown }).enabled === true;
 		}
@@ -622,7 +701,7 @@ async function checkReviews(
 		],
 		[
 			"restrict_pushes",
-			read.protection?.["restrictions"] !== undefined && read.protection?.["restrictions"] !== null,
+			isRestrictionsEnabled(read.protection?.["restrictions"]),
 			golden.reviews.restrictPushes,
 		],
 	];
@@ -641,8 +720,12 @@ async function checkReviews(
 			{ allowStatuses: [404] },
 		);
 		signaturesEnabled = signatures !== undefined;
-	} catch {
-		signaturesEnabled = false;
+	} catch (error) {
+		if (error instanceof ApiError && error.status === 404) {
+			signaturesEnabled = false;
+		} else {
+			throw error;
+		}
 	}
 	if (signaturesEnabled !== golden.reviews.requireSignedCommits) {
 		diffs.push(
@@ -689,7 +772,9 @@ async function checkRulesets(
 	}
 	let current: Array<{ enforcement?: unknown; name?: unknown }>;
 	try {
-		current = (await apiJson(repoPath(repo, "/rulesets?includes_parents=true"))) as Array<{
+		current = (await apiJsonPaged(
+			repoPath(repo, "/rulesets?includes_parents=true&per_page=100"),
+		)) as Array<{
 			enforcement?: unknown;
 			name?: unknown;
 		}>;
@@ -796,8 +881,14 @@ async function checkActionsWorkflow(
 				forkNote = `fork approval: ${have} → ${want} (set in Settings → Actions → General)`;
 			}
 		}
-	} catch {
-		forkNote = "";
+	} catch (error) {
+		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+			forkNote = "";
+		} else if (error instanceof ApiError && error.status === 404) {
+			forkNote = "";
+		} else {
+			throw error;
+		}
 	}
 	if (diffs.length === 0 && forkNote === "") {
 		return pass(base, "workflow permissions match", "workflow permissions match");
@@ -884,8 +975,14 @@ async function checkActionsOidc(
 		current = await apiJson(repoPath(repo, "/actions/oidc/customization/sub"), {
 			allowStatuses: [404],
 		});
-	} catch {
-		current = undefined;
+	} catch (error) {
+		if (
+			error instanceof ApiError &&
+			(error.status === 401 || error.status === 403 || error.status === 404)
+		) {
+			return skipped(base, "OIDC customization unavailable", "verify in Settings → Actions → OIDC");
+		}
+		throw error;
 	}
 	if (current === undefined) {
 		return skipped(base, "OIDC customization unavailable", "verify in Settings → Actions → OIDC");
@@ -909,10 +1006,10 @@ async function checkEnvironments(
 	}
 	let names: string[];
 	try {
-		const current = (await apiJson(repoPath(repo, "/environments"))) as {
-			environments?: Array<{ name?: unknown }>;
-		};
-		names = (current.environments ?? []).map((entry) => String(entry.name));
+		const items = (await apiJsonPaged(repoPath(repo, "/environments"))) as Array<{
+			name?: unknown;
+		}>;
+		names = items.map((entry) => String(entry.name));
 	} catch (error) {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
 			return skipped(base, "cannot list environments", "set GITHUB_TOKEN to verify environments");
@@ -1006,7 +1103,7 @@ async function checkSecurity(
 					"set GITHUB_TOKEN to verify",
 				),
 			);
-		} else if (!(error instanceof ApiError) || error.status !== 404) {
+		} else {
 			throw error;
 		}
 	}
@@ -1033,7 +1130,7 @@ async function checkSecurity(
 					"set GITHUB_TOKEN to verify",
 				),
 			);
-		} else if (!(error instanceof ApiError) || error.status !== 404) {
+		} else {
 			throw error;
 		}
 	}
@@ -1068,14 +1165,12 @@ async function checkSecrets(
 	let haveSecrets: string[] = [];
 	let haveVariables: string[] = [];
 	try {
-		const secrets = (await apiJson(repoPath(repo, "/actions/secrets"))) as {
-			secrets?: Array<{ name?: unknown }>;
-		};
-		haveSecrets = (secrets.secrets ?? []).map((entry) => String(entry.name));
-		const variables = (await apiJson(repoPath(repo, "/actions/variables"))) as {
-			variables?: Array<{ name?: unknown }>;
-		};
-		haveVariables = (variables.variables ?? []).map((entry) => String(entry.name));
+		const [secretItems, variableItems] = await Promise.all([
+			apiJsonPaged(repoPath(repo, "/actions/secrets")),
+			apiJsonPaged(repoPath(repo, "/actions/variables")),
+		]);
+		haveSecrets = (secretItems as Array<{ name?: unknown }>).map((entry) => String(entry.name));
+		haveVariables = (variableItems as Array<{ name?: unknown }>).map((entry) => String(entry.name));
 	} catch (error) {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
 			return skipped(base, "cannot list secrets", "set GITHUB_TOKEN to verify secrets");
@@ -1175,21 +1270,51 @@ export async function runGithubChecks(
 	const { golden } = preset;
 	try {
 		const read = await readProtection(repo, golden.defaultBranch);
+		const prChecks = checkPrChecks(spec.blueprint, repo, golden, read, target);
+		const [
+			general,
+			releases,
+			codeowners,
+			issueTemplates,
+			reviews,
+			rulesets,
+			permissions,
+			workflow,
+			retention,
+			oidc,
+			environments,
+			security,
+			secrets,
+		] = await Promise.all([
+			checkGeneral(spec.blueprint, repo, golden, target),
+			checkReleases(spec.blueprint, repo, golden, target),
+			checkCodeowners(spec.blueprint, repo, golden, target),
+			checkIssueTemplates(spec.blueprint, repo, golden, target),
+			checkReviews(spec.blueprint, repo, golden, read, target),
+			checkRulesets(spec.blueprint, repo, golden, target),
+			checkActionsPermissions(spec.blueprint, repo, golden, target),
+			checkActionsWorkflow(spec.blueprint, repo, golden, target),
+			checkActionsRetention(spec.blueprint, repo, golden, target),
+			checkActionsOidc(spec.blueprint, repo, golden, target),
+			checkEnvironments(spec.blueprint, repo, golden, target),
+			checkSecurity(spec.blueprint, repo, golden, target),
+			checkSecrets(spec.blueprint, repo, golden, target),
+		]);
 		return [
-			await checkGeneral(spec.blueprint, repo, golden, target),
-			await checkReleases(spec.blueprint, repo, golden, target),
-			await checkCodeowners(spec.blueprint, repo, golden, target),
-			await checkIssueTemplates(spec.blueprint, repo, golden, target),
-			await checkPrChecks(spec.blueprint, repo, golden, read, target),
-			await checkReviews(spec.blueprint, repo, golden, read, target),
-			await checkRulesets(spec.blueprint, repo, golden, target),
-			await checkActionsPermissions(spec.blueprint, repo, golden, target),
-			await checkActionsWorkflow(spec.blueprint, repo, golden, target),
-			await checkActionsRetention(spec.blueprint, repo, golden, target),
-			await checkActionsOidc(spec.blueprint, repo, golden, target),
-			await checkEnvironments(spec.blueprint, repo, golden, target),
-			...(await checkSecurity(spec.blueprint, repo, golden, target)),
-			await checkSecrets(spec.blueprint, repo, golden, target),
+			general,
+			releases,
+			codeowners,
+			issueTemplates,
+			prChecks,
+			reviews,
+			rulesets,
+			permissions,
+			workflow,
+			retention,
+			oidc,
+			environments,
+			...security,
+			secrets,
 			...checkUiOnly(spec.blueprint, golden, target),
 		];
 	} catch (error) {

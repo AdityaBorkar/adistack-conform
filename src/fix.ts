@@ -1,5 +1,5 @@
 import type { CheckResult } from "#/checks.js";
-import { applyFix } from "#/checks.js";
+import { applyFix, describeFix } from "#/checks.js";
 import { errorMessage } from "#/utils/fs.js";
 
 export type PromptOutcome =
@@ -7,8 +7,12 @@ export type PromptOutcome =
 	| { kind: "no-tty" }
 	| { kind: "selected"; selected: CheckResult[] };
 
+export function isInteractive(): boolean {
+	return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
 export async function promptForSelection(fixable: CheckResult[]): Promise<PromptOutcome> {
-	if (!process.stdin.isTTY) {
+	if (!isInteractive()) {
 		return { kind: "no-tty" };
 	}
 	const prompts = await import("@clack/prompts");
@@ -17,8 +21,8 @@ export async function promptForSelection(fixable: CheckResult[]): Promise<Prompt
 		message: "Pick items to fix.",
 		options: {
 			"Select all": fixable.map((item) => ({
-				hint: item.target,
-				label: item.id,
+				hint: `${item.target} — ${describeFix(item)}`,
+				label: `${item.id} — ${describeFix(item)}`,
 				value: item.id,
 			})),
 		},
@@ -58,16 +62,27 @@ export async function resolveSelection(
 }
 
 export async function applySelected(selected: CheckResult[]): Promise<number> {
-	const outcomes = await Promise.allSettled(selected.map((item) => applyFix(item)));
+	const byFile = new Map<string, CheckResult[]>();
+	const others: CheckResult[] = [];
+	for (const item of selected) {
+		if (item.fix?.kind === "overwrite-file") {
+			const list = byFile.get(item.fix.filePath) ?? [];
+			list.push(item);
+			byFile.set(item.fix.filePath, list);
+		} else {
+			others.push(item);
+		}
+	}
+	const ordered = [...[...byFile.values()].flat(), ...others];
 	let applied = 0;
-	outcomes.forEach((outcome, index) => {
-		const item = selected[index] as CheckResult;
-		if (outcome.status === "fulfilled") {
+	for (const item of ordered) {
+		try {
+			await applyFix(item);
 			applied += 1;
 			console.log(`✓ fixed ${item.id}`);
-		} else {
-			console.error(`✗ not fixed ${item.id}: ${errorMessage(outcome.reason)}`);
+		} catch (error) {
+			console.error(`✗ not fixed ${item.id}: ${errorMessage(error)}`);
 		}
-	});
+	}
 	return applied;
 }

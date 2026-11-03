@@ -119,10 +119,15 @@ function stripJsonc(text: string): string {
 		}
 		if (char === "/" && next === "*") {
 			i += 2;
-			while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) {
+			let closed = false;
+			while (i < text.length) {
+				if (text[i] === "*" && text[i + 1] === "/") {
+					closed = true;
+					break;
+				}
 				i += 1;
 			}
-			i += 2;
+			i += closed ? 2 : 0;
 			continue;
 		}
 		if (char === ",") {
@@ -164,7 +169,7 @@ function deepEqual(left: unknown, right: unknown): boolean {
 		const rightKeys = Object.keys(right);
 		return (
 			leftKeys.length === rightKeys.length &&
-			leftKeys.every((key) => key in right && deepEqual(left[key], right[key]))
+			leftKeys.every((key) => Object.hasOwn(right, key) && deepEqual(left[key], right[key]))
 		);
 	}
 	return false;
@@ -211,12 +216,9 @@ function overlayResult(
 			args.compare.ignore.length > 0 ? ` (local ${args.compare.ignore.join("/")} kept)` : "";
 		return pass(args.base, `matches preset${kept}`, args.golden);
 	}
-	if (args.compare.ignore.length > 0 && !args.compare.ignore.some((key) => key in args.localRest)) {
-		return undefined;
-	}
 	const merged: Record<string, unknown> = { ...args.goldenRest };
 	for (const [key, value] of Object.entries(args.localRest)) {
-		if (!(key in merged) || args.compare.ignore.includes(key)) {
+		if (!Object.hasOwn(merged, key) || args.compare.ignore.includes(key)) {
 			merged[key] = value;
 		}
 	}
@@ -233,7 +235,7 @@ function templateResult(
 ): CheckResult {
 	const { base, compare, golden, goldenRest, localRest, localText, targetPath } = args;
 	const drifted = compare.pinned.filter((key) => {
-		if (!(key in goldenRest)) {
+		if (!Object.hasOwn(goldenRest, key)) {
 			return false;
 		}
 		const goldenValue = goldenRest[key];
@@ -248,11 +250,19 @@ function templateResult(
 	for (const section of compare.versioned) {
 		const goldenDeps = goldenRest[section];
 		const localDeps = localRest[section];
-		if (!isRecord(goldenDeps) || !isRecord(localDeps)) {
+		if (!isRecord(goldenDeps)) {
+			continue;
+		}
+		if (!isRecord(localDeps)) {
+			if (Object.keys(goldenDeps).length > 0) {
+				for (const pkg of Object.keys(goldenDeps)) {
+					drifted.push(`${section}.${pkg}`);
+				}
+			}
 			continue;
 		}
 		for (const [pkg, version] of Object.entries(goldenDeps)) {
-			if (pkg in localDeps && !deepEqual(localDeps[pkg], version)) {
+			if (!Object.hasOwn(localDeps, pkg) || !deepEqual(localDeps[pkg], version)) {
 				drifted.push(`${section}.${pkg}`);
 			}
 		}
@@ -264,7 +274,7 @@ function templateResult(
 	for (const key of compare.pinned) {
 		const goldenValue = goldenRest[key];
 		const localValue = localRest[key];
-		if (!(key in goldenRest)) {
+		if (!Object.hasOwn(goldenRest, key)) {
 			continue;
 		}
 		if (isRecord(goldenValue) && isRecord(localValue)) {
@@ -279,14 +289,14 @@ function templateResult(
 	for (const section of compare.versioned) {
 		const goldenDeps = goldenRest[section];
 		const localDeps = localRest[section];
-		if (!isRecord(goldenDeps) || !isRecord(localDeps)) {
+		if (!isRecord(goldenDeps)) {
 			continue;
 		}
-		const next: Record<string, unknown> = { ...(localDeps as Record<string, unknown>) };
+		const next: Record<string, unknown> = isRecord(localDeps)
+			? { ...(localDeps as Record<string, unknown>) }
+			: {};
 		for (const [pkg, version] of Object.entries(goldenDeps)) {
-			if (pkg in next) {
-				next[pkg] = version;
-			}
+			next[pkg] = version;
 		}
 		merged[section] = next;
 	}
@@ -376,8 +386,17 @@ export async function checkPresetFileWithGolden(args: {
 	const base = baseFor(args.blueprint, args.fileName, args.fileTarget, args.scope);
 	const compare = args.compare ?? EMPTY_COMPARE;
 	const targetRead = await readFileSafe(args.targetPath);
-	if (isBlankGolden(args.golden) && !targetRead.ok && targetRead.reason === "missing") {
-		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
+	// Never auto-create or truncate on a blank preset: an empty golden means
+	// defaults, so any existing content is kept and missing stays passing.
+	if (isBlankGolden(args.golden)) {
+		if (!targetRead.ok && targetRead.reason !== "missing") {
+			return unreadableTarget(base, args.golden, args.targetPath, targetRead.error);
+		}
+		return pass(
+			base,
+			targetRead.ok ? "kept (empty preset = defaults)" : "defaults (empty preset)",
+			"absent (empty preset = defaults)",
+		);
 	}
 	if (!targetRead.ok) {
 		if (targetRead.reason !== "missing") {

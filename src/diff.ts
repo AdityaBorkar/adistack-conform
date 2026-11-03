@@ -3,6 +3,11 @@ import pc from "picocolors";
 
 const EMPTY_HEADER = "";
 const DEFAULT_CONTEXT = 3;
+const MAX_DIFF_CHARS = 200_000;
+
+function normalize(text: string): string {
+	return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+}
 
 export function renderDiff(
 	actualLabel: string,
@@ -11,8 +16,11 @@ export function renderDiff(
 	expected: string,
 	context = DEFAULT_CONTEXT,
 ): string {
-	const normalizedActual = actual.includes("\r") ? actual.replaceAll("\r\n", "\n") : actual;
-	const normalizedExpected = expected.includes("\r") ? expected.replaceAll("\r\n", "\n") : expected;
+	const normalizedActual = normalize(actual);
+	const normalizedExpected = normalize(expected);
+	if (normalizedActual.length + normalizedExpected.length > MAX_DIFF_CHARS) {
+		return `(diff skipped: ${normalizedActual.length + normalizedExpected.length} chars > ${MAX_DIFF_CHARS})`;
+	}
 	const patch = createTwoFilesPatch(
 		actualLabel,
 		expectedLabel,

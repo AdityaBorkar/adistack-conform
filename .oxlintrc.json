@@ -12,9 +12,15 @@
 	},
 	"overrides": [
 		{
-			"files": ["src/index.ts", "src/stack/github.ts"],
+			"files": ["src/index.ts", "src/stack/github.ts", "src/fix.ts", "src/config.ts"],
 			"rules": {
 				"no-await-in-loop": "off"
+			}
+		},
+		{
+			"files": ["src/index.ts"],
+			"rules": {
+				"prefer-top-level-await": "off"
 			}
 		}
 	],

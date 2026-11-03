@@ -1,26 +1,20 @@
 import * as v from "valibot";
 
+const ManifestDepMapSchema = (description: string) =>
+	v.optional(
+		v.pipe(v.record(v.string(), v.pipe(v.string(), v.minLength(1))), v.description(description)),
+		{},
+	);
+
 const ManifestJsSchema = v.object({
-	dependencies: v.optional(
-		v.pipe(
-			v.array(v.pipe(v.string(), v.minLength(1))),
-			v.description("Packages required in dependencies."),
-		),
-		[],
+	dependencies: ManifestDepMapSchema(
+		"Packages required in dependencies, pinned to exact versions.",
 	),
-	devDependencies: v.optional(
-		v.pipe(
-			v.array(v.pipe(v.string(), v.minLength(1))),
-			v.description("Packages required in devDependencies."),
-		),
-		[],
+	devDependencies: ManifestDepMapSchema(
+		"Packages required in devDependencies, pinned to exact versions.",
 	),
-	peerDependencies: v.optional(
-		v.pipe(
-			v.array(v.pipe(v.string(), v.minLength(1))),
-			v.description("Packages required in peerDependencies."),
-		),
-		[],
+	peerDependencies: ManifestDepMapSchema(
+		"Packages required in peerDependencies, pinned to exact versions.",
 	),
 	pm: v.optional(
 		v.pipe(

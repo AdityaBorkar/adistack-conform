@@ -11,7 +11,7 @@ import {
 	machineSpecOf,
 	projectSpecOf,
 } from "#/config.js";
-import { applySelected, resolveSelection } from "#/fix.js";
+import { applySelected, isInteractive, resolveSelection } from "#/fix.js";
 import { recheckGithubSelected, runGithubChecks } from "#/stack/github.js";
 import { recheckProjectSelected, runProjectChecks } from "#/stack/index.js";
 import { recheckMachineSelected, runMachineChecks } from "#/stack/machine.js";
@@ -31,7 +31,7 @@ import {
 const VERSION = "0.1.0";
 
 type ScopeOptions = { githubOnly?: boolean; machineOnly?: boolean; projectOnly?: boolean };
-type CheckCmdOptions = ScopeOptions & { json?: boolean };
+type CheckCmdOptions = ScopeOptions & { json?: boolean; verbose?: boolean };
 type FixCmdOptions = ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean };
 
 function scopeOf(options: ScopeOptions): CheckScope | undefined {
@@ -64,6 +64,33 @@ async function loadConfigsFromCommand(cmd: Command): Promise<LoadedConform[]> {
 function failWith(error: unknown): never {
 	console.error(errorMessage(error));
 	process.exit(2);
+}
+
+function requireRegistry(
+	registries: Map<string, RegistryDocument>,
+	id: string,
+	ref: string,
+): RegistryDocument {
+	const registry = registries.get(repoKey(id, ref));
+	if (registry === undefined) {
+		throw new Error(`Cannot find registry for ${repoKey(id, ref)}: refetch failed, re-run check.`);
+	}
+	return registry;
+}
+
+function toSafeResults(task: Promise<CheckResult[]>, scope: CheckScope): Promise<CheckResult[]> {
+	return task.catch((error) => [
+		{
+			actual: errorMessage(error),
+			expected: `${scope} checks complete`,
+			hint: `Re-run with only this scope to see the full error: ${errorMessage(error)}`,
+			id: `${scope}:internal-error`,
+			kind: "internal",
+			ok: false,
+			scope,
+			target: scope,
+		} satisfies CheckResult,
+	]);
 }
 
 async function timed<T>(task: Promise<T>): Promise<{ elapsedMs: number; value: T }> {
@@ -127,12 +154,15 @@ async function runAllChecks(args: {
 		if (args.only === undefined || args.only === "project") {
 			const spec = projectSpecOf(loaded);
 			if (spec !== undefined) {
-				const registry = args.registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument;
+				const registry = requireRegistry(args.registries, spec.id, spec.ref);
 				projectTasks.push(
-					runProjectChecks(
-						spec,
-						{ baseDir: args.cwd, home: args.home, scope: "project" },
-						registry,
+					toSafeResults(
+						runProjectChecks(
+							spec,
+							{ baseDir: args.cwd, home: args.home, scope: "project" },
+							registry,
+						),
+						"project",
 					),
 				);
 			}
@@ -140,15 +170,15 @@ async function runAllChecks(args: {
 		if (args.only === undefined || args.only === "machine") {
 			const spec = machineSpecOf(loaded);
 			if (spec !== undefined) {
-				const registry = args.registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument;
-				machineTasks.push(runMachineChecks(spec, registry));
+				const registry = requireRegistry(args.registries, spec.id, spec.ref);
+				machineTasks.push(toSafeResults(runMachineChecks(spec, registry), "machine"));
 			}
 		}
 		if (args.only === undefined || args.only === "github") {
 			const spec = githubSpecOf(loaded);
 			if (spec !== undefined) {
-				const registry = args.registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument;
-				githubTasks.push(runGithubChecks(spec, registry));
+				const registry = requireRegistry(args.registries, spec.id, spec.ref);
+				githubTasks.push(toSafeResults(runGithubChecks(spec, registry), "github"));
 			}
 		}
 	}
@@ -184,11 +214,15 @@ async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promi
 			results,
 		);
 	} else {
-		printResults(results, {
-			github: githubElapsedMs,
-			machine: machineElapsedMs,
-			project: projectElapsedMs,
-		});
+		printResults(
+			results,
+			{
+				github: githubElapsedMs,
+				machine: machineElapsedMs,
+				project: projectElapsedMs,
+			},
+			{ verbose: cmdOptions.verbose === true },
+		);
 	}
 	return results.some((item) => !item.ok) ? 1 : 0;
 }
@@ -218,6 +252,18 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 		}
 		printDryRun(fixable, performance.now() - start);
 		return 1;
+	}
+
+	if (cmdOptions.all === true && !isInteractive()) {
+		const risky = fixable.filter(
+			(item) => item.fix?.kind === "run-command" || item.fix?.kind === "github-api",
+		);
+		if (risky.length > 0) {
+			console.error(
+				`Refusing --all in non-TTY: ${risky.length} fix(es) run commands or edit GitHub (${risky.map((item) => item.id).join(", ")}). Re-run in a terminal or select file-only fixes.`,
+			);
+			return 2;
+		}
 	}
 
 	const selection = await resolveSelection(fixable, cmdOptions.all);
@@ -254,7 +300,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 								await recheckProjectSelected(
 									spec,
 									{ baseDir: cwd, home, scope: "project" },
-									registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument,
+									requireRegistry(registries, spec.id, spec.ref),
 									scopedIds,
 								),
 							);
@@ -271,7 +317,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 							reruns.push(
 								await recheckMachineSelected(
 									spec,
-									registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument,
+									requireRegistry(registries, spec.id, spec.ref),
 									scopedIds,
 								),
 							);
@@ -288,7 +334,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 							reruns.push(
 								await recheckGithubSelected(
 									spec,
-									registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument,
+									requireRegistry(registries, spec.id, spec.ref),
 									scopedIds,
 								),
 							);
@@ -310,7 +356,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 		`\nFixed ${applied}/${selection.selected.length}. ${remaining.length} check(s) still failing in ${formatDuration(elapsedMs)}.`,
 	);
 	if (remaining.length > 0) {
-		printResults(rerunResults);
+		printResults(rerunResults, undefined, { verbose: false });
 		return 1;
 	}
 	await outroAllPassed(elapsedMs);
@@ -332,6 +378,7 @@ program
 		"Check the config in the current directory against the current project/machine/repo.",
 	)
 	.option("--json", "Print machine-readable JSON.")
+	.option("--verbose", "Show passing checks too.")
 	.option("--project-only", "Only run project checks.")
 	.option("--machine-only", "Only run machine checks.")
 	.option("--github-only", "Only run GitHub repo checks.")
@@ -360,4 +407,6 @@ program
 		}
 	});
 
-program.parseAsync(process.argv);
+void program.parseAsync(process.argv).catch((error: unknown) => {
+	failWith(error);
+});

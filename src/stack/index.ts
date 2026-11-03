@@ -8,7 +8,7 @@ import {
 	classifyTarget,
 	skippedForTarget,
 } from "#/stack/check.js";
-import { checkToolchainDeps, parseLocalPackageJson, presetDepVersions } from "#/stack/deps.js";
+import { checkToolchainDeps, parseLocalPackageJson } from "#/stack/deps.js";
 import type {
 	ManifestCompare,
 	ManifestFile,
@@ -19,7 +19,7 @@ import type {
 import { resolveSourceRel } from "#/stack/registry.js";
 import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
-import { readFileSafe, resolveTargetPath } from "#/utils/fs.js";
+import { errorMessage, readFileSafe, resolveTargetPath } from "#/utils/fs.js";
 
 export const GOLDEN_FETCH_CONCURRENCY = 16;
 
@@ -83,37 +83,54 @@ async function fetchGoldens(
 	id: string,
 	ref: string,
 	needed: readonly NeededFile[],
-): Promise<Map<string, string>> {
-	const goldens = new Map<string, string>();
+): Promise<Map<string, { error?: string; text?: string }>> {
+	const goldens = new Map<string, { error?: string; text?: string }>();
 	const toFetch = [...new Set(needed.map((item) => item.sourceRel))];
 	await mapWithConcurrency(toFetch, GOLDEN_FETCH_CONCURRENCY, async (rel) => {
 		try {
-			goldens.set(rel, await fetchTextOrThrow(rawUrl(id, ref, rel), `preset file ${rel}`));
-		} catch {
-			// Leave absent: caller reports "<preset file missing>".
+			goldens.set(rel, {
+				text: await fetchTextOrThrow(rawUrl(id, ref, rel), `preset file ${rel}`),
+			});
+		} catch (error) {
+			goldens.set(rel, { error: errorMessage(error) });
 		}
 	});
 	return goldens;
 }
 
+function isNotFoundError(message: string): boolean {
+	return message.includes("HTTP 404") || message.includes("not found");
+}
+
 function checkNeeded(
 	needed: readonly NeededFile[],
-	goldens: Map<string, string>,
+	goldens: Map<string, { error?: string; text?: string }>,
 	scope: CheckScope,
 ): Promise<CheckResult[]> {
 	return Promise.all(
 		needed.map((item): Promise<CheckResult> => {
 			const golden = goldens.get(item.sourceRel);
-			if (golden === undefined) {
+			if (golden?.text === undefined) {
+				const base = {
+					id: `project:${item.blueprint}:${item.fileName}`,
+					kind: "preset",
+					scope,
+					source: `tech-stack:${item.blueprint}`,
+					target: item.fileTarget,
+				} as const;
+				if (golden?.error !== undefined && !isNotFoundError(golden.error)) {
+					return Promise.resolve(
+						failManual(
+							base,
+							"<preset fetch failed>",
+							item.sourceRel,
+							`Cannot fetch preset ${item.sourceRel}: ${golden.error}`,
+						),
+					);
+				}
 				return Promise.resolve(
 					failManual(
-						{
-							id: `project:${item.blueprint}:${item.fileName}`,
-							kind: "preset",
-							scope,
-							source: `tech-stack:${item.blueprint}`,
-							target: item.fileTarget,
-						},
+						base,
 						"<preset file missing>",
 						item.sourceRel,
 						`Preset file missing in tech-stack repo: ${item.sourceRel}`,
@@ -125,7 +142,7 @@ function checkNeeded(
 				compare: item.compare,
 				fileName: item.fileName,
 				fileTarget: item.fileTarget,
-				golden,
+				golden: golden.text as string,
 				scope,
 				sourceLabel: item.sourceLabel,
 				targetPath: item.targetPath,
@@ -150,15 +167,7 @@ async function runWithManifest(
 	const goldens = await fetchGoldens(spec.id, spec.ref, needed);
 	const enforced = await checkNeeded(needed, goldens, options.scope);
 	const structured = await checkFileStructure(spec.blueprint, files, structure, options, onlyIds);
-	const depResults = await checkDepsWithVersions(
-		spec,
-		files,
-		js,
-		dirRel,
-		goldens,
-		options,
-		onlyIds,
-	);
+	const depResults = await checkDepsWithVersions(spec, js, options, onlyIds);
 	return [...skips, ...enforced, ...structured, ...depResults];
 }
 
@@ -207,35 +216,12 @@ function checkFileStructure(
 	return Promise.all(tasks);
 }
 
-function templateEntry(files: ManifestFile[]): ManifestFile | undefined {
-	return files.find((file) => {
-		const compare = file.compare;
-		return compare !== undefined && (compare.pinned.length > 0 || compare.versioned.length > 0);
-	});
-}
-
 async function checkDepsWithVersions(
 	spec: ProjectRunSpec,
-	files: ManifestFile[],
 	js: ManifestJs | undefined,
-	dirRel: string,
-	goldens: Map<string, string>,
 	options: TechStackRunOptions,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const entry = templateEntry(files);
-	let presetText: string | undefined;
-	if (entry !== undefined) {
-		const rel = resolveSourceRel(entry.source, dirRel);
-		presetText = goldens.get(rel);
-		if (presetText === undefined) {
-			try {
-				presetText = await fetchTextOrThrow(rawUrl(spec.id, spec.ref, rel), `preset file ${rel}`);
-			} catch {
-				presetText = undefined;
-			}
-		}
-	}
 	const localPath = join(options.baseDir, "package.json");
 	const localRead = await readFileSafe(localPath);
 	const localText = localRead.ok ? localRead.text : undefined;
@@ -244,7 +230,6 @@ async function checkDepsWithVersions(
 		js,
 		localPkg: parseLocalPackageJson(localText),
 		onlyIds,
-		presetVersions: presetDepVersions(presetText),
 		scope: options.scope,
 	});
 }

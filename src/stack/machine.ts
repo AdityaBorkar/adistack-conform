@@ -4,6 +4,7 @@ import type { MachineRunSpec } from "#/config.js";
 import { findMachineEntry, machineNotFoundError, manifestDirRel } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
+import { encodePathSegments } from "#/utils/net.js";
 
 const SWITCH_TIMEOUT_MS = 10 * 60_000;
 const OUTPUT_TAIL_CHARS = 4000;
@@ -14,11 +15,12 @@ function nixCheckId(blueprint: string): string {
 }
 
 function encodeDir(dirRel: string): string {
-	return dirRel
-		.split("/")
-		.filter((segment) => segment !== "")
-		.map((segment) => encodeURIComponent(segment))
-		.join("/");
+	return encodePathSegments(
+		dirRel
+			.split("/")
+			.filter((segment) => segment !== "")
+			.join("/"),
+	);
 }
 
 // Let nix fetch the flake itself instead of materializing the whole
@@ -37,21 +39,20 @@ function tail(text: string): string {
 	return kept.length > OUTPUT_TAIL_CHARS ? `…${kept.slice(-OUTPUT_TAIL_CHARS)}` : kept;
 }
 
-// A failing dry-run that prints a nix error never computed a new generation,
+// A failing dry-run that prints a nix eval error never computed a new generation,
 // so a real switch fails the same way: report it as manual instead of
-// offering it as a fix. Anything else is a drift plan (or transient output)
-// and stays fixable. (Nix indents nested errors, so match without ^.)
-const NOT_DRIFT_PATTERN =
-	/does not provide attribute|is not set\. Run with|cannot build|builder failed/iu;
+// offering it as a fix. Anything else is a drift plan and stays fixable.
+const NON_DRIFT_PATTERN = /does not provide attribute|is not set\. Run with/iu;
+const BUILD_FAILED_PATTERN = /cannot build|builder failed/iu;
 
 function notDriftHint(detail: string, label: string): string {
-	if (/does not provide attribute/u.test(detail)) {
+	if (/does not provide attribute/iu.test(detail)) {
 		return `Flake has no such homeConfiguration; fix machine.configuration (omit it for $USER auto-select) or run manually: ${label}`;
 	}
-	if (/is not set\. Run with/u.test(detail)) {
-		return `Flake needs env the check lacks; export it (e.g. GIT_NAME/GIT_EMAIL) or run manually: ${label}`;
+	if (/is not set\. Run with/iu.test(detail)) {
+		return `Flake needs env the check lacks (e.g. GIT_NAME/GIT_EMAIL) or the network failed; export it / retry, or run manually: ${label}`;
 	}
-	return `Flake evaluation failed (not drift); resolve the error or run manually: ${label}`;
+	return `Flake evaluation or build failed (not drift); resolve the error or run manually: ${label}`;
 }
 
 function switchInvocation(
@@ -105,6 +106,7 @@ async function runCapture(
 				} catch {
 					// Already exited; the race below settles on `done`.
 				}
+				void done.catch(() => {});
 				reject(
 					new Error(
 						`Timed out after ${Math.round(timeoutMs / 1000)}s: ${command} ${args.join(" ")}`,
@@ -152,7 +154,7 @@ export async function runMachineChecks(
 		return [pass(base, expected, expected)];
 	}
 	const detail = tail(`${output.stdout}\n${output.stderr}`.trim());
-	if (NOT_DRIFT_PATTERN.test(detail)) {
+	if (NON_DRIFT_PATTERN.test(detail) || BUILD_FAILED_PATTERN.test(detail)) {
 		return [failManual(base, detail, expected, notDriftHint(detail, check.label))];
 	}
 	const apply = switchInvocation(flake, false);

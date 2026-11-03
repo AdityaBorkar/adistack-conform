@@ -24,35 +24,35 @@ Bun-only TypeScript CLI that checks the current directory (project files) and th
 - `source.type` is always `"github"`. `source.repo` is `owner/repo`. `source.ref` defaults to `main` (branch, tag, or commit; pin for reproducibility).
 - `project.blueprint` matches a tech-stack root `registry.json` `projects[]` entry by `name`, `path`, or directory basename (e.g. `cli-app`).
 - `machine.blueprint` matches a `registry.json` `machines[]` entry the same way (e.g. `main`). `machine.configuration` is the optional `homeConfigurations` attribute; omit it for home-manager `$USER` auto-select.
-- Config discovery: without `--config`, the CLI loads `./conform.json` from the cwd. With `--config <path>`, the basename must be exactly `conform.json`, else exit 2. Project targets resolve against the cwd.
+- Config discovery: without `--config`, the CLI walks up from the cwd to find `conform.json`. `--config <path>` accepts any path. Project targets resolve against the cwd.
 
 ## Commands
 
 Run from the directory that owns `conform.json` (project targets are cwd-relative):
 
 ```bash
-adistack-conform check [--json] [--project-only | --machine-only | --github-only]
+adistack-conform check [--json] [--verbose] [--project-only | --machine-only | --github-only]
 adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine-only | --github-only]
 # from source: bun ./src/index.ts check
 ```
 
 - `check` exits 0 (in sync, skips count as ok), 1 (drift), 2 (config error).
 - `--project-only` + `--machine-only` + `--github-only` are mutually exclusive (passing two is an error).
-- `--json` prints a machine-readable summary (`{ configs, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically.
-- `fix` flow: reports unfixable items with hints, shows a diff preview (unless `--no-diff`), prompts with space-to-toggle multiselect (Select-all first), applies, then re-checks only the selected IDs. `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on config error or no-TTY without `--all`.
-- `fix` needs a TTY unless `--all` is passed. In agents/non-TTY runs use `fix --all` or `fix --dry-run` (dry-run never writes and never prompts). Prefer `fix --dry-run` before `fix --all` so the diff is reviewed first.
+- `--json` prints a machine-readable summary (`{ configs, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically. `--verbose` also shows passing checks (default: failures only).
+- `fix` flow: reports unfixable items with hints, shows a diff preview (unless `--no-diff`, diffs over ~200KB skipped), prompts with space-to-toggle multiselect (each option shows the fix command), applies in order, then re-checks only the selected IDs. `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on config error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes.
+- `fix` needs a TTY unless `--all` is passed, and non-TTY `--all` refuses command/API fixes (re-run in a terminal). In agents/non-TTY runs use `fix --dry-run` (dry-run never writes and never prompts). Prefer `fix --dry-run` before `fix --all` so the diff is reviewed first.
 - Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits. GitHub-scope checks/fixes always call the GitHub REST API, so they need `GITHUB_TOKEN` (admin scope for fixes); the target repo defaults to `$GITHUB_REPOSITORY`, then the cwd git origin remote (override with `github.repo`).
 
 ## What each scope checks
 
 Project (one result per blueprint `manifest.json` `files[]`, id `project:<blueprint>:<name>`):
 
-- Fetch order per unique `repo@ref`: `registry.json` once, then the blueprint `manifest.json`, then only needed golden files (deduplicated, 16-way parallel, no local cache). A `source` starting with `./`/`../` resolves against the manifest directory, otherwise it is repo-relative. The template entry's golden is also used for dep version hints.
+- Fetch order per unique `repo@ref`: `registry.json` once, then the blueprint `manifest.json`, then only needed golden files (deduplicated, 16-way parallel, no local cache). A `source` starting with `./`/`../` resolves against the manifest directory, otherwise it is repo-relative.
 - Skipped (pass, exit 0): `docs:` targets, Windows `%VAR%` targets, annotation-only targets with no concrete path. Only the project scope resolves bare `./...`/`../...` targets (against the cwd); `~/...`, `/...`, and bare `~` expand against `$HOME`.
 - Empty golden + absent target passes (empty = defaults). Missing target otherwise fails fixable (overwrite-file fix). Unreadable target (e.g. `/etc/...` without sudo) fails manual with a hint.
 - Per-entry `compare` rules (declared in the manifest, never hardcoded): `ignore[]` keys are excluded from the compare with local values preserved by `fix` (e.g. linter `overrides`); `pinned[]` keys must match the golden (objects merge per key, local extras allowed); `versioned[]` sections pin shared package versions; `strip[]` keys are dropped before comparing. Entries declaring `pinned`/`versioned` are templates: a missing target is manual (copy + adapt per-project fields) since goldens hold placeholders.
 - Existence-only entries from `manifest.json` `file_structure[]` (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`) must exist; missing files get a generate hint, missing dirs a `mkdir -p` hint (manual).
-- Toolchain deps (`project:<blueprint>:deps:<pkg>`, kind `package`): the manifest `js` field lists required `dependencies` / `devDependencies` / `peerDependencies` plus the `pm` binary for hints. Missing or misplaced packages fail manual with an install/move hint; version hints come from the template entry's golden. The CLI holds no tool→package table — manifests are the only source of truth.
+- Toolchain deps (`project:<blueprint>:deps:<pkg>`, kind `package`): the manifest `js` field pins required `dependencies` / `devDependencies` / `peerDependencies` to exact versions, plus the `pm` binary for hints. Missing, misplaced, or version-drifted packages fail manual with an install/move/update hint. The CLI holds no tool→package table — manifests are the only source of truth.
 
 Machine (single result, id `nix:<blueprint>`):
 
@@ -82,6 +82,6 @@ bun run dev              # bun ./src/index.ts
 bun run verify           # format && check:lint && check:types && build (gate before pushing)
 ```
 
-- `src/index.ts` is the Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`), `src/utils/`, `src/schemas/` (`github.ts` included; Valibot source of truth, `import * as v from "valibot"`).
+- `src/index.ts` is the Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/stack/` (`index`/`check`/`deps`/`machine`/`github`/`registry`/`remote`), `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`), `src/schemas/` (`github.ts` included; Valibot source of truth, `import * as v from "valibot"`).
 - `configuration_schema/*.json` is generated — never hand-edit (regen via `bun run gen:json-schema` / `build`). Compiled binary lands in `.output/`.
 - Conventions: `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` where type-only, tabs + width 100, no `npm`/`npx` (always `bun run <script>`). Reference blueprints live at `~/repo/tech-stack` — read `registry.json`/manifests directly instead of guessing.

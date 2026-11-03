@@ -3,22 +3,23 @@ title: CLI
 description: check and fix flags, exit codes, JSON output, and non-TTY behavior.
 ---
 
-Global: `adistack-conform [--config <path>] <command>`. `--config` must point at a file named exactly `conform.json`.
+Global: `adistack-conform [--config <path>] <command>`. Without `--config`, the CLI walks up from the cwd to find `conform.json`; `--config` accepts any path.
 
 ## `check`
 
 ```bash
-adistack-conform check [--json] [--project-only | --machine-only | --github-only]
+adistack-conform check [--json] [--verbose] [--project-only | --machine-only | --github-only]
 ```
 
 | Flag                                                  | Meaning                                                  |
 | ----------------------------------------------------- | -------------------------------------------------------- |
 | `--json`                                              | Print a machine-readable summary instead of human lines. |
+| `--verbose`                                           | Show passing checks too (default: failures only).        |
 | `--project-only` / `--machine-only` / `--github-only` | Run one scope. Passing two is an error.                  |
 
 Output lists only failures plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | error`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
 
-Exit codes: `0` everything ok, `1` drift, `2` config/loading error (missing file, wrong basename, invalid JSON/schema, both scope flags, fetch failures for registry/manifest).
+Exit codes: `0` everything ok, `1` drift, `2` config/loading error (missing file, invalid JSON/schema, both scope flags, fetch failures for registry/manifest).
 
 `--json` shape:
 
@@ -49,8 +50,8 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine
 | `--no-diff`                                           | Hide the unified diff preview (useful for huge files).                                                   |
 | `--project-only` / `--machine-only` / `--github-only` | Fix one scope. Passing two is an error.                                                                  |
 
-Flow: report unfixable items with hints → diff preview (unless `--no-diff`; `run-command` fixes print the command and `github-api` fixes print the REST steps instead of a diff) → group-multiselect prompt (`Select all` pseudo-option first, space to toggle) → apply in parallel → re-check selected IDs → print `Fixed X/Y. N still failing`.
+Flow: report unfixable items with hints → diff preview (unless `--no-diff`; diffs over ~200KB are skipped; `run-command` fixes print the command and `github-api` fixes print the REST steps instead of a diff) → group-multiselect prompt (each option shows the fix command, space to toggle) → apply in order → re-check selected IDs → print `Fixed X/Y. N still failing`.
 
-Exit codes: `0` nothing remains failing, `1` drift remains / cancelled / dry-run found drift, `2` config error or no-TTY without `--all` (`Not a TTY: re-run with --all …`).
+Exit codes: `0` nothing remains failing, `1` drift remains / cancelled / dry-run found drift, `2` config error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes (`Re-run in a terminal …`).
 
 Tip: in agents and CI, prefer `fix --dry-run` (review) then `fix --all` (apply). Keep `GITHUB_TOKEN` set for private tech-stack repos — the github scope always needs it (admin scope for fixes).

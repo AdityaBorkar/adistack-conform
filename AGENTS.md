@@ -16,7 +16,7 @@ bun run format           # oxfmt — writes in place
 bun run check:lint       # oxlint
 bun run check:types      # tsrs (Bun typechecker, not tsc)
 bun run review:knip      # knip (unused deps/exports/files) — NOT part of verify
-bun run verify           # format && check:lint && check:types && build
+bun run verify           # format && check:lint && check:types && test && build
 ```
 
 - Always `bun run <script>`, not `npm`/`npx` (`bunfig.toml` sets `shell = "bun"`).

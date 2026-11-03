@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { ConformSchema } from "#/schemas/conform.js";
 import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
@@ -79,20 +79,22 @@ const CONFIG_FILENAME = "conform.json";
 export async function loadConfig(configPath: string): Promise<LoadedConform> {
 	const path = resolveConfigPath(configPath);
 	const parsed = await readJsonFile(path, "Config");
-	if (basename(path) !== CONFIG_FILENAME) {
-		throw new Error(
-			`Cannot load config from "${basename(path)}" in ${path} (expected ${CONFIG_FILENAME}).`,
-		);
-	}
 	return toLoadedConfig(path, parsed);
 }
 
 export async function discoverConfigs(): Promise<LoadedConform[]> {
-	const path = join(process.cwd(), CONFIG_FILENAME);
-	if (!(await Bun.file(path).exists())) {
-		throw new Error(`No config found in ${process.cwd()} (looked for ${CONFIG_FILENAME}).`);
+	let dir = process.cwd();
+	while (true) {
+		const path = join(dir, CONFIG_FILENAME);
+		if (await Bun.file(path).exists()) {
+			return [await loadConfig(path)];
+		}
+		const parent = dirname(dir);
+		if (parent === dir) {
+			throw new Error(`No config found from ${process.cwd()} up (looked for ${CONFIG_FILENAME}).`);
+		}
+		dir = parent;
 	}
-	return [await loadConfig(path)];
 }
 
 export function projectSpecOf(loaded: LoadedConform): ProjectRunSpec | undefined {

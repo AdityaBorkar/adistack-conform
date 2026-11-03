@@ -9,33 +9,15 @@ import type {
 } from "#/stack/registry.js";
 import { findProjectEntry, listProjectBlueprintNames, manifestDirRel } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
+import { FETCH_TIMEOUT_MS, authHeaders, encodePathSegments } from "#/utils/net.js";
 import { parseOrThrow } from "#/utils/schema.js";
-
-const FETCH_TIMEOUT_MS = 30_000;
 
 export function repoKey(id: string, ref: string): string {
 	return `${id}@${ref}`;
 }
 
-function authHeaders(): Record<string, string> {
-	const headers: Record<string, string> = { "User-Agent": "adistack-conform" };
-	const token = process.env["GITHUB_TOKEN"];
-	if (token !== undefined && token !== "") {
-		headers["Authorization"] = `Bearer ${token}`;
-	}
-	return headers;
-}
-
-function encodeRelPath(relPath: string): string {
-	const trimmed = relPath.startsWith("./") ? relPath.slice(2) : relPath;
-	return trimmed
-		.split("/")
-		.map((segment) => encodeURIComponent(segment))
-		.join("/");
-}
-
 export function rawUrl(id: string, ref: string, relPath: string): string {
-	return `https://raw.githubusercontent.com/${id}/${ref}/${encodeRelPath(relPath)}`;
+	return `https://raw.githubusercontent.com/${id}/${ref}/${encodePathSegments(relPath)}`;
 }
 
 export async function fetchTextOrThrow(url: string, label: string): Promise<string> {

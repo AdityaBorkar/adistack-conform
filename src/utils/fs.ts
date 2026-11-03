@@ -38,12 +38,14 @@ export async function readFileSafe(path: string): Promise<FileRead> {
 }
 
 function isMissingError(error: unknown): boolean {
-	return (
-		typeof error === "object" &&
-		error !== null &&
-		"code" in error &&
-		(error as { code?: unknown }).code === "ENOENT"
-	);
+	if (typeof error !== "object" || error === null) {
+		return false;
+	}
+	if ("code" in error && (error as { code?: unknown }).code === "ENOENT") {
+		return true;
+	}
+	const message = error instanceof Error ? error.message : String(error);
+	return message.includes("ENOENT") || message.includes("No such file");
 }
 
 export async function writeFileEnsuringDir(path: string, content: string): Promise<void> {
