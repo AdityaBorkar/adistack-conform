@@ -1,9 +1,9 @@
 import { failManual, type CheckResult, type CheckScope } from "#/checks.js";
 import type { ProjectRunSpec } from "#/config.js";
-import { checkPresetFileWithGolden, classifyTarget, skippedForTarget } from "#/techstack-check.js";
-import type { ManifestFile, RegistryDocument } from "#/techstack-registry.js";
-import { resolveSourceRel } from "#/techstack-registry.js";
-import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/techstack-remote.js";
+import { checkPresetFileWithGolden, classifyTarget, skippedForTarget } from "#/stack/check.js";
+import type { ManifestFile, RegistryDocument } from "#/stack/registry.js";
+import { resolveSourceRel } from "#/stack/registry.js";
+import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { resolveTargetPath } from "#/utils/fs.js";
 

@@ -6,10 +6,10 @@ import { partitionResults } from "#/checks.js";
 import type { LoadedConform } from "#/config.js";
 import { discoverConfigs, loadConfig, machineSpecOf, projectSpecOf } from "#/config.js";
 import { applySelected, resolveSelection } from "#/fix.js";
-import { recheckMachineSelected, runMachineChecks } from "#/techstack-machine.js";
-import type { RegistryDocument } from "#/techstack-registry.js";
-import { fetchRegistry, repoKey } from "#/techstack-remote.js";
-import { recheckProjectSelected, runProjectChecks } from "#/techstack.js";
+import { recheckProjectSelected, runProjectChecks } from "#/stack/index.js";
+import { recheckMachineSelected, runMachineChecks } from "#/stack/machine.js";
+import type { RegistryDocument } from "#/stack/registry.js";
+import { fetchRegistry, repoKey } from "#/stack/remote.js";
 import { defaultHome, errorMessage } from "#/utils/fs.js";
 import {
 	formatDuration,

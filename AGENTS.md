@@ -24,7 +24,7 @@ bun run gen:json-schema  # regenerate configuration_schema/ from src/schemas/*
 
 ## Layout
 
-- `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/techstack*.ts` (check/machine/registry/remote) — plus `src/utils/` (`fs`, `output`, `concurrency`) and `src/schemas/`.
+- `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/stack/` (`index`/`check`/`machine`/`registry`/`remote`) — plus `src/utils/` (`fs`, `output`, `concurrency`) and `src/schemas/`.
 - `src/schemas/*` — Valibot source of truth (`import * as v from "valibot"`). `configuration_schema/*.json` is generated — never hand-edit, it is overwritten by `build` / `gen:json-schema`.
 - This repo dogfoods itself: `conform.json` (`cli-app` project blueprint + `main` nix blueprint) tracks `AdityaBorkar/tech-stack@main`.
 - The tech-stack reference checkout lives at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read blueprints/registry directly instead of guessing.

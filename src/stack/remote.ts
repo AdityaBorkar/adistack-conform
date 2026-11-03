@@ -1,12 +1,8 @@
 import { parseOrThrow } from "#/schemas/common.js";
 import { ManifestSchema } from "#/schemas/manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
-import type { ManifestFile, RegistryDocument } from "#/techstack-registry.js";
-import {
-	findProjectEntry,
-	listProjectBlueprintNames,
-	manifestDirRel,
-} from "#/techstack-registry.js";
+import type { ManifestFile, RegistryDocument } from "#/stack/registry.js";
+import { findProjectEntry, listProjectBlueprintNames, manifestDirRel } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
 
 const FETCH_TIMEOUT_MS = 30_000;

@@ -1,10 +1,10 @@
 import type { CheckBase, CheckResult } from "#/checks.js";
 import { failFixable, failManual, pass } from "#/checks.js";
 import type { MachineRunSpec } from "#/config.js";
-import { findMachineEntry, machineNotFoundError } from "#/techstack-registry.js";
-import { machineDirCandidates } from "#/techstack-registry.js";
-import type { RegistryDocument } from "#/techstack-registry.js";
-import { fetchTextOrThrow, rawUrl } from "#/techstack-remote.js";
+import { findMachineEntry, machineNotFoundError } from "#/stack/registry.js";
+import { machineDirCandidates } from "#/stack/registry.js";
+import type { RegistryDocument } from "#/stack/registry.js";
+import { fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { errorMessage } from "#/utils/fs.js";
 
 const SWITCH_TIMEOUT_MS = 10 * 60_000;
