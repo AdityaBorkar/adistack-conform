@@ -1,10 +1,8 @@
 import type { CheckBase, CheckResult } from "#/checks.js";
 import { failFixable, failManual, pass } from "#/checks.js";
 import type { MachineRunSpec } from "#/config.js";
-import { findMachineEntry, machineNotFoundError } from "#/stack/registry.js";
-import { machineDirCandidates } from "#/stack/registry.js";
+import { findMachineEntry, machineNotFoundError, manifestDirRel } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
-import { fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { errorMessage } from "#/utils/fs.js";
 
 const SWITCH_TIMEOUT_MS = 10 * 60_000;
@@ -34,33 +32,6 @@ function flakeUrl(spec: MachineRunSpec, dirRel: string): string {
 	return `${base}#${encodeURIComponent(spec.configuration)}`;
 }
 
-async function resolveFlakeDir(spec: MachineRunSpec, entryPath: string): Promise<string> {
-	const candidates = machineDirCandidates(entryPath);
-	const primary = candidates[0];
-	if (primary === undefined) {
-		throw new Error(`Machine blueprint "${spec.blueprint}" has an empty path in the registry.`);
-	}
-	if (candidates.length === 1) {
-		return primary;
-	}
-	const checks = await Promise.all(
-		candidates.map(async (dir) => {
-			try {
-				await fetchTextOrThrow(rawUrl(spec.id, spec.ref, `${dir}/flake.nix`), "flake.nix");
-				return true;
-			} catch {
-				return false;
-			}
-		}),
-	);
-	const hit = candidates.find((_dir, index) => checks[index] === true);
-	if (hit !== undefined) {
-		return hit;
-	}
-	throw new Error(
-		`Machine blueprint "${spec.blueprint}" is not a nix flake (missing flake.nix in ${primary}).`,
-	);
-}
 function tail(text: string): string {
 	const kept = text.split("\n").slice(-OUTPUT_TAIL_LINES).join("\n");
 	return kept.length > OUTPUT_TAIL_CHARS ? `…${kept.slice(-OUTPUT_TAIL_CHARS)}` : kept;
@@ -155,7 +126,11 @@ export async function runMachineChecks(
 	if (entry === undefined) {
 		throw machineNotFoundError(spec.blueprint, registry);
 	}
-	const flake = flakeUrl(spec, await resolveFlakeDir(spec, entry.path));
+	const dirRel = manifestDirRel(entry.path);
+	if (dirRel === "") {
+		throw new Error(`Machine blueprint "${spec.blueprint}" has an empty path in the registry.`);
+	}
+	const flake = flakeUrl(spec, dirRel);
 	const base: CheckBase = {
 		id: nixCheckId(spec.blueprint),
 		kind: "nix",

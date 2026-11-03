@@ -59,8 +59,7 @@ async function timed<T>(task: Promise<T>): Promise<{ elapsedMs: number; value: T
 	return { elapsedMs: performance.now() - start, value };
 }
 
-// One registry fetch per unique repo@ref, shared by every spec in the run.
-// This replaces the old module-global memo maps with an explicit batch
+// One registry fetch per unique repo@ref, shared by every spec in the run,
 // scoped to a single command: no hidden state, no stale entries.
 async function fetchRegistries(
 	configs: readonly LoadedConform[],

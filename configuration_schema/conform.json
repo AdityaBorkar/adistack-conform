@@ -37,11 +37,6 @@
 		"source": {
 			"type": "object",
 			"properties": {
-				"branch": {
-					"type": "string",
-					"minLength": 1,
-					"description": "Git branch of the tech-stack repo (defaults to ref)."
-				},
 				"ref": {
 					"type": "string",
 					"minLength": 1,

@@ -1,13 +1,6 @@
 import * as v from "valibot";
 
 export const TechStackSourceSchema = v.object({
-	branch: v.optional(
-		v.pipe(
-			v.string(),
-			v.minLength(1),
-			v.description("Git branch of the tech-stack repo (defaults to ref)."),
-		),
-	),
 	ref: v.optional(
 		v.pipe(v.string(), v.minLength(1), v.description("Git branch, tag, or commit.")),
 		"main",

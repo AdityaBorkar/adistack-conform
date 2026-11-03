@@ -16,12 +16,11 @@ Validate with `./configuration_schema/conform.json` (generated from Valibot sche
 
 ## `source` (required)
 
-| Field    | Required | Default  | Meaning                                                                   |
-| -------- | -------- | -------- | ------------------------------------------------------------------------- |
-| `type`   | yes      | —        | Always `"github"`. Only github is supported.                              |
-| `repo`   | yes      | —        | `owner/repo` holding project blueprints and machine nix flakes.           |
-| `ref`    | no       | `"main"` | Branch, tag, or commit to download. Pin a tag/commit for reproducibility. |
-| `branch` | no       | —        | Overrides `ref` as the ref to download when both are set.                 |
+| Field  | Required | Default  | Meaning                                                                   |
+| ------ | -------- | -------- | ------------------------------------------------------------------------- |
+| `type` | yes      | —        | Always `"github"`. Only github is supported.                              |
+| `repo` | yes      | —        | `owner/repo` holding project blueprints and machine nix flakes.           |
+| `ref`  | no       | `"main"` | Branch, tag, or commit to download. Pin a tag/commit for reproducibility. |
 
 Refs containing `/` work — plain path segments in `raw.githubusercontent.com` URLs, `encodeURIComponent`-escaped in flake URLs.
 

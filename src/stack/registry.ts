@@ -108,26 +108,3 @@ export function resolveSourceRel(source: string, dirRel: string): string {
 export function manifestDirRel(entryPath: string): string {
 	return normalizeEntryPath(entryPath);
 }
-
-function swapMachinePlural(path: string): string | undefined {
-	if (/(^|\/)machines\//u.test(path)) {
-		return path.replace(/(^|\/)machines\//u, "$1machine/");
-	}
-	if (/(^|\/)machine\//u.test(path)) {
-		return path.replace(/(^|\/)machine\//u, "$1machines/");
-	}
-	return undefined;
-}
-
-// The registry's machine path occasionally uses the singular/plural
-// variant of what the repo holds; the pre-cache CLI tried both on disk.
-// Same selection here, resolved with one cheap fetch per candidate.
-export function machineDirCandidates(entryPath: string): string[] {
-	const primary = manifestDirRel(entryPath);
-	const swapped = swapMachinePlural(entryPath);
-	if (swapped === undefined) {
-		return [primary];
-	}
-	const alt = manifestDirRel(swapped);
-	return alt === primary ? [primary] : [primary, alt];
-}

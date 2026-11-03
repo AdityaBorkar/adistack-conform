@@ -19,7 +19,7 @@ Bun-only TypeScript CLI that checks the current directory (project files) and th
 ```
 
 - At least one of `machine` / `project` is required; omit the other to track one scope.
-- `source.type` is always `"github"`. `source.repo` is `owner/repo`. `source.ref` defaults to `main` (branch, tag, or commit; pin for reproducibility). `source.branch` overrides `source.ref` when both are set.
+- `source.type` is always `"github"`. `source.repo` is `owner/repo`. `source.ref` defaults to `main` (branch, tag, or commit; pin for reproducibility).
 - `project.blueprint` matches a tech-stack root `registry.json` `projects[]` entry by `name`, `path`, or directory basename (e.g. `cli-app`).
 - `machine.blueprint` matches a `registry.json` `machines[]` entry the same way (e.g. `main`). `machine.configuration` is the optional `homeConfigurations` attribute; omit it for home-manager `$USER` auto-select.
 - Config discovery: without `--config`, the CLI loads `./conform.json` from the cwd. With `--config <path>`, the basename must be exactly `conform.json`, else exit 2. Project targets resolve against the cwd.

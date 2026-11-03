@@ -26,4 +26,4 @@ Reference the blueprint directories in `registry.json` (`machines[]` + `projects
 
 ## Versioning and rollout
 
-Consumers pin `source.ref` (branch, tag, or commit; `branch` overrides `ref`). Publish a tag for breaking preset changes and let repos adopt it deliberately; keep `main` moving for small fixes. Since the CLI has no local cache, pushing a preset change takes effect on the next `check` — verify generated-project order after rollout: `bun format && bun check:lint && bun check:types && bun run build`.
+Consumers pin `source.ref` (branch, tag, or commit). Publish a tag for breaking preset changes and let repos adopt it deliberately; keep `main` moving for small fixes. Since the CLI has no local cache, pushing a preset change takes effect on the next `check` — verify generated-project order after rollout: `bun format && bun check:lint && bun check:types && bun run build`.

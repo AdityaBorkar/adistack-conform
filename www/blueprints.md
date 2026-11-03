@@ -35,6 +35,5 @@ The entry `path` is the manifest directory: the CLI fetches `<dir>/manifest.json
 The entry `path` is the flake directory. Resolution:
 
 - Trailing slashes and leading `./` / `/` are normalized.
-- If the path uses `machines/` vs `machine/` and the primary spelling has no `flake.nix`, the CLI tries the swapped spelling (one cheap fetch per candidate) and uses whichever contains `flake.nix`.
 - The flake URL is `git+https://github.com/<owner>/<repo>?ref=<ref>&dir=<path>[#<configuration>]` with each path segment `encodeURIComponent`-escaped. Nix fetches the flake into its own store — the CLI downloads nothing.
 - `check` runs `home-manager switch --flake <flake> --dry-run --impure` (via `home-manager`, else `nix run home-manager -- …`, 10-minute timeout); `fix` re-runs without `--dry-run` with inherited stdio. `--impure` is required because the flake reads `$USER` / `GIT_NAME` / `GIT_EMAIL` via `getEnv`.

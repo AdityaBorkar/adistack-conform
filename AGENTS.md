@@ -53,7 +53,6 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only|--machine-o
 
 - `source.type` — always `"github"`. `source.repo` — `"owner/repo"` holding project blueprints and machine nix flakes.
 - `source.ref` — branch, tag, or commit (default `main`; pin a tag/commit for reproducibility).
-- `source.branch` — overrides `source.ref` as the ref to download.
 - At least one of `machine` / `project` is required; omit the other to track only one scope (`--project-only` / `--machine-only` also filter at run time).
 - Project: `blueprint` — project blueprint matching a tech-stack root `registry.json` `projects[]` entry (by entry `name`, entry `path`, or directory basename, e.g. `cli-app`).
 - Machine: `blueprint` — machine blueprint matching a `registry.json` `machines[]` entry (by entry `name`, entry `path`, or flake directory basename, e.g. `main`). `configuration` — optional `homeConfigurations` attribute to switch to (e.g. `adityab`); omitted means home-manager auto-select from `$USER`. Machines are entirely nix-managed.

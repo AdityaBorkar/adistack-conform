@@ -54,7 +54,7 @@ function toLoadedConfig(path: string, parsed: unknown): LoadedConform {
 		project: data.project,
 		source: {
 			id: data.source.repo,
-			ref: data.source.branch ?? data.source.ref,
+			ref: data.source.ref,
 			source: "github",
 		},
 	};
