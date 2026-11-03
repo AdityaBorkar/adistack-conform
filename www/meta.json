@@ -1,5 +1,5 @@
 {
-	"description": "Me check repo. Repo good? Me say yes or no.",
+	"description": "Check project files and Nix machines against tech-stack blueprints.",
 	"pages": [
 		"---Start---",
 		"quick-start",
