@@ -19,7 +19,7 @@ adistack-conform check [--json] [--verbose] [--project-only | --machine-only | -
 
 Output lists only failures plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | error`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
 
-Exit codes: `0` everything ok, `1` drift, `2` config/loading error (missing file, invalid JSON/schema, both scope flags, fetch failures for registry/manifest).
+Exit codes: `0` everything ok, `1` drift (including unknown blueprints and registry/manifest fetch failures, reported as `<scope>:internal-error`), `2` config/loading error (missing file, invalid JSON/schema, both scope flags).
 
 `--json` shape:
 
@@ -35,7 +35,7 @@ Exit codes: `0` everything ok, `1` drift, `2` config/loading error (missing file
 }
 ```
 
-Each result carries `id` (`project:<blueprint>:<name>`, deps use `project:<blueprint>:deps:<pkg>`; github uses `github:<blueprint>:<name>`), `kind` (`preset` | `package` | `nix` | `github`), `scope` (`project` | `machine` | `github`), `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) or `hint` when manual, and `skipped: true` when skipped.
+Each result carries `id` (`project:<blueprint>:<name>`, deps use `project:<blueprint>:deps:<pkg>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`preset` | `package` | `nix` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) or `hint` when manual, and `skipped: true` when skipped.
 
 ## `fix`
 
@@ -50,8 +50,8 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine
 | `--no-diff`                                           | Hide the unified diff preview (useful for huge files).                                                   |
 | `--project-only` / `--machine-only` / `--github-only` | Fix one scope. Passing two is an error.                                                                  |
 
-Flow: report unfixable items with hints → diff preview (unless `--no-diff`; diffs over ~200KB are skipped; `run-command` fixes print the command and `github-api` fixes print the REST steps instead of a diff) → group-multiselect prompt (each option shows the fix command, space to toggle) → apply in order → re-check selected IDs → print `Fixed X/Y. N still failing`.
+Flow: report unfixable items with hints → diff preview (unless `--no-diff`; diffs over ~200KB are skipped; `run-command` fixes print the command and `github-api` fixes print the REST steps instead of a diff) → group-multiselect prompt (each option shows the fix command, space to toggle) → apply `overwrite-file` fixes first, then commands/API fixes → re-check selected IDs → print `Fixed X/Y. N still failing`.
 
 Exit codes: `0` nothing remains failing, `1` drift remains / cancelled / dry-run found drift, `2` config error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes (`Re-run in a terminal …`).
 
-Tip: in agents and CI, prefer `fix --dry-run` (review) then `fix --all` (apply). Keep `GITHUB_TOKEN` set for private tech-stack repos — the github scope always needs it (admin scope for fixes).
+Tip: in agents and CI, prefer `fix --dry-run` (review) then `fix --all` (apply). Keep `GITHUB_TOKEN` set for private tech-stack repos or rate limits — the github scope works unauthenticated on public repos until 401/403/rate-limit (then it skips), and needs admin scope for fixes.

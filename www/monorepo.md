@@ -3,7 +3,7 @@ title: Monorepo
 description: Running one conform.json per package with shared registry fetches.
 ---
 
-There is no workspace discovery: each invocation loads a single `conform.json` (cwd default, or one `--config <path>`), and project targets resolve against that invocation's cwd. In a monorepo, run the CLI once per package directory that owns a `conform.json`.
+There is no workspace discovery: each invocation loads a single `conform.json` (walks up from the cwd, or one `--config <path>`), and project targets resolve against that invocation's cwd. In a monorepo, run the CLI once per package directory that owns a `conform.json`.
 
 ```bash
 for d in packages/*; do (cd "$d" && adistack-conform check); done

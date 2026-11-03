@@ -66,6 +66,6 @@ Fetches use `raw.githubusercontent.com` (30s timeout, no local cache). For priva
 GITHUB_TOKEN=ghp_... adistack-conform check
 ```
 
-The `github` scope always calls the GitHub REST API, so it needs `GITHUB_TOKEN` even for public repos (admin scope for `fix`).
+The `github` scope calls the GitHub REST API, so public repos work without a token until 401/403/rate-limit (then it skips); set `GITHUB_TOKEN` for private repos or rate limits (admin scope for `fix`).
 
 Next: [concepts](./concepts.md) explains what each result means.

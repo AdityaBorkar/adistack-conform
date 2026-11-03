@@ -24,7 +24,7 @@ Schema: `./configuration_schema/registry.json` (generated, draft 2020-12).
 3. Directory basename of the entry path (`cli-app`),
 4. Basename of the requested string itself (so a full path also resolves).
 
-Unknown names fail the run with the available names listed (exit 2). Matching is case-sensitive with whitespace trimmed.
+Unknown names fail the run with the available names listed (exit 1, reported as `<scope>:internal-error`). Matching is case-sensitive with whitespace trimmed.
 
 ## Project blueprints
 

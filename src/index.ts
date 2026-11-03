@@ -369,7 +369,7 @@ program
 		"Check the current project/machine/repo against the config in the current directory.",
 	)
 	.name("adistack-conform")
-	.option("--config <path>", "Path to conform.json (default: ./conform.json in the cwd)")
+	.option("--config <path>", "Path to conform.json (default: walks up from the cwd)")
 	.version(VERSION);
 
 program

@@ -37,7 +37,7 @@ The enforcement destination where a golden must hold, either a filesystem path o
 _Avoid_: destination, output
 
 **Scope**:
-One of the two enforcement domains: project files or the whole machine flake.
+One of the three enforcement domains: project files, the whole machine flake, or GitHub repo settings.
 _Avoid_: mode, area
 
 **Drift**:
@@ -47,11 +47,11 @@ _Avoid_: diff, failure, mismatch
 ### Results
 
 **Check Result**:
-The outcome of one enforcement comparison, identified as `project:<blueprint>:<name>` or `nix:<blueprint>`.
+The outcome of one enforcement comparison, identified as `project:<blueprint>:<name>` (deps: `project:<blueprint>:deps:<pkg>`), `nix:<blueprint>`, `github:<blueprint>:<name>`, or `<scope>:internal-error` on scope failure.
 _Avoid_: check, report item
 
 **Fixable**:
-A drifted result carrying a machine-appliable remedy, either an `overwrite-file` or a `run-command`.
+A drifted result carrying a machine-appliable remedy: `overwrite-file`, `run-command`, or `github-api` (multi-step REST calls).
 _Avoid_: auto-fixable, resolvable
 
 **Manual**:
@@ -59,8 +59,16 @@ A drifted result with no machine remedy, carrying a hint for a human to act on i
 _Avoid_: unfixable, unactionable
 
 **Skipped**:
-A result that passes without enforcement because its target is docs-only, Windows-only, or has no concrete path.
+A result that passes without enforcement because its target is docs-only, Windows-only, has no concrete path, has no public API (GitHub UI-only settings), or the GitHub API returned 401/403.
 _Avoid_: ignored, passed
+
+**Template**:
+A manifest entry declaring `pinned`/`versioned` compare rules whose goldens hold placeholders; a missing target is manual (copy and adapt per-project fields).
+_Avoid_: parameterized file
+
+**Internal**:
+A scope-level failure (`<scope>:internal-error`) when registry fetch, blueprint match, or scope run throws; reported as drift (exit 1), not a config error.
+_Avoid_: system error
 
 **Fix**:
 The act of applying selected fixable remedies, then re-checking only those IDs.

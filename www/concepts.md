@@ -21,8 +21,8 @@ Filter at runtime with `--project-only` / `--machine-only` / `--github-only`. Th
 
 Each check yields one `CheckResult`: `ok`, `skipped`, fixable (`fix: overwrite-file | run-command | github-api`), or manual (`hint`, no `fix`).
 
-- **Pass** — target matches the golden (byte, semantic overrides-kept, or templated). Empty golden + absent target also passes (empty = defaults).
-- **Skipped (still exit 0)** — `docs:` targets, Windows `%VAR%` targets, and annotation-only targets with no concrete path. Only the project scope resolves bare `./…` / `../…` targets (against the cwd). Github items with no public API (social preview, archive toggles, Copilot Autofix, agent suggestions, OIDC fix) skip with a UI hint.
+- **Pass** — target matches the golden (byte, semantic overrides-kept, or templated). Empty golden passes regardless of local content (empty = defaults).
+- **Skipped (still exit 0)** — `docs:` targets, Windows `%VAR%` targets, and annotation-only targets with no concrete path. Only the project scope resolves bare `./…` / `../…` targets (against the cwd). Github items with no public API (social preview, archive toggles, Copilot Autofix, agent suggestions, OIDC-only checks) skip with a UI hint, as do whole-scope or per-check 401/403 auth failures.
 - **Fixable** — missing file (overwrite with golden), content mismatch (overwrite, with local `overrides` / adapted `package.json` fields preserved), real machine drift (re-run the switch without `--dry-run`), or github repo-setting drift (`github-api` multi-step REST calls). `fix` can apply these.
 - **Manual** — unreadable targets (e.g. `/etc/…` without sudo); missing preset files in the tech-stack repo; missing `file_structure[]` entries (generate hint for files, `mkdir -p` for dirs); missing/misplaced/version-drifted toolchain packages (install/move/update hint per the manifest `pm`); nix evaluation errors (unknown attribute, missing `GIT_NAME`/`GIT_EMAIL`, build failure); missing `home-manager`/`nix` binaries. Follow the `hint`.
 
