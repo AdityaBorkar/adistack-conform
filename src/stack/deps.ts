@@ -1,41 +1,44 @@
 import type { CheckResult, CheckScope } from "#/checks.js";
 import { failManual, pass } from "#/checks.js";
-import type { ManifestFile } from "#/stack/registry.js";
+import type { ManifestJs } from "#/stack/registry.js";
 
-// Allowed sections mirror ManifestPackageSchema in #/schemas/manifest.js.
+// Package managers are platform knowledge (like npm section names): the table
+// only maps each binary to its install/remove verbs. Unknown binaries fall
+// back to bun-style verbs. Which packages are required comes from the
+// manifest `js` field, never from this table.
 type DepSection = "dependencies" | "devDependencies" | "peerDependencies";
 
 const SECTIONS: readonly DepSection[] = ["dependencies", "devDependencies", "peerDependencies"];
 
-function installFlag(section: DepSection): string {
-	return section === "devDependencies" ? "-d " : "";
+const PM_COMMANDS: Record<string, { add: string; dev: string; remove: string }> = {
+	bun: { add: "add", dev: "-d", remove: "remove" },
+	npm: { add: "install", dev: "-D", remove: "uninstall" },
+	pnpm: { add: "add", dev: "-D", remove: "remove" },
+	yarn: { add: "add", dev: "-D", remove: "remove" },
+};
+
+const GENERIC_PM_COMMANDS = { add: "add", dev: "-d", remove: "remove" };
+
+function pmCommands(pm: string): { add: string; dev: string; remove: string } {
+	return PM_COMMANDS[pm] ?? GENERIC_PM_COMMANDS;
 }
 
-// General target rule: docs-only and Windows-only targets are never enforced,
-// so they never imply package requirements either.
-function isEnforcedTarget(target: string): boolean {
-	const [token = ""] = target.split(/\s+/u);
-	if (token.startsWith("docs:")) {
-		return false;
-	}
-	return !/%[A-Za-z_][A-Za-z0-9_]*%/u.test(token);
+function installCommand(pm: string, section: DepSection, pkg: string, versionHint: string): string {
+	const cmd = pmCommands(pm);
+	const flag = section === "devDependencies" ? `${cmd.dev} ` : "";
+	return `${pm} ${cmd.add} ${flag}${pkg}${versionHint}`;
 }
 
-function requiredDepsForFiles(
-	files: ManifestFile[],
-): Map<string, { config: string; section: DepSection }> {
-	const needed = new Map<string, { config: string; section: DepSection }>();
-	for (const file of files) {
-		if (!isEnforcedTarget(file.target)) {
-			continue;
-		}
-		for (const pkg of file.packages ?? []) {
-			const name = typeof pkg === "string" ? pkg : pkg.name;
-			if (!needed.has(name)) {
-				needed.set(name, {
-					config: file.name,
-					section: typeof pkg === "string" ? "devDependencies" : pkg.section,
-				});
+function removeCommand(pm: string, pkg: string): string {
+	return `${pm} ${pmCommands(pm).remove} ${pkg}`;
+}
+
+function requiredDeps(js: ManifestJs): Map<string, DepSection> {
+	const needed = new Map<string, DepSection>();
+	for (const section of SECTIONS) {
+		for (const pkg of js[section]) {
+			if (!needed.has(pkg)) {
+				needed.set(pkg, section);
 			}
 		}
 	}
@@ -58,15 +61,19 @@ function readSection(pkg: Record<string, unknown>, section: string): Record<stri
 
 export function checkToolchainDeps(args: {
 	blueprint: string;
-	files: ManifestFile[];
+	js: ManifestJs | undefined;
 	localPkg: Record<string, unknown> | undefined;
 	presetVersions: Record<string, string>;
 	scope: CheckScope;
 	onlyIds?: ReadonlySet<string>;
 }): CheckResult[] {
-	const needed = requiredDepsForFiles(args.files);
+	if (args.js === undefined) {
+		return [];
+	}
+	const pm = args.js.pm;
+	const needed = requiredDeps(args.js);
 	const results: CheckResult[] = [];
-	for (const [pkg, need] of needed) {
+	for (const [pkg, section] of needed) {
 		const id = `project:${args.blueprint}:deps:${pkg}`;
 		if (args.onlyIds !== undefined && !args.onlyIds.has(id)) {
 			continue;
@@ -84,23 +91,21 @@ export function checkToolchainDeps(args: {
 					base,
 					"<missing>",
 					pkg,
-					`package.json is missing or unparsable; add ${pkg} to ${need.section} (needed by ${need.config}).`,
+					`package.json is missing or unparsable; add ${pkg} to ${section} (declared in manifest js.${section}).`,
 				),
 			);
 			continue;
 		}
-		if (pkg in readSection(args.localPkg, need.section)) {
-			const version = readSection(args.localPkg, need.section)[pkg] as string;
-			results.push(pass(base, version, `installed in ${need.section}`));
+		if (pkg in readSection(args.localPkg, section)) {
+			const version = readSection(args.localPkg, section)[pkg] as string;
+			results.push(pass(base, version, `installed in ${section}`));
 			continue;
 		}
 		const version = args.presetVersions[pkg];
 		const versionHint = version === undefined ? "" : `@${version}`;
-		const flag = installFlag(need.section);
 		const found = SECTIONS.filter(
-			(section) =>
-				section !== need.section &&
-				pkg in readSection(args.localPkg as Record<string, unknown>, section),
+			(other) =>
+				other !== section && pkg in readSection(args.localPkg as Record<string, unknown>, other),
 		);
 		if (found.length > 0) {
 			const [actual = ""] = found;
@@ -108,8 +113,8 @@ export function checkToolchainDeps(args: {
 				failManual(
 					base,
 					actual,
-					need.section,
-					`Move ${pkg} from ${actual} to ${need.section} (needed by ${need.config}): bun remove ${pkg} && bun add ${flag}${pkg}${versionHint}.`,
+					section,
+					`Move ${pkg} from ${actual} to ${section} (declared in manifest js.${section}): ${removeCommand(pm, pkg)} && ${installCommand(pm, section, pkg, versionHint)}.`,
 				),
 			);
 			continue;
@@ -118,8 +123,8 @@ export function checkToolchainDeps(args: {
 			failManual(
 				base,
 				"<missing>",
-				`${need.section} has ${pkg}${versionHint}`,
-				`Install ${pkg} in ${need.section} (needed by ${need.config}): bun add ${flag}${pkg}${versionHint}.`,
+				`${section} has ${pkg}${versionHint}`,
+				`Install ${pkg} in ${section} (declared in manifest js.${section}): ${installCommand(pm, section, pkg, versionHint)}.`,
 			),
 		);
 	}

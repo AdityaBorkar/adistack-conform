@@ -10,7 +10,14 @@ import {
 	skippedForTarget,
 } from "#/stack/check.js";
 import { checkToolchainDeps, parseLocalPackageJson, presetDepVersions } from "#/stack/deps.js";
-import type { ManifestDirectory, ManifestFile, RegistryDocument } from "#/stack/registry.js";
+import type {
+	ManifestCompare,
+	ManifestDirectory,
+	ManifestFile,
+	ManifestJs,
+	ManifestRequired,
+	RegistryDocument,
+} from "#/stack/registry.js";
 import { resolveSourceRel } from "#/stack/registry.js";
 import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
@@ -26,9 +33,9 @@ export interface TechStackRunOptions {
 
 interface NeededFile {
 	blueprint: string;
+	compare: ManifestCompare | undefined;
 	fileName: string;
 	fileTarget: string;
-	needsGolden: boolean;
 	sourceLabel: string;
 	sourceRel: string;
 	targetPath: string;
@@ -63,9 +70,9 @@ function collectNeeded(
 		}
 		needed.push({
 			blueprint,
+			compare: file.compare,
 			fileName: file.name,
 			fileTarget: file.target,
-			needsGolden: !file.source.endsWith(".example"),
 			sourceLabel: file.source,
 			sourceRel: resolveSourceRel(file.source, dirRel),
 			targetPath: resolveTargetPath(classified.path, options.baseDir, options.home),
@@ -80,9 +87,7 @@ async function fetchGoldens(
 	needed: readonly NeededFile[],
 ): Promise<Map<string, string>> {
 	const goldens = new Map<string, string>();
-	const toFetch = [
-		...new Set(needed.filter((item) => item.needsGolden).map((item) => item.sourceRel)),
-	];
+	const toFetch = [...new Set(needed.map((item) => item.sourceRel))];
 	await mapWithConcurrency(toFetch, GOLDEN_FETCH_CONCURRENCY, async (rel) => {
 		try {
 			goldens.set(rel, await fetchTextOrThrow(rawUrl(id, ref, rel), `preset file ${rel}`));
@@ -100,17 +105,6 @@ function checkNeeded(
 ): Promise<CheckResult[]> {
 	return Promise.all(
 		needed.map((item): Promise<CheckResult> => {
-			if (!item.needsGolden) {
-				return checkPresetFileWithGolden({
-					blueprint: item.blueprint,
-					fileName: item.fileName,
-					fileTarget: item.fileTarget,
-					golden: "",
-					scope,
-					sourceLabel: item.sourceLabel,
-					targetPath: item.targetPath,
-				});
-			}
 			const golden = goldens.get(item.sourceRel);
 			if (golden === undefined) {
 				return Promise.resolve(
@@ -130,6 +124,7 @@ function checkNeeded(
 			}
 			return checkPresetFileWithGolden({
 				blueprint: item.blueprint,
+				compare: item.compare,
 				fileName: item.fileName,
 				fileTarget: item.fileTarget,
 				golden,
@@ -147,7 +142,7 @@ async function runWithManifest(
 	registry: RegistryDocument,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const { directories, dirRel, files } = await fetchProjectManifest(
+	const { directories, dirRel, files, js, required } = await fetchProjectManifest(
 		spec.id,
 		spec.ref,
 		spec.blueprint,
@@ -156,34 +151,49 @@ async function runWithManifest(
 	const { needed, skips } = collectNeeded(spec.blueprint, files, dirRel, options, onlyIds);
 	const goldens = await fetchGoldens(spec.id, spec.ref, needed);
 	const enforced = await checkNeeded(needed, goldens, options.scope);
-	const requiredFiles = await checkRequiredFiles(spec.blueprint, files, options, onlyIds);
+	const requiredFiles = await checkRequiredFiles(
+		spec.blueprint,
+		files,
+		required ?? [],
+		options,
+		onlyIds,
+	);
 	const requiredDirs = await checkRequiredDirs(spec.blueprint, directories, options, onlyIds);
-	const packageChecks = await checkPackageJsonAndDeps(spec, dirRel, files, options, onlyIds);
-	return [...skips, ...enforced, ...requiredFiles, ...requiredDirs, ...packageChecks];
+	const depResults = await checkDepsWithVersions(
+		spec,
+		files,
+		js,
+		dirRel,
+		goldens,
+		options,
+		onlyIds,
+	);
+	return [...skips, ...enforced, ...requiredFiles, ...requiredDirs, ...depResults];
 }
-
-const REQUIRED_DOCS = ["AGENTS.md", "README.md"] as const;
 
 function checkRequiredFiles(
 	blueprint: string,
 	files: ManifestFile[],
+	required: ManifestRequired,
 	options: TechStackRunOptions,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	const manifestNames = new Set(files.map((file) => file.name));
 	return Promise.all(
-		REQUIRED_DOCS.filter(
-			(fileName) =>
-				!manifestNames.has(fileName) &&
-				(onlyIds === undefined || onlyIds.has(`project:${blueprint}:${fileName}`)),
-		).map((fileName) =>
-			checkRequiredFileExists({
-				blueprint,
-				fileName,
-				scope: options.scope,
-				targetPath: resolveTargetPath(fileName, options.baseDir, options.home),
-			}),
-		),
+		required
+			.filter(
+				(fileName) =>
+					!manifestNames.has(fileName) &&
+					(onlyIds === undefined || onlyIds.has(`project:${blueprint}:${fileName}`)),
+			)
+			.map((fileName) =>
+				checkRequiredFileExists({
+					blueprint,
+					fileName,
+					scope: options.scope,
+					targetPath: resolveTargetPath(fileName, options.baseDir, options.home),
+				}),
+			),
 	);
 }
 
@@ -226,105 +236,46 @@ function checkRequiredDirs(
 	return Promise.all(tasks);
 }
 
-function targetBasename(target: string): string {
-	const [token = ""] = target.split(/\s+/u);
-	const parts = token.split("/");
-	for (let index = parts.length - 1; index >= 0; index -= 1) {
-		const part = parts[index] as string;
-		if (part !== "") {
-			return part;
-		}
-	}
-	return "";
+function templateEntry(files: ManifestFile[]): ManifestFile | undefined {
+	return files.find((file) => {
+		const compare = file.compare;
+		return compare !== undefined && (compare.pinned.length > 0 || compare.versioned.length > 0);
+	});
 }
 
-function hasPackageJsonEntry(files: ManifestFile[]): boolean {
-	return files.some((file) => targetBasename(file.target) === "package.json");
-}
-
-async function checkPackageJsonAndDeps(
+async function checkDepsWithVersions(
 	spec: ProjectRunSpec,
-	dirRel: string,
 	files: ManifestFile[],
+	js: ManifestJs | undefined,
+	dirRel: string,
+	goldens: Map<string, string>,
 	options: TechStackRunOptions,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const sourceRel = resolveSourceRel("../$presets/package.json", dirRel);
+	const entry = templateEntry(files);
 	let presetText: string | undefined;
-	try {
-		presetText = await fetchTextOrThrow(
-			rawUrl(spec.id, spec.ref, sourceRel),
-			`preset file ${sourceRel}`,
-		);
-	} catch {
-		presetText = undefined;
-	}
-	const results: CheckResult[] = [];
-	if (
-		!hasPackageJsonEntry(files) &&
-		presetText !== undefined &&
-		(onlyIds === undefined || onlyIds.has(`project:${spec.blueprint}:Package JSON`))
-	) {
-		const targetPath = resolveTargetPath("package.json", options.baseDir, options.home);
-		const targetRead = await readFileSafe(targetPath);
-		if (targetRead.ok) {
-			results.push(
-				await checkPresetFileWithGolden({
-					blueprint: spec.blueprint,
-					fileName: "Package JSON",
-					fileTarget: "package.json",
-					golden: presetText,
-					scope: options.scope,
-					sourceLabel: sourceRel,
-					targetPath,
-				}),
-			);
-		} else if (targetRead.reason === "missing") {
-			results.push(
-				failManual(
-					{
-						id: `project:${spec.blueprint}:Package JSON`,
-						kind: "preset",
-						scope: options.scope,
-						source: `tech-stack:${spec.blueprint}`,
-						target: "package.json",
-					},
-					"<missing>",
-					"exists (templated from preset)",
-					`package.json is missing. Copy ${sourceRel} to ${targetPath}, adapt name/version/description/bin/files/exports, then re-run check.`,
-				),
-			);
-		} else {
-			results.push(
-				failManual(
-					{
-						id: `project:${spec.blueprint}:Package JSON`,
-						kind: "preset",
-						scope: options.scope,
-						source: `tech-stack:${spec.blueprint}`,
-						target: "package.json",
-					},
-					"<unreadable>",
-					"exists (templated from preset)",
-					`Cannot read ${targetPath} (may need sudo): ${targetRead.error}`,
-				),
-			);
+	if (entry !== undefined) {
+		const rel = resolveSourceRel(entry.source, dirRel);
+		presetText = goldens.get(rel);
+		if (presetText === undefined) {
+			try {
+				presetText = await fetchTextOrThrow(rawUrl(spec.id, spec.ref, rel), `preset file ${rel}`);
+			} catch {
+				presetText = undefined;
+			}
 		}
 	}
 	const localPath = join(options.baseDir, "package.json");
 	const localRead = await readFileSafe(localPath);
 	const localText = localRead.ok ? localRead.text : undefined;
-	results.push(
-		...checkToolchainDeps({
-			blueprint: spec.blueprint,
-			files,
-			localPkg: parseLocalPackageJson(localText),
-			onlyIds,
-			presetVersions: presetDepVersions(presetText),
-			scope: options.scope,
-		}),
-	);
-	return results;
+	return checkToolchainDeps({
+		blueprint: spec.blueprint,
+		js,
+		localPkg: parseLocalPackageJson(localText),
+		onlyIds,
+		presetVersions: presetDepVersions(presetText),
+		scope: options.scope,
+	});
 }
 
 export function runProjectChecks(

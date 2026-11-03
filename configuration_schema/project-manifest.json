@@ -34,40 +34,53 @@
 			"items": {
 				"type": "object",
 				"properties": {
+					"compare": {
+						"type": "object",
+						"properties": {
+							"ignore": {
+								"type": "array",
+								"items": {
+									"type": "string",
+									"minLength": 1
+								},
+								"description": "Top-level keys excluded from the compare; local values are preserved by fix.",
+								"default": []
+							},
+							"pinned": {
+								"type": "array",
+								"items": {
+									"type": "string",
+									"minLength": 1
+								},
+								"description": "Top-level keys that must match the golden (objects merge per key, so local extras are allowed); fix takes golden values.",
+								"default": []
+							},
+							"strip": {
+								"type": "array",
+								"items": {
+									"type": "string",
+									"minLength": 1
+								},
+								"description": "Top-level keys removed from both sides before comparing and from fix output.",
+								"default": []
+							},
+							"versioned": {
+								"type": "array",
+								"items": {
+									"type": "string",
+									"minLength": 1
+								},
+								"description": "Object sections (e.g. dependencies) where versions must match for packages present on both sides; fix takes golden versions.",
+								"default": []
+							}
+						},
+						"required": [],
+						"description": "Semantic compare/fix rules for this file."
+					},
 					"name": {
 						"type": "string",
 						"minLength": 1,
 						"description": "File name within the blueprint."
-					},
-					"packages": {
-						"type": "array",
-						"items": {
-							"anyOf": [
-								{
-									"type": "string",
-									"minLength": 1,
-									"description": "Package required in devDependencies."
-								},
-								{
-									"type": "object",
-									"properties": {
-										"name": {
-											"type": "string",
-											"minLength": 1,
-											"description": "Required package name."
-										},
-										"section": {
-											"enum": ["dependencies", "devDependencies", "peerDependencies"],
-											"type": "string",
-											"default": "devDependencies"
-										}
-									},
-									"required": ["name"]
-								}
-							],
-							"description": "Packages this file needs installed in package.json."
-						},
-						"description": "Packages this file needs installed."
 					},
 					"source": {
 						"type": "string",
@@ -83,6 +96,54 @@
 				"required": ["name", "source", "target"]
 			},
 			"description": "Files enforced by this blueprint."
+		},
+		"js": {
+			"type": "object",
+			"properties": {
+				"dependencies": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"description": "Packages required in dependencies.",
+					"default": []
+				},
+				"devDependencies": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"description": "Packages required in devDependencies.",
+					"default": []
+				},
+				"peerDependencies": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"minLength": 1
+					},
+					"description": "Packages required in peerDependencies.",
+					"default": []
+				},
+				"pm": {
+					"type": "string",
+					"minLength": 1,
+					"description": "Package manager binary used in install hints, e.g. bun.",
+					"default": "bun"
+				}
+			},
+			"required": [],
+			"description": "JavaScript packages required in package.json."
+		},
+		"required": {
+			"type": "array",
+			"items": {
+				"type": "string",
+				"minLength": 1
+			},
+			"description": "Paths that must exist; content is per-project (existence only)."
 		}
 	},
 	"required": ["files"],

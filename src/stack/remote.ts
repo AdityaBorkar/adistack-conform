@@ -1,6 +1,12 @@
 import { ManifestSchema } from "#/schemas/manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
-import type { ManifestFile, ManifestDirectory, RegistryDocument } from "#/stack/registry.js";
+import type {
+	ManifestDirectory,
+	ManifestFile,
+	ManifestJs,
+	ManifestRequired,
+	RegistryDocument,
+} from "#/stack/registry.js";
 import { findProjectEntry, listProjectBlueprintNames, manifestDirRel } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
 import { parseOrThrow } from "#/utils/schema.js";
@@ -78,7 +84,13 @@ export async function fetchProjectManifest(
 	ref: string,
 	blueprint: string,
 	registry: RegistryDocument,
-): Promise<{ directories: ManifestDirectory[]; dirRel: string; files: ManifestFile[] }> {
+): Promise<{
+	directories: ManifestDirectory[];
+	dirRel: string;
+	files: ManifestFile[];
+	js: ManifestJs | undefined;
+	required: ManifestRequired;
+}> {
 	const entry = findProjectEntry(blueprint, registry);
 	if (entry === undefined) {
 		const names = listProjectBlueprintNames(registry);
@@ -89,5 +101,11 @@ export async function fetchProjectManifest(
 	const rel = `${dirRel}/manifest.json`;
 	const parsed = await fetchJson(rawUrl(id, ref, rel), `blueprint ${blueprint}`);
 	const data = parseOrThrow(ManifestSchema, `${rel} (remote)`, parsed, "blueprint");
-	return { dirRel, directories: data.directories ?? [], files: data.files };
+	return {
+		dirRel,
+		directories: data.directories ?? [],
+		files: data.files,
+		js: data.js,
+		required: data.required ?? [],
+	};
 }

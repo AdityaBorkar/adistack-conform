@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 
 import type { CheckBase, CheckResult, CheckScope } from "#/checks.js";
 import { failFixable, failManual, pass, skipped } from "#/checks.js";
+import type { ManifestCompare } from "#/stack/registry.js";
 import { readFileSafe } from "#/utils/fs.js";
 
 export type ClassifiedTarget = { reason: string; type: "skip" } | { path: string; type: "path" };
@@ -25,10 +26,6 @@ export function classifyTarget(target: string, scope: CheckScope): ClassifiedTar
 	return { reason: `no concrete target ("${target}")`, type: "skip" };
 }
 
-function isExampleFile(sourceLabel: string): boolean {
-	return sourceLabel.endsWith(".example");
-}
-
 function isBlankGolden(golden: string): boolean {
 	return golden.trim() === "";
 }
@@ -48,25 +45,44 @@ function baseFor(
 	};
 }
 
-const OVERRIDES_TOLERANT_BASENAMES = new Set([
-	".oxlintrc.json",
-	".oxlintrc.jsonc",
-	".oxfmtrc.json",
-	"biome.json",
-]);
+const EMPTY_COMPARE: ManifestCompare = { ignore: [], pinned: [], strip: [], versioned: [] };
 
-const PACKAGE_JSON_BASENAME = "package.json";
+function isTemplateCompare(compare: ManifestCompare): boolean {
+	return compare.pinned.length > 0 || compare.versioned.length > 0;
+}
 
-function basenameOf(value: string): string {
-	const [token = ""] = value.split(/\s+/u);
-	const parts = token.split("/");
-	for (let index = parts.length - 1; index >= 0; index -= 1) {
-		const part = parts[index] as string;
-		if (part !== "") {
-			return part;
+function hasCompareRules(compare: ManifestCompare): boolean {
+	return (
+		compare.ignore.length > 0 ||
+		compare.pinned.length > 0 ||
+		compare.strip.length > 0 ||
+		compare.versioned.length > 0
+	);
+}
+
+function omitKeys(
+	value: Record<string, unknown>,
+	keys: readonly string[],
+): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [key, entry] of Object.entries(value)) {
+		if (!keys.includes(key)) {
+			out[key] = entry;
 		}
 	}
-	return value;
+	return out;
+}
+
+function detectIndent(golden: string): string {
+	if (golden.includes("\t")) {
+		return "\t";
+	}
+	const match = /^( +)/mu.exec(golden);
+	return match?.[1] ?? "\t";
+}
+
+function serializeJson(value: unknown, golden: string): string {
+	return `${JSON.stringify(value, null, detectIndent(golden))}\n`;
 }
 
 function stripJsonc(text: string): string {
@@ -154,35 +170,18 @@ function deepEqual(left: unknown, right: unknown): boolean {
 	return false;
 }
 
-function withoutOverrides(value: Record<string, unknown>): Record<string, unknown> {
-	const { overrides: _ignored, ...rest } = value;
-	return rest;
-}
-
-function detectIndent(golden: string): string {
-	if (golden.includes("\t")) {
-		return "\t";
-	}
-	const match = /^( +)/mu.exec(golden);
-	return match?.[1] ?? "\t";
-}
-
-function serializeJson(value: unknown, golden: string): string {
-	return `${JSON.stringify(value, null, detectIndent(golden))}\n`;
-}
-
-function missingPackageJsonFix(
+function missingCompareFix(
 	base: CheckBase,
 	golden: string,
 	targetPath: string,
+	compare: ManifestCompare,
 ): CheckResult | undefined {
 	try {
-		const goldenParsed = parseJsonc(golden);
-		if (!isRecord(goldenParsed)) {
+		const parsed = parseJsonc(golden);
+		if (!isRecord(parsed)) {
 			return undefined;
 		}
-		const { _template: _ignored, ...rest } = goldenParsed;
-		const newContent = serializeJson(rest, golden);
+		const newContent = serializeJson(omitKeys(parsed, compare.strip), golden);
 		return failFixable(base, "<missing>", newContent, {
 			filePath: targetPath,
 			kind: "overwrite-file",
@@ -192,93 +191,48 @@ function missingPackageJsonFix(
 		return undefined;
 	}
 }
-function overridesTolerantResult(
-	base: CheckBase,
-	golden: string,
-	localText: string,
-	targetPath: string,
-): CheckResult | undefined {
-	try {
-		const goldenParsed = parseJsonc(golden);
-		const localParsed = parseJsonc(localText);
-		if (!isRecord(goldenParsed) || !isRecord(localParsed)) {
-			return undefined;
-		}
-		if (deepEqual(withoutOverrides(localParsed), withoutOverrides(goldenParsed))) {
-			return pass(base, "matches preset (local overrides kept)", golden);
-		}
-		const localOverrides = (localParsed as Record<string, unknown>)["overrides"];
-		if (localOverrides === undefined) {
-			return undefined;
-		}
-		const goldenRecord = goldenParsed as Record<string, unknown>;
-		const localRecord = localParsed as Record<string, unknown>;
-		const merged: Record<string, unknown> = { ...goldenRecord };
-		for (const [key, value] of Object.entries(localRecord)) {
-			if (!(key in merged)) {
-				merged[key] = value;
-			}
-		}
-		merged["overrides"] = localOverrides;
-		const newContent = serializeJson(merged, golden);
-		return failFixable(base, localText, newContent, {
-			filePath: targetPath,
-			kind: "overwrite-file",
-			newContent,
-		});
-	} catch {
-		return undefined;
-	}
+
+interface SemanticArgs {
+	base: CheckBase;
+	compare: ManifestCompare;
+	fileName: string;
+	golden: string;
+	localText: string;
+	targetPath: string;
 }
 
-function packageJsonResult(
-	base: CheckBase,
-	golden: string,
-	localText: string,
-	targetPath: string,
+function overlayResult(
+	args: SemanticArgs & { goldenRest: Record<string, unknown>; localRest: Record<string, unknown> },
+): CheckResult | undefined {
+	const goldenKept = omitKeys(args.goldenRest, args.compare.ignore);
+	const localKept = omitKeys(args.localRest, args.compare.ignore);
+	if (deepEqual(localKept, goldenKept)) {
+		const kept =
+			args.compare.ignore.length > 0 ? ` (local ${args.compare.ignore.join("/")} kept)` : "";
+		return pass(args.base, `matches preset${kept}`, args.golden);
+	}
+	if (args.compare.ignore.length > 0 && !args.compare.ignore.some((key) => key in args.localRest)) {
+		return undefined;
+	}
+	const merged: Record<string, unknown> = { ...args.goldenRest };
+	for (const [key, value] of Object.entries(args.localRest)) {
+		if (!(key in merged) || args.compare.ignore.includes(key)) {
+			merged[key] = value;
+		}
+	}
+	const newContent = serializeJson(merged, args.golden);
+	return failFixable(args.base, args.localText, newContent, {
+		filePath: args.targetPath,
+		kind: "overwrite-file",
+		newContent,
+	});
+}
+
+function templateResult(
+	args: SemanticArgs & { goldenRest: Record<string, unknown>; localRest: Record<string, unknown> },
 ): CheckResult {
-	let goldenParsed: unknown;
-	try {
-		goldenParsed = parseJsonc(golden);
-	} catch {
-		return failManual(
-			base,
-			localText,
-			golden,
-			`Preset package.json is not valid JSON; cannot compare.`,
-		);
-	}
-	if (!isRecord(goldenParsed)) {
-		return failManual(
-			base,
-			localText,
-			golden,
-			`Preset package.json is not an object; cannot compare.`,
-		);
-	}
-	const { _template: _presetTemplate, ...goldenRest } = goldenParsed as Record<string, unknown>;
-	let localParsed: unknown;
-	try {
-		localParsed = parseJsonc(localText);
-	} catch {
-		return failManual(
-			base,
-			"<unparsable>",
-			golden,
-			`Cannot parse ${targetPath} as JSON; fix the syntax manually.`,
-		);
-	}
-	if (!isRecord(localParsed)) {
-		return failManual(
-			base,
-			"<unparsable>",
-			golden,
-			`Expected ${targetPath} to be a JSON object; fix it manually.`,
-		);
-	}
-	const { _template: _localTemplate, ...localRest } = localParsed as Record<string, unknown>;
-	const enforcedTopKeys = ["imports", "scripts", "type"];
-	const driftedTop = enforcedTopKeys.filter((key) => {
+	const { base, compare, golden, goldenRest, localRest, localText, targetPath } = args;
+	const drifted = compare.pinned.filter((key) => {
 		if (!(key in goldenRest)) {
 			return false;
 		}
@@ -291,9 +245,7 @@ function packageJsonResult(
 		}
 		return !deepEqual(localValue, goldenValue);
 	});
-	const depSections = ["dependencies", "devDependencies"] as const;
-	const versionDrift: string[] = [];
-	for (const section of depSections) {
+	for (const section of compare.versioned) {
 		const goldenDeps = goldenRest[section];
 		const localDeps = localRest[section];
 		if (!isRecord(goldenDeps) || !isRecord(localDeps)) {
@@ -301,15 +253,15 @@ function packageJsonResult(
 		}
 		for (const [pkg, version] of Object.entries(goldenDeps)) {
 			if (pkg in localDeps && !deepEqual(localDeps[pkg], version)) {
-				versionDrift.push(`${section}.${pkg}`);
+				drifted.push(`${section}.${pkg}`);
 			}
 		}
 	}
-	if (driftedTop.length === 0 && versionDrift.length === 0) {
+	if (drifted.length === 0) {
 		return pass(base, "matches preset template", golden);
 	}
 	const merged: Record<string, unknown> = { ...(localRest as Record<string, unknown>) };
-	for (const key of enforcedTopKeys) {
+	for (const key of compare.pinned) {
 		const goldenValue = goldenRest[key];
 		const localValue = localRest[key];
 		if (!(key in goldenRest)) {
@@ -324,7 +276,7 @@ function packageJsonResult(
 			merged[key] = goldenValue;
 		}
 	}
-	for (const section of depSections) {
+	for (const section of compare.versioned) {
 		const goldenDeps = goldenRest[section];
 		const localDeps = localRest[section];
 		if (!isRecord(goldenDeps) || !isRecord(localDeps)) {
@@ -346,29 +298,60 @@ function packageJsonResult(
 	});
 }
 
-function checkExampleOutcome(
-	base: CheckBase,
-	sourceLabel: string,
-	targetPath: string,
-	outcome: Awaited<ReturnType<typeof readFileSafe>>,
-): CheckResult {
-	if (outcome.ok) {
-		return pass(base, "exists", "exists (values stay secret)");
+function semanticResult(args: SemanticArgs): CheckResult | undefined {
+	const template = isTemplateCompare(args.compare);
+	let goldenParsed: unknown;
+	try {
+		goldenParsed = parseJsonc(args.golden);
+	} catch {
+		return template
+			? failManual(
+					args.base,
+					args.localText,
+					args.golden,
+					`Preset ${args.fileName} is not valid JSON; cannot compare.`,
+				)
+			: undefined;
 	}
-	if (outcome.reason === "missing") {
-		return failManual(
-			base,
-			"<missing>",
-			"exists (values stay secret)",
-			`Copy ${sourceLabel} to ${targetPath} and fill in secret values (never commit).`,
-		);
+	if (!isRecord(goldenParsed)) {
+		return template
+			? failManual(
+					args.base,
+					args.localText,
+					args.golden,
+					`Preset ${args.fileName} is not an object; cannot compare.`,
+				)
+			: undefined;
 	}
-	return failManual(
-		base,
-		"<unreadable>",
-		"exists (values stay secret)",
-		`Cannot read ${targetPath} (may need sudo): ${outcome.error}`,
-	);
+	let localParsed: unknown;
+	try {
+		localParsed = parseJsonc(args.localText);
+	} catch {
+		return template
+			? failManual(
+					args.base,
+					"<unparsable>",
+					args.golden,
+					`Cannot parse ${args.targetPath} as JSON; fix the syntax manually.`,
+				)
+			: undefined;
+	}
+	if (!isRecord(localParsed)) {
+		return template
+			? failManual(
+					args.base,
+					"<unparsable>",
+					args.golden,
+					`Expected ${args.targetPath} to be a JSON object; fix it manually.`,
+				)
+			: undefined;
+	}
+	const goldenRest = omitKeys(goldenParsed, args.compare.strip);
+	const localRest = omitKeys(localParsed, args.compare.strip);
+	if (template) {
+		return templateResult({ ...args, goldenRest, localRest });
+	}
+	return overlayResult({ ...args, goldenRest, localRest });
 }
 
 function unreadableTarget(base: CheckBase, golden: string, targetPath: string, error: string) {
@@ -382,6 +365,7 @@ function unreadableTarget(base: CheckBase, golden: string, targetPath: string, e
 
 export async function checkPresetFileWithGolden(args: {
 	blueprint: string;
+	compare?: ManifestCompare;
 	fileName: string;
 	fileTarget: string;
 	golden: string;
@@ -390,14 +374,7 @@ export async function checkPresetFileWithGolden(args: {
 	targetPath: string;
 }): Promise<CheckResult> {
 	const base = baseFor(args.blueprint, args.fileName, args.fileTarget, args.scope);
-	if (isExampleFile(args.sourceLabel)) {
-		return checkExampleOutcome(
-			base,
-			args.sourceLabel,
-			args.targetPath,
-			await readFileSafe(args.targetPath),
-		);
-	}
+	const compare = args.compare ?? EMPTY_COMPARE;
 	const targetRead = await readFileSafe(args.targetPath);
 	if (isBlankGolden(args.golden) && !targetRead.ok && targetRead.reason === "missing") {
 		return pass(base, "defaults (empty preset)", "absent (empty preset = defaults)");
@@ -406,11 +383,17 @@ export async function checkPresetFileWithGolden(args: {
 		if (targetRead.reason !== "missing") {
 			return unreadableTarget(base, args.golden, args.targetPath, targetRead.error);
 		}
-		if (basenameOf(args.fileTarget) === PACKAGE_JSON_BASENAME) {
-			const templated = missingPackageJsonFix(base, args.golden, args.targetPath);
-			if (templated !== undefined) {
-				return templated;
-			}
+		if (isTemplateCompare(compare)) {
+			return failManual(
+				base,
+				"<missing>",
+				"exists (templated from preset)",
+				`Copy ${args.sourceLabel} to ${args.targetPath}, adapt per-project fields, then re-run check.`,
+			);
+		}
+		const stripped = missingCompareFix(base, args.golden, args.targetPath, compare);
+		if (stripped !== undefined) {
+			return stripped;
 		}
 		return failFixable(base, "<missing>", args.golden, {
 			filePath: args.targetPath,
@@ -421,13 +404,17 @@ export async function checkPresetFileWithGolden(args: {
 	if (targetRead.text === args.golden) {
 		return pass(base, "matches preset", args.golden);
 	}
-	if (basenameOf(args.fileTarget) === PACKAGE_JSON_BASENAME) {
-		return packageJsonResult(base, args.golden, targetRead.text, args.targetPath);
-	}
-	if (OVERRIDES_TOLERANT_BASENAMES.has(basenameOf(args.fileTarget))) {
-		const tolerant = overridesTolerantResult(base, args.golden, targetRead.text, args.targetPath);
-		if (tolerant !== undefined) {
-			return tolerant;
+	if (hasCompareRules(compare)) {
+		const semantic = semanticResult({
+			base,
+			compare,
+			fileName: args.fileName,
+			golden: args.golden,
+			localText: targetRead.text,
+			targetPath: args.targetPath,
+		});
+		if (semantic !== undefined) {
+			return semantic;
 		}
 	}
 	return failFixable(base, targetRead.text, args.golden, {

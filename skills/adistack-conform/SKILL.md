@@ -45,14 +45,12 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine
 
 Project (one result per blueprint `manifest.json` `files[]`, id `project:<blueprint>:<name>`):
 
-- Fetch order per unique `repo@ref`: `registry.json` once, then the blueprint `manifest.json`, then only needed golden files (deduplicated, 16-way parallel, no local cache). A `source` starting with `./`/`../` resolves against the manifest directory, otherwise it is repo-relative. The `$presets/package.json` golden is fetched once more for the templated `package.json` check and dep version hints.
+- Fetch order per unique `repo@ref`: `registry.json` once, then the blueprint `manifest.json`, then only needed golden files (deduplicated, 16-way parallel, no local cache). A `source` starting with `./`/`../` resolves against the manifest directory, otherwise it is repo-relative. The template entry's golden is also used for dep version hints.
 - Skipped (pass, exit 0): `docs:` targets, Windows `%VAR%` targets, annotation-only targets with no concrete path. Only the project scope resolves bare `./...`/`../...` targets (against the cwd); `~/...`, `/...`, and bare `~` expand against `$HOME`.
-- `*.example` sources assert existence only (values stay secret; missing file is manual-fix with a copy-and-fill hint).
 - Empty golden + absent target passes (empty = defaults). Missing target otherwise fails fixable (overwrite-file fix). Unreadable target (e.g. `/etc/...` without sudo) fails manual with a hint.
-- Overrides-tolerant configs (`.oxlintrc.json[c]`, `.oxfmtrc.json`, `biome.json`): top-level `overrides` is project-local and ignored by the compare; `fix` preserves local `overrides`.
-- `package.json` is templated: `name`/`version`/`description`/`bin`/`files`/`exports` adapt per project; `scripts`/`imports`/`type` must match; shared `dependencies`/`devDependencies` versions must match (extras allowed). Drift is fixable via merged overwrite.
-- Required docs `AGENTS.md` + `README.md` must exist (manual with a generate hint when missing).
-- Toolchain deps (`project:<blueprint>:deps:<pkg>`, kind `package`): each manifest `files[]` entry's `packages[]` must be installed in `package.json` in the declared section (default `devDependencies`). Missing or misplaced packages fail manual with an install/move hint naming the declaring config; version hints come from the `$presets/package.json` golden. The CLI holds no tool→package table — manifests are the only source of truth.
+- Per-entry `compare` rules (declared in the manifest, never hardcoded): `ignore[]` keys are excluded from the compare with local values preserved by `fix` (e.g. linter `overrides`); `pinned[]` keys must match the golden (objects merge per key, local extras allowed); `versioned[]` sections pin shared package versions; `strip[]` keys are dropped before comparing. Entries declaring `pinned`/`versioned` are templates: a missing target is manual (copy + adapt per-project fields) since goldens hold placeholders.
+- Required paths from `manifest.json` `required[]` must exist (manual with a generate hint when missing).
+- Toolchain deps (`project:<blueprint>:deps:<pkg>`, kind `package`): the manifest `js` field lists required `dependencies` / `devDependencies` / `peerDependencies` plus the `pm` binary for hints. Missing or misplaced packages fail manual with an install/move hint; version hints come from the template entry's golden. The CLI holds no tool→package table — manifests are the only source of truth.
 - Required dirs from `manifest.json` `directories[]` must exist (manual with a `mkdir -p` hint when missing).
 
 Machine (single result, id `nix:<blueprint>`):
@@ -67,7 +65,7 @@ Machine (single result, id `nix:<blueprint>`):
 2. Run `check` (add `--json` for parsing, `--project-only`/`--machine-only` to narrow). Done when every non-`ok` result is classified fixable vs manual.
 3. For drift, run `fix --dry-run` (plus `--no-diff` only to save tokens on huge files) to preview. Done when the would-fix list matches the fixable set.
 4. Apply with `fix --all` (non-TTY) or interactive `fix` (TTY). Re-check output is authoritative: done when it reports 0 still failing.
-5. Manual items are never auto-fixed: follow the `hint` (copy `.example` secrets without committing values, export missing env, fix `machine.configuration`, run switch by hand with sudo where noted).
+5. Manual items are never auto-fixed: follow the `hint` (export missing env, fix `machine.configuration`, run switch by hand with sudo where noted).
 
 ## Developing this repo
 
