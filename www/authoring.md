@@ -15,7 +15,7 @@ machines/main/{flake.nix,home.nix,…}
 machines/main/files/                 # dotfile payloads (sops templates read from here)
 ```
 
-Reference the blueprint directories in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Manifest `files[]` use `source` relative to the manifest dir (`../$presets/<file>`) and `target` as the destination path in generated projects. Top-level `js` lists the toolchain (`pm` plus per-section package lists). A `files[]` entry may declare `compare` (`ignore[]`, `strip[]`, `pinned[]`, `versioned[]`) for semantic compare/fix rules. Top-level `required[]` lists existence-only paths. Manifest `directories[]` use `name` + `target` (no `source`) for required directories.
+Reference the blueprint directories in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Manifest `files[]` use `source` relative to the manifest dir (`../$presets/<file>`) and `target` as the destination path in generated projects. Top-level `js` lists the toolchain (`pm` plus per-section package lists). A `files[]` entry may declare `compare` (`ignore[]`, `strip[]`, `pinned[]`, `versioned[]`) for semantic compare/fix rules. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`).
 
 ## Rules
 

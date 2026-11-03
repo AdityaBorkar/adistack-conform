@@ -1,10 +1,10 @@
 import { ManifestSchema } from "#/schemas/manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 import type {
-	ManifestDirectory,
 	ManifestFile,
+	ManifestFileStructure,
+	ManifestGithub,
 	ManifestJs,
-	ManifestRequired,
 	RegistryDocument,
 } from "#/stack/registry.js";
 import { findProjectEntry, listProjectBlueprintNames, manifestDirRel } from "#/stack/registry.js";
@@ -85,11 +85,11 @@ export async function fetchProjectManifest(
 	blueprint: string,
 	registry: RegistryDocument,
 ): Promise<{
-	directories: ManifestDirectory[];
 	dirRel: string;
 	files: ManifestFile[];
+	github: ManifestGithub;
 	js: ManifestJs | undefined;
-	required: ManifestRequired;
+	structure: ManifestFileStructure[];
 }> {
 	const entry = findProjectEntry(blueprint, registry);
 	if (entry === undefined) {
@@ -100,12 +100,21 @@ export async function fetchProjectManifest(
 	const dirRel = manifestDirRel(entry.path);
 	const rel = `${dirRel}/manifest.json`;
 	const parsed = await fetchJson(rawUrl(id, ref, rel), `blueprint ${blueprint}`);
+	if (
+		typeof parsed === "object" &&
+		parsed !== null &&
+		("directories" in parsed || "required" in parsed)
+	) {
+		throw new Error(
+			`Blueprint "${blueprint}" manifest still uses "directories"/"required": merge them into "file_structure" (see configuration_schema/project-manifest.json).`,
+		);
+	}
 	const data = parseOrThrow(ManifestSchema, `${rel} (remote)`, parsed, "blueprint");
 	return {
 		dirRel,
-		directories: data.directories ?? [],
 		files: data.files,
+		github: data.github,
 		js: data.js,
-		required: data.required ?? [],
+		structure: data.file_structure,
 	};
 }

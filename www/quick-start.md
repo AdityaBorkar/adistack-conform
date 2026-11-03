@@ -33,7 +33,7 @@ bun run build
 }
 ```
 
-At least one of `project` / `machine` is required. Omit the other to track a single scope. `source.ref` defaults to `main`; pin a tag or commit for reproducibility. See [configuration](./configuration.md) for every field.
+At least one of `project` / `machine` / `github` is required. Omit the others to track fewer scopes. `source.ref` defaults to `main`; pin a tag or commit for reproducibility. See [configuration](./configuration.md) for every field.
 
 ## 3. Check
 
@@ -41,10 +41,11 @@ At least one of `project` / `machine` is required. Omit the other to track a sin
 adistack-conform check
 adistack-conform check --project-only
 adistack-conform check --machine-only
+adistack-conform check --github-only
 adistack-conform check --json   # machine-readable, for scripts
 ```
 
-Exits: `0` in sync (skips count as ok), `1` drift, `2` config error. `--project-only` + `--machine-only` together is an error.
+Exits: `0` in sync (skips count as ok), `1` drift, `2` config error. `--project-only` / `--machine-only` / `--github-only` are mutually exclusive.
 
 ## 4. Fix
 
@@ -64,5 +65,7 @@ Fetches use `raw.githubusercontent.com` (30s timeout, no local cache). For priva
 ```bash
 GITHUB_TOKEN=ghp_... adistack-conform check
 ```
+
+The `github` scope always calls the GitHub REST API, so it needs `GITHUB_TOKEN` even for public repos (admin scope for `fix`).
 
 Next: [concepts](./concepts.md) explains what each result means.

@@ -19,7 +19,7 @@ The tech-stack `registry.json` listing every project and machine blueprint by na
 _Avoid_: catalog, index
 
 **Manifest**:
-A project blueprint's `manifest.json` declaring its files, compare rules, required paths, toolchain deps, and directories.
+A project blueprint's `manifest.json` declaring its files, compare rules, file-structure entries, and toolchain deps.
 _Avoid_: blueprint config, spec file
 
 ### Enforcement

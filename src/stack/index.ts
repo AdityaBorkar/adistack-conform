@@ -3,19 +3,17 @@ import { join } from "node:path";
 import { failManual, type CheckResult, type CheckScope } from "#/checks.js";
 import type { ProjectRunSpec } from "#/config.js";
 import {
+	checkFileStructureEntry,
 	checkPresetFileWithGolden,
-	checkRequiredDir,
-	checkRequiredFileExists,
 	classifyTarget,
 	skippedForTarget,
 } from "#/stack/check.js";
 import { checkToolchainDeps, parseLocalPackageJson, presetDepVersions } from "#/stack/deps.js";
 import type {
 	ManifestCompare,
-	ManifestDirectory,
 	ManifestFile,
+	ManifestFileStructure,
 	ManifestJs,
-	ManifestRequired,
 	RegistryDocument,
 } from "#/stack/registry.js";
 import { resolveSourceRel } from "#/stack/registry.js";
@@ -142,7 +140,7 @@ async function runWithManifest(
 	registry: RegistryDocument,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const { directories, dirRel, files, js, required } = await fetchProjectManifest(
+	const { dirRel, files, js, structure } = await fetchProjectManifest(
 		spec.id,
 		spec.ref,
 		spec.blueprint,
@@ -151,14 +149,7 @@ async function runWithManifest(
 	const { needed, skips } = collectNeeded(spec.blueprint, files, dirRel, options, onlyIds);
 	const goldens = await fetchGoldens(spec.id, spec.ref, needed);
 	const enforced = await checkNeeded(needed, goldens, options.scope);
-	const requiredFiles = await checkRequiredFiles(
-		spec.blueprint,
-		files,
-		required ?? [],
-		options,
-		onlyIds,
-	);
-	const requiredDirs = await checkRequiredDirs(spec.blueprint, directories, options, onlyIds);
+	const structured = await checkFileStructure(spec.blueprint, files, structure, options, onlyIds);
 	const depResults = await checkDepsWithVersions(
 		spec,
 		files,
@@ -168,55 +159,34 @@ async function runWithManifest(
 		options,
 		onlyIds,
 	);
-	return [...skips, ...enforced, ...requiredFiles, ...requiredDirs, ...depResults];
+	return [...skips, ...enforced, ...structured, ...depResults];
 }
 
-function checkRequiredFiles(
+function checkFileStructure(
 	blueprint: string,
 	files: ManifestFile[],
-	required: ManifestRequired,
+	structure: ManifestFileStructure[],
 	options: TechStackRunOptions,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	const manifestNames = new Set(files.map((file) => file.name));
-	return Promise.all(
-		required
-			.filter(
-				(fileName) =>
-					!manifestNames.has(fileName) &&
-					(onlyIds === undefined || onlyIds.has(`project:${blueprint}:${fileName}`)),
-			)
-			.map((fileName) =>
-				checkRequiredFileExists({
-					blueprint,
-					fileName,
-					scope: options.scope,
-					targetPath: resolveTargetPath(fileName, options.baseDir, options.home),
-				}),
-			),
-	);
-}
-
-function checkRequiredDirs(
-	blueprint: string,
-	directories: ManifestDirectory[],
-	options: TechStackRunOptions,
-	onlyIds?: ReadonlySet<string>,
-): Promise<CheckResult[]> {
 	const tasks: Promise<CheckResult>[] = [];
-	for (const dir of directories) {
-		if (onlyIds !== undefined && !onlyIds.has(`project:${blueprint}:${dir.name}`)) {
+	for (const entry of structure) {
+		if (manifestNames.has(entry.name)) {
 			continue;
 		}
-		const classified = classifyTarget(dir.target, options.scope);
+		if (onlyIds !== undefined && !onlyIds.has(`project:${blueprint}:${entry.name}`)) {
+			continue;
+		}
+		const classified = classifyTarget(entry.target, options.scope);
 		if (classified.type === "skip") {
 			tasks.push(
 				Promise.resolve(
 					skippedForTarget(
 						blueprint,
-						dir.name,
-						dir.target,
-						dir.target,
+						entry.name,
+						entry.target,
+						entry.target,
 						classified.reason,
 						options.scope,
 					),
@@ -225,9 +195,10 @@ function checkRequiredDirs(
 			continue;
 		}
 		tasks.push(
-			checkRequiredDir({
+			checkFileStructureEntry({
 				blueprint,
-				dirName: dir.name,
+				entryName: entry.name,
+				kind: entry.kind,
 				scope: options.scope,
 				targetPath: resolveTargetPath(classified.path, options.baseDir, options.home),
 			}),

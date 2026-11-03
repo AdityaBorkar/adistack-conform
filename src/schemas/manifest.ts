@@ -82,8 +82,12 @@ const ManifestFileSchema = v.object({
 	target: v.pipe(v.string(), v.minLength(1), v.description("Enforcement target.")),
 });
 
-const ManifestDirectorySchema = v.object({
-	name: v.pipe(v.string(), v.minLength(1), v.description("Directory name within the blueprint.")),
+const ManifestFileStructureSchema = v.object({
+	kind: v.pipe(
+		v.picklist(["dir", "file"]),
+		v.description("Required entry kind: dir must exist as a directory, file must exist as a file."),
+	),
+	name: v.pipe(v.string(), v.minLength(1), v.description("Entry name within the blueprint.")),
 	target: v.pipe(v.string(), v.minLength(1), v.description("Enforcement target.")),
 });
 
@@ -99,20 +103,24 @@ export const ManifestSchema = v.object({
 	description: v.optional(
 		v.pipe(v.string(), v.description("Human-readable blueprint description.")),
 	),
-	directories: v.optional(
+	file_structure: v.optional(
 		v.pipe(
-			v.array(ManifestDirectorySchema),
-			v.description("Directories enforced by this blueprint."),
+			v.array(ManifestFileStructureSchema),
+			v.description("Existence-only entries enforced by this blueprint (no content compare)."),
 		),
+		[],
 	),
 	files: v.pipe(v.array(ManifestFileSchema), v.description("Files enforced by this blueprint.")),
+	github: v.optional(
+		v.pipe(
+			v.string(),
+			v.minLength(1),
+			v.description(
+				"Source path of the GitHub settings preset. Relative to the manifest directory when starting with ./ or ../, otherwise relative to the tech-stack root.",
+			),
+		),
+	),
 	js: v.optional(
 		v.pipe(ManifestJsSchema, v.description("JavaScript packages required in package.json.")),
-	),
-	required: v.optional(
-		v.pipe(
-			v.array(v.pipe(v.string(), v.minLength(1))),
-			v.description("Paths that must exist; content is per-project (existence only)."),
-		),
 	),
 });

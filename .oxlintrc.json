@@ -12,7 +12,7 @@
 	},
 	"overrides": [
 		{
-			"files": ["src/index.ts"],
+			"files": ["src/index.ts", "src/stack/github.ts"],
 			"rules": {
 				"no-await-in-loop": "off"
 			}

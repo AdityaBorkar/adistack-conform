@@ -15,12 +15,18 @@ export interface ConformMachine {
 	configuration?: string;
 }
 
+export interface ConformGithub {
+	blueprint: string;
+	repo?: string;
+}
+
 export interface ConformProject {
 	blueprint: string;
 }
 
 export interface LoadedConform {
 	dir: string;
+	github?: ConformGithub;
 	machine?: ConformMachine;
 	path: string;
 	project?: ConformProject;
@@ -40,15 +46,23 @@ export interface MachineRunSpec {
 	ref: string;
 }
 
+export interface GithubRunSpec {
+	blueprint: string;
+	id: string;
+	ref: string;
+	repo?: string;
+}
+
 function toLoadedConfig(path: string, parsed: unknown): LoadedConform {
 	const data = parseOrThrow(ConformSchema, path, parsed, "conform config");
-	if (data.machine === undefined && data.project === undefined) {
+	if (data.github === undefined && data.machine === undefined && data.project === undefined) {
 		throw new Error(
-			`Invalid conform config in ${path}: set at least one of "machine" or "project".`,
+			`Invalid conform config in ${path}: set at least one of "github", "machine", or "project".`,
 		);
 	}
 	return {
 		dir: dirname(path),
+		github: data.github,
 		machine: data.machine,
 		path,
 		project: data.project,
@@ -97,5 +111,17 @@ export function machineSpecOf(loaded: LoadedConform): MachineRunSpec | undefined
 		configuration: loaded.machine.configuration,
 		id: loaded.source.id,
 		ref: loaded.source.ref,
+	};
+}
+
+export function githubSpecOf(loaded: LoadedConform): GithubRunSpec | undefined {
+	if (loaded.github === undefined) {
+		return undefined;
+	}
+	return {
+		blueprint: loaded.github.blueprint,
+		id: loaded.source.id,
+		ref: loaded.source.ref,
+		repo: loaded.github.repo,
 	};
 }

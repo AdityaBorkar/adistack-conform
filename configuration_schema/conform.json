@@ -5,6 +5,23 @@
 			"type": "string",
 			"description": "JSON Schema reference, e.g. ./configuration_schema/conform.json."
 		},
+		"github": {
+			"type": "object",
+			"properties": {
+				"blueprint": {
+					"type": "string",
+					"minLength": 1,
+					"description": "GitHub settings blueprint name, e.g. cli-app (reads the manifest github preset)."
+				},
+				"repo": {
+					"type": "string",
+					"pattern": "^[^/\\s]+\\/[^/\\s]+$",
+					"description": "GitHub owner/repo to check. Defaults to $GITHUB_REPOSITORY, then the git origin remote."
+				}
+			},
+			"required": ["blueprint"],
+			"description": "GitHub repo settings desired state."
+		},
 		"machine": {
 			"type": "object",
 			"properties": {

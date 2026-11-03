@@ -8,6 +8,7 @@ description: conform.json reference — source, project, and machine sections pl
 	"$schema": "./configuration_schema/conform.json",
 	"machine": { "blueprint": "main", "configuration": "adityab" },
 	"project": { "blueprint": "cli-app" },
+	"github": { "blueprint": "cli-app" },
 	"source": { "type": "github", "repo": "AdityaBorkar/tech-stack", "ref": "main" },
 }
 ```
@@ -24,7 +25,7 @@ Validate with `./configuration_schema/conform.json` (generated from Valibot sche
 
 Refs containing `/` work — plain path segments in `raw.githubusercontent.com` URLs, `encodeURIComponent`-escaped in flake URLs.
 
-## `project` (optional, at least one of `project` / `machine` required)
+## `project` (optional, at least one of `project` / `machine` / `github` required)
 
 | Field       | Meaning                                                                                                                                                  |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -41,9 +42,18 @@ Project targets resolve against the cwd, so run from the directory that owns `co
 
 Machines are entirely nix-managed. See [blueprints](./blueprints.md) for matching details and flake-dir resolution.
 
+## `github` (optional)
+
+| Field       | Required | Default                                              | Meaning                                                                                      |
+| ----------- | -------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `blueprint` | yes      | —                                                    | Blueprint whose `manifest.json` `github` key points at the settings preset (e.g. `cli-app`). |
+| `repo`      | no       | `$GITHUB_REPOSITORY`, then the cwd git origin remote | `owner/repo` whose settings are checked.                                                     |
+
+The golden is the preset file referenced by the blueprint `manifest.json` `github` key (e.g. `../$presets/github-configs/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: `GITHUB_TOKEN` is required (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted.
+
 ## Loading rules
 
 - Without `--config`, `check` / `fix` load `./conform.json` from the cwd; missing file exits 2.
 - With `--config <path>`, the basename must be exactly `conform.json` — anything else exits 2. The path may use `~` (`untildify`) and resolves against the cwd.
 - Invalid JSON or schema violations print a `valibot` summary and exit 2.
-- `--project-only` / `--machine-only` filter at run time; omitting the other scope from `conform.json` has the same effect permanently.
+- `--project-only` / `--machine-only` / `--github-only` filter at run time; omitting the other scopes from `conform.json` has the same effect permanently.

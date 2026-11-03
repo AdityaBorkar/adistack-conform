@@ -5,11 +5,11 @@ import type { RegistrySchema } from "#/schemas/registry.js";
 
 export type ManifestFile = v.InferOutput<typeof ManifestSchema>["files"][number];
 export type ManifestCompare = NonNullable<ManifestFile["compare"]>;
-export type ManifestJs = NonNullable<v.InferOutput<typeof ManifestSchema>["js"]>;
-export type ManifestDirectory = NonNullable<
-	v.InferOutput<typeof ManifestSchema>["directories"]
+export type ManifestFileStructure = NonNullable<
+	v.InferOutput<typeof ManifestSchema>["file_structure"]
 >[number];
-export type ManifestRequired = NonNullable<v.InferOutput<typeof ManifestSchema>["required"]>;
+export type ManifestGithub = v.InferOutput<typeof ManifestSchema>["github"];
+export type ManifestJs = NonNullable<v.InferOutput<typeof ManifestSchema>["js"]>;
 export type RegistryDocument = v.InferOutput<typeof RegistrySchema>;
 export type RegistryEntry = RegistryDocument["projects"][number];
 

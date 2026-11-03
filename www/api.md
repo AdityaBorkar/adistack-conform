@@ -15,9 +15,9 @@ Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` 
 
 ```jsonc
 {
-	"id": "project:cli-app:Bun Config", // or "project:cli-app:deps:oxlint" or "nix:main"
-	"kind": "preset", // "preset" | "package" | "nix"
-	"scope": "project", // "project" | "machine"
+	"id": "project:cli-app:Bun Config", // or "project:cli-app:deps:oxlint" or "nix:main" or "github:cli-app:general"
+	"kind": "preset", // "preset" | "package" | "nix" | "github"
+	"scope": "project", // "project" | "machine" | "github"
 	"source": "tech-stack:cli-app",
 	"target": "bunfig.toml",
 	"expected": "<golden>",
@@ -25,6 +25,7 @@ Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` 
 	"skipped": false, // true when skipped (counts as ok)
 	"fix": { "kind": "overwrite-file", "filePath": "<abs>", "newContent": "…" },
 	// or: "fix": { "kind": "run-command", "command": "…", "args": ["…"], "label": "…" },
+	// or: "fix": { "kind": "github-api", …multi-step REST calls… },
 	"hint": "only on manual failures",
 }
 ```
@@ -33,13 +34,14 @@ Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` 
 
 ## Schemas (Valibot source of truth)
 
-`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `common.ts`, `import * as v from "valibot"`) generates `configuration_schema/*.json` via `bun run gen:json-schema` (also run by `bun run build`). Never hand-edit the generated files.
+`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `github.ts`, `common.ts`, `import * as v from "valibot"`) generates `configuration_schema/*.json` via `bun run gen:json-schema` (also run by `bun run build`). Never hand-edit the generated files.
 
-| Schema                                       | Validates                                        |
-| -------------------------------------------- | ------------------------------------------------ |
-| `configuration_schema/conform.json`          | Consumer `conform.json`                          |
-| `configuration_schema/project-manifest.json` | Blueprint `manifest.json` in the tech-stack repo |
-| `configuration_schema/registry.json`         | Tech-stack root `registry.json`                  |
+| Schema                                       | Validates                                                   |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| `configuration_schema/conform.json`          | Consumer `conform.json`                                     |
+| `configuration_schema/project-manifest.json` | Blueprint `manifest.json` in the tech-stack repo            |
+| `configuration_schema/registry.json`         | Tech-stack root `registry.json`                             |
+| `configuration_schema/github.json`           | Preset file referenced by a blueprint manifest `github` key |
 
 ## Building
 

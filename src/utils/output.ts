@@ -39,7 +39,9 @@ export function formatResult(result: CheckResult): string {
 			lines.push(
 				result.fix.kind === "overwrite-file"
 					? `    fix      : overwrite ${result.fix.filePath}`
-					: `    fix      : run ${result.fix.label}`,
+					: result.fix.kind === "github-api"
+						? `    fix      : api ${result.fix.label}`
+						: `    fix      : run ${result.fix.label}`,
 			);
 		}
 	}
@@ -74,7 +76,7 @@ function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefin
 	const { failed, fixable } = partitionResults(items);
 	const skipped = items.filter((item) => item.skipped === true).length;
 	const passed = items.length - failed.length - skipped;
-	return `${okMark(failed.length === 0)} project: ${passed} passed, ${failed.length} failed (${fixable.length} fixable), ${skipped} skipped`;
+	return `${okMark(failed.length === 0)} ${scope}: ${passed} passed, ${failed.length} failed (${fixable.length} fixable), ${skipped} skipped`;
 }
 
 export function printResults(
@@ -83,7 +85,7 @@ export function printResults(
 ): void {
 	const lines = results.filter((result) => !result.ok).map((result) => formatResult(result));
 	const summaries: string[] = [];
-	for (const scope of ["project", "machine"] as const) {
+	for (const scope of ["project", "machine", "github"] as const) {
 		const summary = scopeSummary(
 			scope,
 			results.filter((result) => result.scope === scope),
@@ -141,6 +143,9 @@ export async function renderFixDiffs(fixable: CheckResult[]): Promise<void> {
 	const rendered = fixable.map((item) => {
 		if (item.fix?.kind === "run-command") {
 			return `\nrun ${item.id} (${item.target})\n${item.fix.label}`;
+		}
+		if (item.fix?.kind === "github-api") {
+			return `\napi ${item.id} (${item.target})\n${item.fix.steps.map((step) => `${step.method} ${step.path}`).join("\n")}`;
 		}
 		return `\ndiff ${item.id} (${item.target})\n${renderDiff("actual", "expected", item.actual, desiredContent(item))}`;
 	});

@@ -4,8 +4,15 @@ import { Command } from "commander";
 import type { CheckResult, CheckScope } from "#/checks.js";
 import { partitionResults } from "#/checks.js";
 import type { LoadedConform } from "#/config.js";
-import { discoverConfigs, loadConfig, machineSpecOf, projectSpecOf } from "#/config.js";
+import {
+	discoverConfigs,
+	loadConfig,
+	githubSpecOf,
+	machineSpecOf,
+	projectSpecOf,
+} from "#/config.js";
 import { applySelected, resolveSelection } from "#/fix.js";
+import { recheckGithubSelected, runGithubChecks } from "#/stack/github.js";
 import { recheckProjectSelected, runProjectChecks } from "#/stack/index.js";
 import { recheckMachineSelected, runMachineChecks } from "#/stack/machine.js";
 import type { RegistryDocument } from "#/stack/registry.js";
@@ -23,19 +30,25 @@ import {
 
 const VERSION = "0.1.0";
 
-type ScopeOptions = { machineOnly?: boolean; projectOnly?: boolean };
+type ScopeOptions = { githubOnly?: boolean; machineOnly?: boolean; projectOnly?: boolean };
 type CheckCmdOptions = ScopeOptions & { json?: boolean };
 type FixCmdOptions = ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean };
 
 function scopeOf(options: ScopeOptions): CheckScope | undefined {
-	if (options.projectOnly && options.machineOnly) {
-		throw new Error("Pass only one of --project-only / --machine-only.");
+	const selected = [options.projectOnly, options.machineOnly, options.githubOnly].filter(
+		(item) => item === true,
+	).length;
+	if (selected > 1) {
+		throw new Error("Pass only one of --project-only / --machine-only / --github-only.");
 	}
 	if (options.projectOnly) {
 		return "project";
 	}
 	if (options.machineOnly) {
 		return "machine";
+	}
+	if (options.githubOnly) {
+		return "github";
 	}
 	return undefined;
 }
@@ -79,6 +92,12 @@ async function fetchRegistries(
 				wanted.set(repoKey(spec.id, spec.ref), { id: spec.id, ref: spec.ref });
 			}
 		}
+		if (only === undefined || only === "github") {
+			const spec = githubSpecOf(loaded);
+			if (spec !== undefined) {
+				wanted.set(repoKey(spec.id, spec.ref), { id: spec.id, ref: spec.ref });
+			}
+		}
 	}
 	const entries = await Promise.all(
 		[...wanted].map(async ([key, spec]): Promise<[string, RegistryDocument]> => [
@@ -96,12 +115,14 @@ async function runAllChecks(args: {
 	only: CheckScope | undefined;
 	registries: Map<string, RegistryDocument>;
 }): Promise<{
+	githubElapsedMs: number | undefined;
 	machineElapsedMs: number | undefined;
 	projectElapsedMs: number | undefined;
 	results: CheckResult[];
 }> {
 	const projectTasks: Promise<CheckResult[]>[] = [];
 	const machineTasks: Promise<CheckResult[]>[] = [];
+	const githubTasks: Promise<CheckResult[]>[] = [];
 	for (const loaded of args.configs) {
 		if (args.only === undefined || args.only === "project") {
 			const spec = projectSpecOf(loaded);
@@ -123,15 +144,24 @@ async function runAllChecks(args: {
 				machineTasks.push(runMachineChecks(spec, registry));
 			}
 		}
+		if (args.only === undefined || args.only === "github") {
+			const spec = githubSpecOf(loaded);
+			if (spec !== undefined) {
+				const registry = args.registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument;
+				githubTasks.push(runGithubChecks(spec, registry));
+			}
+		}
 	}
-	const [project, machine] = await Promise.all([
+	const [project, machine, github] = await Promise.all([
 		timed(Promise.all(projectTasks)),
 		timed(Promise.all(machineTasks)),
+		timed(Promise.all(githubTasks)),
 	]);
 	return {
+		githubElapsedMs: githubTasks.length > 0 ? github.elapsedMs : undefined,
 		machineElapsedMs: machineTasks.length > 0 ? machine.elapsedMs : undefined,
 		projectElapsedMs: projectTasks.length > 0 ? project.elapsedMs : undefined,
-		results: [...project.value.flat(), ...machine.value.flat()],
+		results: [...project.value.flat(), ...machine.value.flat(), ...github.value.flat()],
 	};
 }
 
@@ -146,17 +176,19 @@ async function prepareRun(cmd: Command, cmdOptions: ScopeOptions) {
 }
 
 async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promise<number> {
-	const { configs, machineElapsedMs, projectElapsedMs, results } = await prepareRun(
-		cmd,
-		cmdOptions,
-	);
+	const { configs, githubElapsedMs, machineElapsedMs, projectElapsedMs, results } =
+		await prepareRun(cmd, cmdOptions);
 	if (cmdOptions.json) {
 		printJsonSummary(
 			configs.map((entry) => entry.path),
 			results,
 		);
 	} else {
-		printResults(results, { machine: machineElapsedMs, project: projectElapsedMs });
+		printResults(results, {
+			github: githubElapsedMs,
+			machine: machineElapsedMs,
+			project: projectElapsedMs,
+		});
 	}
 	return results.some((item) => !item.ok) ? 1 : 0;
 }
@@ -246,6 +278,23 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 						}
 					}
 				}
+				if (only === undefined || only === "github") {
+					const spec = githubSpecOf(loaded);
+					if (spec !== undefined) {
+						const scopedIds = new Set(
+							[...selectedIds].filter((id) => id.startsWith(`github:${spec.blueprint}:`)),
+						);
+						if (scopedIds.size > 0) {
+							reruns.push(
+								await recheckGithubSelected(
+									spec,
+									registries.get(repoKey(spec.id, spec.ref)) as RegistryDocument,
+									scopedIds,
+								),
+							);
+						}
+					}
+				}
 				return reruns.flat();
 			}),
 		);
@@ -270,17 +319,22 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 
 const program = new Command();
 program
-	.description("Check the current project/machine against the config in the current directory.")
+	.description(
+		"Check the current project/machine/repo against the config in the current directory.",
+	)
 	.name("adistack-conform")
 	.option("--config <path>", "Path to conform.json (default: ./conform.json in the cwd)")
 	.version(VERSION);
 
 program
 	.command("check")
-	.description("Check the config in the current directory against the current project/machine.")
+	.description(
+		"Check the config in the current directory against the current project/machine/repo.",
+	)
 	.option("--json", "Print machine-readable JSON.")
 	.option("--project-only", "Only run project checks.")
 	.option("--machine-only", "Only run machine checks.")
+	.option("--github-only", "Only run GitHub repo checks.")
 	.action(async (cmdOptions: CheckCmdOptions, cmd: Command) => {
 		try {
 			process.exit(await runCheckCommand(cmd, cmdOptions));
@@ -297,6 +351,7 @@ program
 	.option("--no-diff", "Hide the diff preview.")
 	.option("--project-only", "Only fix project checks.")
 	.option("--machine-only", "Only fix machine checks.")
+	.option("--github-only", "Only fix GitHub repo checks.")
 	.action(async (cmdOptions: FixCmdOptions, cmd: Command) => {
 		try {
 			process.exit(await runFixCommand(cmd, cmdOptions));

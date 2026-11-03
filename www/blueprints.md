@@ -28,7 +28,7 @@ Unknown names fail the run with the available names listed (exit 2). Matching is
 
 ## Project blueprints
 
-The entry `path` is the manifest directory: the CLI fetches `<dir>/manifest.json` from the tech-stack repo. See [presets](./presets.md) for how its `files[]` (plus `directories[]`, required docs, `package.json`, and toolchain deps) are enforced.
+The entry `path` is the manifest directory: the CLI fetches `<dir>/manifest.json` from the tech-stack repo. See [presets](./presets.md) for how its `files[]` (plus `file_structure[]` entries, `package.json`, and toolchain deps) are enforced.
 
 ## Machine blueprints
 

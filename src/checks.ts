@@ -1,6 +1,6 @@
 import { writeFileEnsuringDir } from "#/utils/fs.js";
 
-export type CheckScope = "project" | "machine";
+export type CheckScope = "project" | "machine" | "github";
 
 export interface OverwriteFileFix {
 	filePath: string;
@@ -15,7 +15,19 @@ export interface RunCommandFix {
 	label: string;
 }
 
-export type CheckFix = OverwriteFileFix | RunCommandFix;
+export interface GithubApiStep {
+	body?: unknown;
+	method: "DELETE" | "PATCH" | "POST" | "PUT";
+	path: string;
+}
+
+export interface GithubApiFix {
+	kind: "github-api";
+	label: string;
+	steps: GithubApiStep[];
+}
+
+export type CheckFix = OverwriteFileFix | RunCommandFix | GithubApiFix;
 
 export interface CheckResult {
 	actual: string;
@@ -77,7 +89,7 @@ export function partitionResults(results: CheckResult[]): {
 }
 
 export function desiredContent(result: CheckResult): string {
-	if (result.fix?.kind === "run-command") {
+	if (result.fix?.kind === "run-command" || result.fix?.kind === "github-api") {
 		return result.fix.label;
 	}
 	return result.fix?.newContent ?? result.expected;
@@ -86,6 +98,11 @@ export function desiredContent(result: CheckResult): string {
 export async function applyFix(result: CheckResult): Promise<void> {
 	if (!result.fix) {
 		throw new Error(`Check ${result.id} is not fixable.`);
+	}
+	if (result.fix.kind === "github-api") {
+		const { applyGithubApiFix } = await import("#/stack/github.js");
+		await applyGithubApiFix(result.fix);
+		return;
 	}
 	if (result.fix.kind === "overwrite-file") {
 		await writeFileEnsuringDir(result.fix.filePath, result.fix.newContent);

@@ -34,6 +34,24 @@ export const ConformMachineSectionSchema = v.object({
 	),
 });
 
+export const ConformGithubSectionSchema = v.object({
+	blueprint: v.pipe(
+		v.string(),
+		v.minLength(1),
+		v.description(
+			"GitHub settings blueprint name, e.g. cli-app (reads the manifest github preset).",
+		),
+	),
+	repo: v.optional(
+		v.pipe(
+			v.string(),
+			v.regex(/^[^/\s]+\/[^/\s]+$/u),
+			v.description(
+				"GitHub owner/repo to check. Defaults to $GITHUB_REPOSITORY, then the git origin remote.",
+			),
+		),
+	),
+});
 export const ConformProjectSectionSchema = v.object({
 	blueprint: v.pipe(
 		v.string(),
@@ -48,6 +66,9 @@ export const ConformSchema = v.object({
 			v.string(),
 			v.description("JSON Schema reference, e.g. ./configuration_schema/conform.json."),
 		),
+	),
+	github: v.optional(
+		v.pipe(ConformGithubSectionSchema, v.description("GitHub repo settings desired state.")),
 	),
 	machine: v.optional(v.pipe(ConformMachineSectionSchema, v.description("Machine desired state."))),
 	project: v.optional(v.pipe(ConformProjectSectionSchema, v.description("Project desired state."))),

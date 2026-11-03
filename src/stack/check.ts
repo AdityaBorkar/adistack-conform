@@ -424,19 +424,56 @@ export async function checkPresetFileWithGolden(args: {
 	});
 }
 
-export async function checkRequiredFileExists(args: {
+export async function checkFileStructureEntry(args: {
 	blueprint: string;
-	fileName: string;
+	entryName: string;
+	kind: "dir" | "file";
 	scope: CheckScope;
 	targetPath: string;
 }): Promise<CheckResult> {
 	const base: CheckBase = {
-		id: `project:${args.blueprint}:${args.fileName}`,
+		id: `project:${args.blueprint}:${args.entryName}`,
 		kind: "preset",
 		scope: args.scope,
 		source: `tech-stack:${args.blueprint}`,
-		target: args.fileName,
+		target: args.entryName,
 	};
+	if (args.kind === "dir") {
+		try {
+			const info = await stat(args.targetPath);
+			if (info.isDirectory()) {
+				return pass(base, "exists", "directory exists");
+			}
+			return failManual(
+				base,
+				"<not-a-directory>",
+				"directory exists",
+				`${args.targetPath} exists but is not a directory; move it aside and run mkdir -p ${args.targetPath}.`,
+			);
+		} catch (error) {
+			if (
+				typeof error === "object" &&
+				error !== null &&
+				"code" in error &&
+				(error as { code?: unknown }).code === "ENOENT"
+			) {
+				// shortcut: manual for now; upgrade to ensure-dir fix if dir auto-creation is wanted.
+				return failManual(
+					base,
+					"<missing>",
+					"directory exists",
+					`Directory ${args.targetPath} is missing; create it with mkdir -p ${args.targetPath}.`,
+				);
+			}
+			const message = error instanceof Error ? error.message : String(error);
+			return failManual(
+				base,
+				"<unreadable>",
+				"directory exists",
+				`Cannot stat ${args.targetPath}: ${message}`,
+			);
+		}
+	}
 	const outcome = await readFileSafe(args.targetPath);
 	if (outcome.ok) {
 		return pass(base, "exists", "exists (generate per-project content)");
@@ -446,7 +483,7 @@ export async function checkRequiredFileExists(args: {
 			base,
 			"<missing>",
 			"exists (generate per-project content)",
-			`${args.fileName} is missing. Generate one for this project, then re-run check.`,
+			`${args.entryName} is missing. Generate one for this project, then re-run check.`,
 		);
 	}
 	return failManual(
@@ -455,55 +492,6 @@ export async function checkRequiredFileExists(args: {
 		"exists (generate per-project content)",
 		`Cannot read ${args.targetPath} (may need sudo): ${outcome.error}`,
 	);
-}
-
-export async function checkRequiredDir(args: {
-	blueprint: string;
-	dirName: string;
-	scope: CheckScope;
-	targetPath: string;
-}): Promise<CheckResult> {
-	const base: CheckBase = {
-		id: `project:${args.blueprint}:${args.dirName}`,
-		kind: "preset",
-		scope: args.scope,
-		source: `tech-stack:${args.blueprint}`,
-		target: args.dirName,
-	};
-	try {
-		const info = await stat(args.targetPath);
-		if (info.isDirectory()) {
-			return pass(base, "exists", "directory exists");
-		}
-		return failManual(
-			base,
-			"<not-a-directory>",
-			"directory exists",
-			`${args.targetPath} exists but is not a directory; move it aside and run mkdir -p ${args.targetPath}.`,
-		);
-	} catch (error) {
-		if (
-			typeof error === "object" &&
-			error !== null &&
-			"code" in error &&
-			(error as { code?: unknown }).code === "ENOENT"
-		) {
-			// shortcut: manual for now; upgrade to ensure-dir fix if dir auto-creation is wanted.
-			return failManual(
-				base,
-				"<missing>",
-				"directory exists",
-				`Directory ${args.targetPath} is missing; create it with mkdir -p ${args.targetPath}.`,
-			);
-		}
-		const message = error instanceof Error ? error.message : String(error);
-		return failManual(
-			base,
-			"<unreadable>",
-			"directory exists",
-			`Cannot stat ${args.targetPath}: ${message}`,
-		);
-	}
 }
 
 export function skippedForTarget(

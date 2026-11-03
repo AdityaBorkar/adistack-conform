@@ -9,15 +9,20 @@
 			"type": "string",
 			"description": "Human-readable blueprint description."
 		},
-		"directories": {
+		"file_structure": {
 			"type": "array",
 			"items": {
 				"type": "object",
 				"properties": {
+					"kind": {
+						"enum": ["dir", "file"],
+						"type": "string",
+						"description": "Required entry kind: dir must exist as a directory, file must exist as a file."
+					},
 					"name": {
 						"type": "string",
 						"minLength": 1,
-						"description": "Directory name within the blueprint."
+						"description": "Entry name within the blueprint."
 					},
 					"target": {
 						"type": "string",
@@ -25,9 +30,10 @@
 						"description": "Enforcement target."
 					}
 				},
-				"required": ["name", "target"]
+				"required": ["kind", "name", "target"]
 			},
-			"description": "Directories enforced by this blueprint."
+			"description": "Existence-only entries enforced by this blueprint (no content compare).",
+			"default": []
 		},
 		"files": {
 			"type": "array",
@@ -97,6 +103,11 @@
 			},
 			"description": "Files enforced by this blueprint."
 		},
+		"github": {
+			"type": "string",
+			"minLength": 1,
+			"description": "Source path of the GitHub settings preset. Relative to the manifest directory when starting with ./ or ../, otherwise relative to the tech-stack root."
+		},
 		"js": {
 			"type": "object",
 			"properties": {
@@ -136,14 +147,6 @@
 			},
 			"required": [],
 			"description": "JavaScript packages required in package.json."
-		},
-		"required": {
-			"type": "array",
-			"items": {
-				"type": "string",
-				"minLength": 1
-			},
-			"description": "Paths that must exist; content is per-project (existence only)."
 		}
 	},
 	"required": ["files"],

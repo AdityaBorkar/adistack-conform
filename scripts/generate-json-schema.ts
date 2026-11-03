@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { toJsonSchema } from "@valibot/to-json-schema";
 
 import { ConformSchema } from "#/schemas/conform.js";
+import { GithubSchema } from "#/schemas/github.js";
 import { ManifestSchema } from "#/schemas/manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 
@@ -11,6 +12,7 @@ const OUTPUT_DIR = join(import.meta.dir, "..", "configuration_schema");
 
 const TARGETS = {
 	"conform.json": ConformSchema,
+	"github.json": GithubSchema,
 	"project-manifest.json": ManifestSchema,
 	"registry.json": RegistrySchema,
 } as const;
