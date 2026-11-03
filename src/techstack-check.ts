@@ -17,7 +17,7 @@ export function classifyTarget(target: string, scope: CheckScope): ClassifiedTar
 	if (WINDOWS_ENV_PATTERN.test(token)) {
 		return { reason: "Windows-only target", type: "skip" };
 	}
-	if (scope === "project" && (token.startsWith("./") || token.startsWith("../"))) {
+	if (scope === "project" && token !== "") {
 		return { path: token, type: "path" };
 	}
 	return { reason: `no concrete target ("${target}")`, type: "skip" };
