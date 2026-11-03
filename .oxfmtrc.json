@@ -1,5 +1,6 @@
 {
 	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"ignorePatterns": ["**/*.mdx"],
 	"printWidth": 100,
 	"sortImports": {
 		"customGroups": [
@@ -15,10 +16,15 @@
 			["parent", "sibling", "index", "subpath"],
 			["style", "side_effect_style", "side_effect"],
 			"unknown"
-		]
+		],
+		"ignoreCase": false
 	},
 	"sortPackageJson": {
 		"sortScripts": true
+	},
+	"sortTailwindcss": {
+		"stylesheet": "src/styles.css",
+		"functions": ["cn"]
 	},
 	"useTabs": true
 }

@@ -7,7 +7,6 @@ depth = 10
 [install]
 auto = "disable"
 minimumReleaseAge = "3d"
-saveTextLockfile = false
 ignore-scripts = true
 exact = true
 

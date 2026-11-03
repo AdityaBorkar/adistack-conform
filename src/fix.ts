@@ -13,23 +13,22 @@ export async function promptForSelection(fixable: CheckResult[]): Promise<Prompt
 	}
 	const prompts = await import("@clack/prompts");
 	prompts.intro("Select fixes to apply (space to toggle, enter to confirm).");
-	const choice = await prompts.multiselect({
+	const choice = await prompts.groupMultiselect({
 		message: "Pick items to fix.",
-		options: [
-			{ label: `Select all (${fixable.length} items)`, value: "__all" },
-			...fixable.map((item) => ({
+		options: {
+			"Select all": fixable.map((item) => ({
 				hint: item.target,
 				label: item.id,
 				value: item.id,
 			})),
-		],
+		},
 		required: false,
 	});
 	if (prompts.isCancel(choice) || choice.length === 0) {
 		return { kind: "cancelled" };
 	}
 	const ids = new Set(choice as string[]);
-	const selected = ids.has("__all") ? fixable : fixable.filter((item) => ids.has(item.id));
+	const selected = fixable.filter((item) => ids.has(item.id));
 	if (selected.length === 0) {
 		return { kind: "cancelled" };
 	}

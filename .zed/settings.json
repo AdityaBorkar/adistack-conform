@@ -6,6 +6,12 @@
 		{ "code_action": "source.fixAll.oxc" },
 		{ "language_server": { "name": "oxfmt" } }
 	],
+	"languages": {
+		"CSS": {
+			"formatter": "language_server",
+			"language_servers": ["!vscode-css-language-server", "..."]
+		}
+	},
 	"lsp": {
 		"oxlint": {
 			"binary": {
@@ -17,6 +23,12 @@
 					"run": "onType",
 					"unusedDisableDirectives": "deny"
 				}
+			}
+		},
+		"tailwindcss-language-server": {
+			"binary": {
+				"arguments": ["./node_modules/.bin/tailwindcss-language-server", "--stdio"],
+				"path": "bun"
 			}
 		},
 		"oxfmt": {

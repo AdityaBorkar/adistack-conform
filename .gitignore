@@ -1,11 +1,15 @@
-node_modules
+.certs
+.local
 .output
+.tanstack
+node_modules
 
 .env*
 *.env
+!.env.example
+*.gen.ts
 *.tsbuildinfo
 *.tgz
 .DS_Store
 
 .agents/skills
-codedb.snapshot
