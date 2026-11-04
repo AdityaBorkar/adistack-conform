@@ -1,6 +1,10 @@
+---
+icon: House
+---
+
 # @adistack/conform
 
-Check your project files and Nix machine against golden blueprints in a tech-stack repo. Desired state lives in `conform.json`; the CLI reports drift and fixes what it can.
+You describe the setup you want in `conform.json`. The CLI compares that against reality — your project files, your Nix machine, your GitHub repo settings — and tells you what drifted. When something can be fixed automatically, `fix` applies it.
 
 ```jsonc
 // conform.json
@@ -18,8 +22,50 @@ adistack-conform fix --dry-run  # preview, never writes
 adistack-conform fix --all      # apply all auto-fixable items (non-TTY safe)
 ```
 
-Start with [quick-start](./quick-start.md). Core ideas are in [concepts](./concepts.md); the file format is in [configuration](./configuration.md) and the full flags in [cli](./cli.md).
+<Callout type="tip" title="New here? Read in this order">
 
-Reference: [blueprints](./blueprints.md) (registry matching), [presets](./presets.md) (per-file rules), [authoring](./authoring.md) (writing your own tech-stack repo), [api](./api.md) (JSON output, schemas, building from source). Multi-package repos: [monorepo](./monorepo.md).
+[Quick start](./quick-start.md) gets you green in minutes. [Concepts](./concepts.md) explains what each result means. [Configuration](./configuration.md) documents every field, and [CLI](./cli.md) lists every flag.
 
-Requires [Bun](https://bun.sh) to run from source, plus `home-manager` or `nix` only for the machine scope. Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits.
+</Callout>
+
+<Cards>
+
+<Card title="Quick start" href="/conform/quick-start">
+
+Install, add `conform.json`, run your first check and fix.
+
+</Card>
+
+<Card title="Concepts" href="/conform/concepts">
+
+Desired state, the three scopes, and how fixes are classified.
+
+</Card>
+
+<Card title="Configuration" href="/conform/configuration">
+
+The `conform.json` reference — source, project, machine, and github sections.
+
+</Card>
+
+<Card title="CLI" href="/conform/cli">
+
+Every `check` and `fix` flag, exit code, and the non-TTY story.
+
+</Card>
+
+</Cards>
+
+Reference material:
+
+- [Blueprints](./blueprints.md) — how names resolve to directories and flakes.
+- [Presets](./presets.md) — per-file compare and fix rules.
+- [Authoring](./authoring.md) — writing your own tech-stack repo.
+- [API](./api.md) — JSON output, schemas, and building from source.
+- [Monorepo](./monorepo.md) — one `conform.json` per package.
+
+<Callout type="info" title="Requirements">
+
+You need [Bun](https://bun.sh) to run from source, plus `home-manager` or `nix` only for the machine scope. Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits.
+
+</Callout>

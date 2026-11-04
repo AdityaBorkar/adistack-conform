@@ -1,29 +1,52 @@
 ---
 title: Quick start
 description: Install the CLI, add conform.json, and run your first check and fix.
+icon: Rocket
 ---
 
-Run from the directory that owns `conform.json` — project targets resolve against the cwd.
+Run everything from the directory that owns `conform.json` — project targets resolve against your current directory.
 
-## 1. Install
+<Steps>
 
-From source (Bun-only):
+<Step title="Install">
+
+Pick whichever suits you:
+
+<Tabs>
+
+<Tab title="Run from source">
+
+Best while you are still exploring. Needs [Bun](https://bun.sh):
 
 ```bash
 bun install
 bun ./src/index.ts check
 ```
 
-Or build the compiled binary (lands in `.output/adistack-conform`, also the `adistack-conform` npm bin):
+</Tab>
+
+<Tab title="Compiled binary">
+
+One self-contained file. It lands in `.output/adistack-conform` and is also the `adistack-conform` npm bin:
 
 ```bash
 bun run build
 ./.output/adistack-conform check
 ```
 
+</Tab>
+
+</Tabs>
+
+<Callout type="tip" title="Gate before pushing">
+
 `verify` (`format` → `check:lint` → `check:types` → `build`) is the gate before pushing.
 
-## 2. Add `conform.json`
+</Callout>
+
+</Step>
+
+<Step title="Add conform.json">
 
 ```jsonc
 {
@@ -33,9 +56,11 @@ bun run build
 }
 ```
 
-At least one of `project` / `machine` / `github` is required. Omit the others to track fewer scopes. `source.ref` defaults to `main`; pin a tag or commit for reproducibility. See [configuration](./configuration.md) for every field.
+You need at least one of `project` / `machine` / `github`. Leave scopes out to track less. `source.ref` defaults to `main` — pin a tag or commit for reproducibility. Every field is documented in [configuration](./configuration.md).
 
-## 3. Check
+</Step>
+
+<Step title="Check">
 
 ```bash
 adistack-conform check
@@ -45,9 +70,11 @@ adistack-conform check --github-only
 adistack-conform check --json   # machine-readable, for scripts
 ```
 
-Exits: `0` in sync (skips count as ok), `1` drift, `2` config error. `--project-only` / `--machine-only` / `--github-only` are mutually exclusive.
+Exits: <Badge variant="success">0 in sync</Badge> (skips count as ok), <Badge variant="warning">1 drift</Badge>, <Badge variant="error">2 config error</Badge>. The `--*-only` flags are mutually exclusive.
 
-## 4. Fix
+</Step>
+
+<Step title="Fix">
 
 ```bash
 adistack-conform fix --dry-run  # preview diffs, never writes, never prompts
@@ -56,7 +83,11 @@ adistack-conform fix --all      # apply everything fixable, no prompt
 adistack-conform fix --no-diff  # skip the diff preview
 ```
 
-`fix` reports unfixable items with hints first, then applies, then re-checks only the selected IDs. It needs a TTY unless you pass `--all`; `--dry-run` never prompts. Full flag and exit-code reference: [cli](./cli.md).
+`fix` shows the unfixable items with hints first, applies the rest, then re-checks only the selected IDs. It needs a TTY unless you pass `--all`; `--dry-run` never prompts. The full flag and exit-code reference lives in [cli](./cli.md).
+
+</Step>
+
+</Steps>
 
 ## Private repos and rate limits
 
@@ -68,4 +99,8 @@ GITHUB_TOKEN=ghp_... adistack-conform check
 
 The `github` scope calls the GitHub REST API, so public repos work without a token until 401/403/rate-limit (then it skips); set `GITHUB_TOKEN` for private repos or rate limits (admin scope for `fix`).
 
-Next: [concepts](./concepts.md) explains what each result means.
+<Callout type="success" title="You're up and running">
+
+Next, [concepts](./concepts.md) explains what each result means — so your first red line reads as a to-do, not a mystery.
+
+</Callout>

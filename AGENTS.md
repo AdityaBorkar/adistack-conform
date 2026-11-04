@@ -38,5 +38,5 @@ bun run verify           # format && check:lint && check:types && test && build
 - Path alias `#/*` → `./src/*` (`package.json` `imports` + `tsconfig` `paths`). No `@/*`. Internal imports keep the `.js` suffix (e.g. `#/checks.js`).
 - `verbatimModuleSyntax` on — `import type` for type-only. Strict `noUnusedLocals`/`noUnusedParameters` — unused vars fail typecheck.
 - oxfmt: tabs, `printWidth` 100, sorted imports / `package.json` scripts.
-- oxlint: `correctness`/`pedantic`/`perf`/`suspicious` as error; `sort-keys` and `import/no-unassigned-import` as error; `https?://`, `npm:`, `jsr:` imports banned; no inline suppressions — exceptions live in `.oxlintrc.json` (`no-await-in-loop` off in `index`/`fix`/`config`/`stack/github`).
+- oxlint: `correctness`/`pedantic`/`perf`/`suspicious` as error; `sort-keys` and `import/no-unassigned-import` as error; `https?://`, `npm:`, `jsr:` imports banned; no inline suppressions — exceptions live in `.oxlintrc.json` (`no-await-in-loop` off in `index`/`fix`/`config`/`stack/github`, `prefer-top-level-await` off in `index`).
 - `bunfig.toml`: `ignore-scripts=true`, `exact=true`, `minimumReleaseAge=3d`.

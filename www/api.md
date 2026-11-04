@@ -1,17 +1,20 @@
 ---
 title: API
 description: JSON output, CheckResult shape, schemas, and building from source.
+icon: DocText
 ---
 
 There is no library API — the interface is the CLI plus the JSON Schemas. (`src/index.ts` is the Commander entrypoint; `package.json` `exports` it for tooling, not for import.)
 
 ## Scripting with `--json`
 
+Humans read lines; scripts read JSON:
+
 ```bash
 adistack-conform check --json --project-only > report.json
 ```
 
-Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` / exit code (`0` sync, `1` drift, `2` config error). Each `CheckResult`:
+Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` / exit code (<Badge variant="success">0 sync</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 config error</Badge>). Each `CheckResult`:
 
 ```jsonc
 {
@@ -30,11 +33,21 @@ Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` 
 }
 ```
 
-`fix --dry-run` exits 1 when anything is fixable, so `check --json` is the better probe and `fix --dry-run` the better preview.
+<Callout type="tip" title="Probe vs preview">
+
+`fix --dry-run` exits 1 when anything is fixable, so `check --json` is the better probe and `fix --dry-run` the better preview. Use each for what it is good at.
+
+</Callout>
 
 ## Schemas (Valibot source of truth)
 
-`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `github.ts`, `common.ts`, `import * as v from "valibot"`) generates `configuration_schema/*.json` via `bun run gen:json-schema` (also run by `bun run build`). Never hand-edit the generated files.
+`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `github.ts`, `common.ts`, `import * as v from "valibot"`) generates `configuration_schema/*.json` via `bun run gen:json-schema` (also run by `bun run build`).
+
+<Callout type="warning" title="Hands off the generated files">
+
+Never hand-edit the generated files. Change the Valibot source and regen.
+
+</Callout>
 
 | Schema                                       | Validates                                                   |
 | -------------------------------------------- | ----------------------------------------------------------- |

@@ -1,11 +1,48 @@
 ---
 title: Authoring
 description: Writing a tech-stack repo — registry, manifests, presets, and versioning.
+icon: Pencil
 ---
 
-A tech-stack repo is data-only: `registry.json` + blueprint directories. No build, no CI required.
+A tech-stack repo is data-only: `registry.json` + blueprint directories. No build, no CI required. If you can write JSON and lay out folders, you can author one.
 
 ## Layout
+
+<Files>
+
+<File name="registry.json" />
+
+<Folder name="projects">
+
+<Folder name="{name}">
+
+<File name="manifest.json" />
+
+</Folder>
+
+</Folder>
+
+<Folder name="$presets">
+
+<File name="{payload files}" />
+
+</Folder>
+
+<Folder name="machines/main">
+
+<File name="flake.nix" />
+
+<File name="home.nix" />
+
+<Folder name="files">
+
+<File name="{dotfile payloads}" />
+
+</Folder>
+
+</Folder>
+
+</Files>
 
 ```text
 registry.json
@@ -19,11 +56,22 @@ Reference the blueprint directories in `registry.json` (`machines[]` + `projects
 
 ## Rules
 
-- `registry.json` and every `manifest.json` are strict JSON — check with `python3 -m json.tool <file>`. Payload files under `$presets/` are tool-consumed and not all strict JSON (e.g. `biome.json` has a trailing comma) — don't "fix" those.
+<Callout type="error" title="Strict JSON, except where it isn't">
+
+`registry.json` and every `manifest.json` are strict JSON — check with `python3 -m json.tool <file>`. Payload files under `$presets/` are tool-consumed and not all strict JSON (e.g. `biome.json` has a trailing comma) — don't "fix" those.
+
+</Callout>
+
 - `$schema` fields point at `https://stack.adityab.tech/conform/<VERSION>/schemas/<registry|project-manifest>.json`.
 - Machine edits: new dotfiles go under `machines/main/files/` + an entry in `home.nix` (`home.file`), except the six sops-templated files (AWS credentials, `gh/hosts.yml`, `.npmrc`, eas `user-settings.json`, opencode `opencode.json`, `.wakatime.cfg`) which are rendered by `sops.templates` and must not be added to `home.file`. Templates use `@@NAME@@` placeholders; real values live only in sops-encrypted `secrets.yaml`.
 - The machine flake reads `GIT_NAME` / `GIT_EMAIL` via `getEnv` and throws without them — evaluation needs `--impure` plus those env vars, and `homeConfigurations` defaults to `$USER` when `machine.configuration` is omitted.
 
 ## Versioning and rollout
 
-Consumers pin `source.ref` (branch, tag, or commit). Publish a tag for breaking preset changes and let repos adopt it deliberately; keep `main` moving for small fixes. Since the CLI has no local cache, pushing a preset change takes effect on the next `check` — verify generated-project order after rollout: `bun format && bun check:lint && bun check:types && bun run build`.
+Consumers pin `source.ref` (branch, tag, or commit). Publish a tag for breaking preset changes and let repos adopt it deliberately; keep `main` moving for small fixes. Since the CLI has no local cache, pushing a preset change takes effect on the next `check`.
+
+<Callout type="tip" title="After rollout">
+
+Verify generated-project order after rollout: `bun format && bun check:lint && bun check:types && bun run build`.
+
+</Callout>

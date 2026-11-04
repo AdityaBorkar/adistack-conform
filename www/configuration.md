@@ -1,7 +1,10 @@
 ---
 title: Configuration
 description: conform.json reference — source, project, and machine sections plus loading rules.
+icon: Gear
 ---
+
+Your whole setup in one file. Most repos need fewer than ten lines:
 
 ```jsonc
 {
@@ -13,9 +16,11 @@ description: conform.json reference — source, project, and machine sections pl
 }
 ```
 
-Validate with `./configuration_schema/conform.json` (generated from Valibot schemas — never hand-edit, regen via `bun run gen:json-schema`).
+Validate against `./configuration_schema/conform.json` (generated from Valibot schemas — never hand-edit it, regen with `bun run gen:json-schema`).
 
-## `source` (required)
+## `source` <Badge variant="error">required</Badge>
+
+Where your blueprints live.
 
 | Field  | Required | Default  | Meaning                                                                   |
 | ------ | -------- | -------- | ------------------------------------------------------------------------- |
@@ -23,26 +28,32 @@ Validate with `./configuration_schema/conform.json` (generated from Valibot sche
 | `repo` | yes      | —        | `owner/repo` holding project blueprints and machine nix flakes.           |
 | `ref`  | no       | `"main"` | Branch, tag, or commit to download. Pin a tag/commit for reproducibility. |
 
-Refs containing `/` work — plain path segments in `raw.githubusercontent.com` URLs, `encodeURIComponent`-escaped in flake URLs.
+<Callout type="tip" title="Pin your ref">
 
-## `project` (optional, at least one of `project` / `machine` / `github` required)
+Refs containing `/` work — plain path segments in `raw.githubusercontent.com` URLs, `encodeURIComponent`-escaped in flake URLs. `main` moves; a tag does not. Pin a tag once you like what you see.
+
+</Callout>
+
+## `project` <Badge variant="muted">optional</Badge>
+
+At least one of `project` / `machine` / `github` is required — omit the others to track fewer scopes.
 
 | Field       | Meaning                                                                                                                                                  |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `blueprint` | Project blueprint matching a tech-stack root `registry.json` `projects[]` entry — by entry `name`, entry `path`, or directory basename (e.g. `cli-app`). |
 
-Project targets resolve against the cwd, so run from the directory that owns `conform.json`.
+Project targets resolve against your cwd, so run from the directory that owns `conform.json`.
 
-## `machine` (optional)
+## `machine` <Badge variant="muted">optional</Badge>
 
 | Field           | Meaning                                                                                                                                     |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `blueprint`     | Machine blueprint matching a `registry.json` `machines[]` entry — by entry `name`, entry `path`, or flake directory basename (e.g. `main`). |
-| `configuration` | Optional `homeConfigurations` attribute to switch to (e.g. `adityab`). Omit it and home-manager auto-selects from `$USER`.                  |
+| `configuration` | Optional `homeConfigurations` attribute to switch to (e.g. `adityab`). Omit it and `home-manager` auto-selects from `$USER`.                |
 
 Machines are entirely nix-managed. See [blueprints](./blueprints.md) for matching details and flake-dir resolution.
 
-## `github` (optional)
+## `github` <Badge variant="muted">optional</Badge>
 
 | Field       | Required | Default                                              | Meaning                                                                                      |
 | ----------- | -------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -53,7 +64,7 @@ The golden is the preset file referenced by the blueprint `manifest.json` `githu
 
 ## Loading rules
 
-- Without `--config`, `check` / `fix` walk up from the cwd to find `conform.json`; missing file exits 2.
-- With `--config <path>`, any path is accepted. The path may use `~` (`untildify`) and resolves against the cwd.
+- Without `--config`, `check` / `fix` walk up from your cwd to find `conform.json`; a missing file exits 2.
+- With `--config <path>`, any path is accepted. The path may use `~` (`untildify`) and resolves against your cwd.
 - Invalid JSON or schema violations print a `valibot` summary and exit 2.
 - `--project-only` / `--machine-only` / `--github-only` filter at run time; omitting the other scopes from `conform.json` has the same effect permanently.
