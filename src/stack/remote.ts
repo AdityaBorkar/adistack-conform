@@ -3,7 +3,6 @@ import type * as z from "zod";
 import { GithubSchema } from "#/schemas/github-settings.js";
 import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
-import { parseJsonc } from "#/stack/check.js";
 import type { ManifestFile, ManifestFileStructure, RegistryDocument } from "#/stack/registry.js";
 import {
 	findGithubEntry,
@@ -13,6 +12,7 @@ import {
 	blueprintRel,
 } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
+import { parseJsonc } from "#/utils/jsonc.js";
 import { FETCH_TIMEOUT_MS, authHeaders, encodePathSegments } from "#/utils/net.js";
 import { parseOrThrow } from "#/utils/schema.js";
 

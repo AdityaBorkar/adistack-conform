@@ -1,5 +1,3 @@
-import { writeFileEnsuringDir } from "#/utils/fs.js";
-
 export type CheckScope = "project" | "machine" | "github";
 
 export interface OverwriteFileFix {
@@ -107,28 +105,4 @@ export function describeFix(result: CheckResult): string {
 		return `api ${fix.label}`;
 	}
 	return `run ${fix.command} ${fix.args.join(" ")}`.trim();
-}
-
-export async function applyFix(result: CheckResult): Promise<void> {
-	if (!result.fix) {
-		throw new Error(`Result ${result.id} is not fixable.`);
-	}
-	if (result.fix.kind === "github-api") {
-		const { applyGithubApiFix } = await import("#/stack/github");
-		await applyGithubApiFix(result.fix);
-		return;
-	}
-	if (result.fix.kind === "overwrite-file") {
-		await writeFileEnsuringDir(result.fix.filePath, result.fix.newContent);
-		return;
-	}
-	const proc = Bun.spawn([result.fix.command, ...result.fix.args], {
-		stderr: "inherit",
-		stdin: "inherit",
-		stdout: "inherit",
-	});
-	const code = await proc.exited;
-	if (code !== 0) {
-		throw new Error(`Command failed with exit code ${code}: ${result.fix.label}`);
-	}
 }

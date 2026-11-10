@@ -82,6 +82,6 @@ bun run dev              # bun ./src/index.ts
 bun run verify           # format && check:lint && check:types && test (gate before pushing)
 ```
 
-- `src/index.ts` is the Commander entrypoint (`check`, `fix`, `validate`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`/`validate`), `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`), `src/schemas/` (`github.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
+- `src/index.ts` is Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`apply`), `validate`), `src/config.ts`, `src/utils/` (`run`/`result`/`diff`/`jsonc` plus generic helpers), `src/stack/` (`project`/`project-compare`/`machine`/`github`/`github-api`/`registry`/`remote`), `src/schemas/` (`github.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
 - `configuration_schema/*.json` is generated — never hand-edit (regen via `bun run gen:json-schema` / `build`). Compiled binary lands in `.output/`.
 - Conventions: `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` where type-only, tabs + width 100, no `npm`/`npx` (always `bun run <script>`). Reference blueprints live at `~/repo/tech-stack` — read `registry.json`/blueprint files directly instead of guessing.

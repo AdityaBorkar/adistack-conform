@@ -1,8 +1,12 @@
-import type { LoadedDesiredState } from "#/config.js";
+import type { Command } from "commander";
+
 import { findMachineEntry } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
 import { fetchGithubSettings, fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
+import type { LoadedDesiredState } from "#/utils/config.js";
 import { errorMessage } from "#/utils/fs.js";
+import { okMark } from "#/utils/output.js";
+import { loadDesiredStatesFromCommand } from "#/utils/run.js";
 
 export interface ValidateResult {
 	error?: string;
@@ -133,4 +137,23 @@ export async function validateTargets(
 		}),
 	);
 	return perKey.flat();
+}
+
+export async function runValidateCommand(cmd: Command): Promise<number> {
+	const desiredStates = await loadDesiredStatesFromCommand(cmd);
+	const results = await validateTargets(collectValidateTargets(desiredStates));
+	for (const result of results) {
+		if (result.ok) {
+			console.log(`${okMark(true)} ${result.file}`);
+		} else {
+			console.log(`${okMark(false)} ${result.file}\n    ${result.error ?? "invalid"}`);
+		}
+	}
+	const invalid = results.filter((item) => !item.ok).length;
+	if (invalid === 0) {
+		console.log(`\nAll ${results.length} tech-stack file(s) valid.`);
+		return 0;
+	}
+	console.log(`\nValidate: ${results.length - invalid} valid, ${invalid} invalid.`);
+	return 1;
 }

@@ -1,10 +1,10 @@
-import type { CheckBase, CheckResult } from "#/checks.js";
-import { failFixable, failManual, pass } from "#/checks.js";
-import type { MachineRunState } from "#/config.js";
 import { findMachineEntry, machineNotFoundError, blueprintDirRel } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
+import type { MachineRunState } from "#/utils/config.js";
 import { errorMessage } from "#/utils/fs.js";
 import { encodePathSegments } from "#/utils/net.js";
+import type { CheckBase, CheckResult } from "#/utils/result.js";
+import { failFixable, failManual, pass } from "#/utils/result.js";
 
 const SWITCH_TIMEOUT_MS = 10 * 60_000;
 const OUTPUT_TAIL_CHARS = 4000;

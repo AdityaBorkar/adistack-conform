@@ -1,6 +1,4 @@
-import { failManual, type CheckResult, type CheckScope } from "#/checks.js";
-import type { ProjectRunState } from "#/config.js";
-import { checkFileStructureEntry, checkProjectFileWithGolden } from "#/stack/check.js";
+import { checkFileStructureEntry, checkProjectFileWithGolden } from "#/stack/project-compare.js";
 import type {
 	ManifestCompare,
 	ManifestFile,
@@ -10,7 +8,9 @@ import type {
 import { resolveSourceRel } from "#/stack/registry.js";
 import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
+import type { ProjectRunState } from "#/utils/config.js";
 import { errorMessage, resolveTargetPath } from "#/utils/fs.js";
+import { failManual, type CheckResult, type CheckScope } from "#/utils/result.js";
 
 export const GOLDEN_FETCH_CONCURRENCY = 16;
 

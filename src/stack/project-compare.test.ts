@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checkProjectFileWithGolden } from "#/stack/check.js";
+import { checkProjectFileWithGolden } from "#/stack/project-compare.js";
 
 function tmp(name: string): string {
 	return join(tmpdir(), `conform-test-${process.pid}-${name}`);

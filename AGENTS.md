@@ -11,7 +11,7 @@ CLI runtime behavior (flags, exit codes, scopes, fix flow) lives in `skills/adis
 ```bash
 bun install
 bun run dev -- check        # run CLI from source (bun ./src/index.ts); pass check/fix args after --
-bun test                    # all tests (src/**/*.test.ts); single file: bun test src/checks.test.ts
+bun test                    # all tests (src/**/*.test.ts); single file: bun test src/utils/result.test.ts
 bun run build               # regen configuration_schema/ + compile --minify --bytecode to .output/
 bun run gen:json-schema     # regen schemas only, without compiling
 bun run format              # oxfmt — writes in place
@@ -34,13 +34,13 @@ bun run verify              # format && check:lint && check:types && test — fu
 
 ## Layout
 
-- `src/index.ts` — Commander entrypoint (`check`, `fix`, `validate`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`; `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`/`validate`); `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`); `src/schemas/` (`conform`/`registry`/`project-manifest`/`github-settings` — Zod source of truth).
+- `src/index.ts` — Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`apply`), `validate`); `src/config.ts`; `src/utils/` (`run`/`result`/`diff`/`jsonc`/`concurrency`/`fs`/`net`/`output`/`schema`); `src/stack/` (`project`/`project-compare`/`machine`/`github`/`github-api`/`registry`/`remote`); `src/schemas/` (`conform`/`registry`/`project-manifest`/`github-settings` — Zod source of truth).
 - `.output/` is gitignored build output.
 - This repo dogfoods itself: `conform.json` tracks `AdityaBorkar/tech-stack@<ref>` — read it for the current scopes, don't assume. Reference blueprints/registry live at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read `registry.json`/blueprint files directly instead of guessing.
 
 ## Conventions
 
-- Path alias `#/*` → `./src/*` (`package.json` `imports` + `tsconfig` `paths`). No `@/*`. Internal imports keep the `.js` suffix (e.g. `#/checks.js`).
+- Path alias `#/*` → `./src/*` (`package.json` `imports` + `tsconfig` `paths`). No `@/*`. Internal imports keep the `.js` suffix (e.g. `#/utils/result.js`).
 - `verbatimModuleSyntax` on — `import type` for type-only. Strict `noUnusedLocals`/`noUnusedParameters` — unused vars fail typecheck.
 - oxfmt: tabs, `printWidth` 100, sorted imports / `package.json` scripts.
-- oxlint: `correctness`/`pedantic`/`perf`/`suspicious` as error; `sort-keys` and `import/no-unassigned-import` as error; `https?://`, `npm:`, `jsr:` imports banned; no inline suppressions — exceptions live in `.oxlintrc.json` (`no-await-in-loop` off only in `src/index.ts`, `src/stack/github.ts`, `src/fix.ts`, `src/config.ts`; `prefer-top-level-await` off in `src/index.ts`).
+- oxlint: `correctness`/`pedantic`/`perf`/`suspicious` as error; `sort-keys` and `import/no-unassigned-import` as error; `https?://`, `npm:`, `jsr:` imports banned; no inline suppressions — exceptions live in `.oxlintrc.json` (`no-await-in-loop` off only in `src/stack/github-api.ts`, `src/commands/fix/apply.ts`, `src/config.ts`; `prefer-top-level-await` off in `src/index.ts`).

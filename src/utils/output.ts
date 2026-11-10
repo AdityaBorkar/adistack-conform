@@ -1,7 +1,8 @@
 import pc from "picocolors";
 
-import type { CheckResult, CheckScope } from "#/checks.js";
-import { desiredContent, isFixable, partitionResults } from "#/checks.js";
+import { renderDiff } from "#/utils/diff.js";
+import type { CheckResult, CheckScope } from "#/utils/result.js";
+import { desiredContent, isFixable, partitionResults } from "#/utils/result.js";
 
 export function okMark(ok: boolean): string {
 	return ok ? pc.green("✓") : pc.red("✗");
@@ -141,8 +142,7 @@ export function printDryRun(fixable: CheckResult[], elapsedMs?: number): void {
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
-export async function renderFixDiffs(fixable: CheckResult[]): Promise<void> {
-	const { renderDiff } = await import("#/diff.js");
+export function renderFixDiffs(fixable: CheckResult[]): void {
 	const rendered = fixable.map((item) => {
 		if (item.fix?.kind === "run-command") {
 			return `\nrun ${item.id} (${item.target})\n${item.fix.label}`;
