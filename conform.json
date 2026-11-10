@@ -3,6 +3,9 @@
 	"project": {
 		"blueprint": "cli-app"
 	},
+	"github": {
+		"blueprint": "npm-package"
+	},
 	"source": {
 		"type": "github",
 		"ref": "main",

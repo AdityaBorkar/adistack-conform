@@ -17,6 +17,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,4 +42,4 @@ jobs:
         with:
           create-github-releases: true
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

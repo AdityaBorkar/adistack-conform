@@ -135,6 +135,54 @@ async function apiJsonPaged(path: string): Promise<unknown[]> {
 	return all;
 }
 
+async function apiEnabled(path: string): Promise<boolean> {
+	const headers = apiHeaders();
+	let response: Response;
+	try {
+		response = await fetch(`${GITHUB_API}${path}`, {
+			headers,
+			method: "GET",
+			signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+		});
+	} catch (error) {
+		throw new Error(`Cannot reach GitHub API GET ${path}: ${errorMessage(error)}`, {
+			cause: error,
+		});
+	}
+	if (response.status === 404) {
+		return false;
+	}
+	if (!response.ok) {
+		const excerpt = (await response.text().catch(() => "")).slice(0, 300);
+		if (response.status === 401 || response.status === 403) {
+			throw new ApiError(
+				response.status,
+				`GitHub API refused GET ${path}: HTTP ${response.status} (private repo or rate limit — set GITHUB_TOKEN). ${excerpt}`,
+			);
+		}
+		throw new ApiError(
+			response.status,
+			`GitHub API GET ${path} failed: HTTP ${response.status}. ${excerpt}`,
+		);
+	}
+	return true;
+}
+
+export function normalizeAllowedActions(value: string): string {
+	return value.replace("-", "_");
+}
+
+export function forkApprovalPolicy(approvalForExternal: boolean): string {
+	return approvalForExternal ? "all_external_contributors" : "first_time_contributors";
+}
+
+export function isPrivateVulnEnabled(body?: unknown): boolean {
+	if (typeof (body as { enabled?: unknown } | undefined)?.["enabled"] === "boolean") {
+		return (body as { enabled: boolean }).enabled;
+	}
+	return body !== undefined;
+}
+
 export async function applyGithubApiFix(fix: GithubApiFix): Promise<void> {
 	if (githubToken() === undefined) {
 		throw new Error(`Cannot apply ${fix.label}: set GITHUB_TOKEN with repo/admin scope.`);
@@ -725,6 +773,20 @@ async function checkReviews(
 	if (diffs.length === 0) {
 		return pass(base, "code reviews match", "code reviews match");
 	}
+	// Enabling push restrictions from scratch needs a user/team allowlist the
+	// boolean schema cannot express; the API rejects empty teams/users.
+	if (
+		golden.reviews.restrictPushes &&
+		!isRestrictionsEnabled(read.protection?.["restrictions"]) &&
+		diffs.some((entry) => entry.startsWith("restrict_pushes"))
+	) {
+		return failManual(
+			base,
+			diffSummary(diffs),
+			"code reviews match",
+			"Add a push allowlist (users/teams) in Settings → Branches, then re-run check.",
+		);
+	}
 	const input = protectionInput(golden);
 	const steps: GithubApiStep[] = [
 		{
@@ -814,7 +876,7 @@ async function checkActionsPermissions(
 		}
 	};
 	compare("enabled", true);
-	compare("allowed_actions", golden.actions.allowed);
+	compare("allowed_actions", normalizeAllowedActions(golden.actions.allowed));
 	compare("sha_pinning_required", golden.actions.shaPinningRequired);
 	if (diffs.length === 0) {
 		return pass(base, "actions permissions match", "actions permissions match");
@@ -856,7 +918,8 @@ async function checkActionsWorkflow(
 	};
 	compare("default_workflow_permissions", golden.actions.defaultWorkflowPermissions);
 	compare("can_approve_pull_request_reviews", golden.actions.allowApprovePRs);
-	let forkNote = "";
+	const wantFork = forkApprovalPolicy(golden.actions.approvalForExternal);
+	let forkDiff = "";
 	try {
 		const fork = (await apiJson(
 			repoPath(repo, "/actions/permissions/fork-pr-contributor-approval"),
@@ -865,48 +928,52 @@ async function checkActionsWorkflow(
 			},
 		)) as Record<string, unknown> | undefined;
 		if (fork !== undefined) {
-			const want = golden.actions.approvalForExternal ? "all" : "first-contribution-only";
 			const have = String(fork["approval_policy"] ?? fork["policy"] ?? "unknown");
-			if (have !== want) {
-				forkNote = `fork approval: ${have} → ${want} (set in Settings → Actions → General)`;
+			const forkOk = golden.actions.approvalForExternal
+				? have === wantFork
+				: have === "first_time_contributors" || have === "first_time_contributors_new_to_github";
+			if (!forkOk) {
+				forkDiff = `fork approval: ${have} → ${wantFork}`;
 			}
 		}
 	} catch (error) {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-			forkNote = "";
+			forkDiff = "";
 		} else if (error instanceof ApiError && error.status === 404) {
-			forkNote = "";
+			forkDiff = "";
 		} else {
 			throw error;
 		}
 	}
-	if (diffs.length === 0 && forkNote === "") {
+	if (diffs.length === 0 && forkDiff === "") {
 		return pass(base, "workflow permissions match", "workflow permissions match");
 	}
-	if (diffs.length === 0) {
-		return failManual(
-			base,
-			forkNote,
-			"external approval matches",
-			"Set fork PR approval in Settings → Actions → General, then re-run check.",
-		);
+	const steps: GithubApiStep[] = [];
+	if (diffs.length > 0) {
+		steps.push({ body, method: "PUT", path: repoPath(repo, "/actions/permissions/workflow") });
+	}
+	if (forkDiff !== "") {
+		steps.push({
+			body: { approval_policy: wantFork },
+			method: "PUT",
+			path: repoPath(repo, "/actions/permissions/fork-pr-contributor-approval"),
+		});
 	}
 	const fix: GithubApiFix = {
 		kind: "github-api",
 		label: `github PUT ${repo} workflow permissions`,
-		steps: [{ body, method: "PUT", path: repoPath(repo, "/actions/permissions/workflow") }],
+		steps,
 	};
-	const result = failFixable(
+	return failFixable(
 		base,
-		forkNote === "" ? diffSummary(diffs) : `${diffSummary(diffs)}; ${forkNote}`,
+		forkDiff === ""
+			? diffSummary(diffs)
+			: diffs.length === 0
+				? forkDiff
+				: `${diffSummary(diffs)}; ${forkDiff}`,
 		"workflow permissions match",
 		fix,
 	);
-	if (forkNote !== "") {
-		result.hint =
-			"Fix covers workflow permissions; set fork PR approval in Settings → Actions → General.";
-	}
-	return result;
 }
 
 async function checkActionsRetention(
@@ -1060,8 +1127,6 @@ async function checkSecurity(
 	};
 	compareSecurity("secret_scanning", golden.security.secretProtection);
 	compareSecurity("secret_scanning_push_protection", golden.security.pushProtection);
-	// Dependency graph has no toggle API; only enforce keys the API reports.
-	compareSecurity("dependency_graph", golden.security.dependencyGraph);
 	const steps: GithubApiStep[] = [];
 	if (Object.keys(patch).length > 0) {
 		steps.push({
@@ -1071,10 +1136,10 @@ async function checkSecurity(
 		});
 	}
 	try {
-		const vuln = await apiJson(repoPath(repo, "/private-vulnerability-reporting"), {
+		const vuln = (await apiJson(repoPath(repo, "/private-vulnerability-reporting"), {
 			allowStatuses: [404],
-		});
-		const enabled = vuln !== undefined;
+		})) as { enabled?: unknown } | undefined;
+		const enabled = isPrivateVulnEnabled(vuln);
 		if (enabled !== golden.security.privateVulnerabilityReporting) {
 			diffs.push(
 				`private_vulnerability_reporting: ${String(enabled)} → ${String(golden.security.privateVulnerabilityReporting)}`,
@@ -1101,15 +1166,14 @@ async function checkSecurity(
 		const dependabot = (await apiJson(repoPath(repo, "/automated-security-fixes"), {
 			allowStatuses: [404],
 		})) as { enabled?: unknown; paused?: unknown } | undefined;
-		if (dependabot !== undefined) {
-			const enabled = dependabot["enabled"] === true && dependabot["paused"] !== true;
-			if (enabled !== golden.security.dependabot) {
-				diffs.push(`dependabot: ${String(enabled)} → ${String(golden.security.dependabot)}`);
-				steps.push({
-					method: golden.security.dependabot ? "PUT" : "DELETE",
-					path: repoPath(repo, "/automated-security-fixes"),
-				});
-			}
+		const enabled =
+			dependabot !== undefined && dependabot["enabled"] === true && dependabot["paused"] !== true;
+		if (enabled !== golden.security.dependabot) {
+			diffs.push(`dependabot: ${String(enabled)} → ${String(golden.security.dependabot)}`);
+			steps.push({
+				method: golden.security.dependabot ? "PUT" : "DELETE",
+				path: repoPath(repo, "/automated-security-fixes"),
+			});
 		}
 	} catch (error) {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
@@ -1117,6 +1181,31 @@ async function checkSecurity(
 				skipped(
 					baseFor(blueprint, "security-dependabot", target),
 					"cannot read Dependabot status",
+					"set GITHUB_TOKEN to verify",
+				),
+			);
+		} else {
+			throw error;
+		}
+	}
+	try {
+		// PUT /vulnerability-alerts enables dependency alerts and the dependency graph together.
+		const graphOn = await apiEnabled(repoPath(repo, "/vulnerability-alerts"));
+		if (graphOn !== golden.security.dependencyGraph) {
+			diffs.push(
+				`dependency_graph: ${String(graphOn)} → ${String(golden.security.dependencyGraph)}`,
+			);
+			steps.push({
+				method: golden.security.dependencyGraph ? "PUT" : "DELETE",
+				path: repoPath(repo, "/vulnerability-alerts"),
+			});
+		}
+	} catch (error) {
+		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+			notes.push(
+				skipped(
+					baseFor(blueprint, "security-dependency-graph", target),
+					"cannot read dependency graph status",
 					"set GITHUB_TOKEN to verify",
 				),
 			);
@@ -1216,16 +1305,21 @@ function checkUiOnly(blueprint: string, golden: GithubSettings, target: string):
 			`archive toggles unverifiable via API (${archiveWant.join(", ")})`,
 			"verify in Settings → General → Archives/Pushes",
 		),
+		skipped(
+			baseFor(blueprint, "copilot-autofix", target),
+			`Copilot Autofix toggle unverifiable via API (want ${golden.security.copilotAutofix ? "on" : "off"})`,
+			`verify Copilot Autofix is ${golden.security.copilotAutofix ? "on" : "off"} in Settings → Code security`,
+		),
+		...(golden.security.dependencyAutoSubmit
+			? [
+					skipped(
+						baseFor(blueprint, "dependency-auto-submit", target),
+						"dependency auto-submit unverifiable via repo API",
+						"verify automatic dependency submission in Settings → Code security",
+					),
+				]
+			: []),
 	);
-	if (!golden.security.copilotAutofix) {
-		results.push(
-			skipped(
-				baseFor(blueprint, "copilot-autofix", target),
-				"Copilot Autofix toggle unverifiable via API",
-				"verify Copilot Autofix is off in Settings → Code security",
-			),
-		);
-	}
 	return results;
 }
 

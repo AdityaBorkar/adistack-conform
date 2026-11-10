@@ -144,12 +144,6 @@ export function machineNotFoundError(name: string, registry: RegistryDocument): 
 	);
 }
 
-export function githubNotFoundError(name: string, registry: RegistryDocument): Error {
-	return new Error(
-		`GitHub blueprint "${name}" not found in the tech-stack repo.${hint(listGithubBlueprintNames(registry), "github blueprints")}`,
-	);
-}
-
 // Repo-relative location of a project source file for raw fetches.
 export function resolveSourceRel(source: string): string {
 	if (source.startsWith("./") || source.startsWith("../")) {

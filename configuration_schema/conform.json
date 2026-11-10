@@ -12,7 +12,7 @@
 				"blueprint": {
 					"type": "string",
 					"minLength": 1,
-					"description": "GitHub settings blueprint name, e.g. cli-app (reads the manifest github settings)."
+					"description": "GitHub settings blueprint name, e.g. npm-package (registry github_configs entry)."
 				},
 				"repo": {
 					"type": "string",

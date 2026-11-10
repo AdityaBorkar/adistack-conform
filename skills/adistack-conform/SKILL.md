@@ -62,9 +62,9 @@ Machine (single result, id `nix:<blueprint>`):
 
 GitHub (fixed check list, id `github:<blueprint>:<name>`, kind `github`):
 
-- Golden is the settings file listed in `registry.json` `github_configs` (e.g. `github-configs/<name>.json`); the CLI compares it against live repo settings via the GitHub REST API (needs `GITHUB_TOKEN`). Covers general/repo settings, immutable releases, CODEOWNERS, issue templates, required PR checks, code reviews/push restrictions, rulesets presence, Actions permissions/workflow/retention/OIDC, environments, Advanced Security, and secrets/variables presence. `actions-oidc` always skips; OIDC 404 and goldens that do not require a check skip too.
+- Golden is the settings file listed in `registry.json` `github_configs` (e.g. `github-configs/<name>.json`); the CLI compares it against live repo settings via the GitHub REST API (needs `GITHUB_TOKEN`). Covers general/repo settings, immutable releases, CODEOWNERS, issue templates, required PR checks, code reviews/push restrictions, rulesets presence, Actions permissions/workflow (incl. fork PR approval)/retention/OIDC, environments, Advanced Security (incl. dependency graph via vulnerability alerts), and secrets/variables presence. `actions-oidc` always skips; OIDC 404 and goldens that do not require a check skip too.
 - Fixes are kind `github-api` (multi-step REST calls, needs admin-scoped `GITHUB_TOKEN`).
-- Skipped with a UI hint (still exit 0): items with no public API — social preview, archive toggles, Copilot Autofix, agent suggestions, OIDC-only checks. Whole-scope or per-check 401/403 auth failures also skip. Follow the hint in the GitHub web UI. `internal-error` results carry no `source` (`target` is the scope name).
+- Skipped with a UI hint (still exit 0): items with no public API — social preview, archive toggles, Copilot Autofix, dependency auto-submit, agent suggestions, OIDC-only checks. Whole-scope or per-check 401/403 auth failures also skip. Follow the hint in the GitHub web UI. `internal-error` results carry no `source` (`target` is the scope name).
 
 ## Agent workflow
 

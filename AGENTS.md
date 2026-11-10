@@ -21,7 +21,7 @@ bun run review:knip         # knip (unused deps/exports/files) — NOT part of v
 bun run verify              # format && check:lint && check:types && test — full gate before pushing (no build; run build separately for the compiled binary)
 ```
 
-- Always `bun run <script>`, never `npm`/`npx` (`bunfig.toml` sets `shell = "bun"`). `bunfig.toml` also pins `ignore-scripts=true`, `exact=true`, `minimumReleaseAge=3d`.
+- Run scripts with `bun run <script>` (repo shorthand `bun <script>` also appears in `package.json`), never `npm`/`npx` (`bunfig.toml` sets `shell = "bun"`). `bunfig.toml` also pins `ignore-scripts=true`, `exact=true`, `minimumReleaseAge=3d`.
 - `verify` order matters: `format` first since it rewrites. CI (`pr.yml`) runs `bun run verify` on PRs to `stable`.
 - Never hand-edit `configuration_schema/*.json` — generated from `src/schemas/*` by `scripts/generate-json-schema.ts` (via `build` or `gen:json-schema`).
 - Pre-commit runs `bun fmt --staged` (Bun's builtin formatter, not oxfmt). Commits must pass commitlint with types restricted to `chore docs feat fix refactor release revert test` (no `ci:`, `style:`, etc.).
@@ -34,7 +34,7 @@ bun run verify              # format && check:lint && check:types && test — fu
 
 ## Layout
 
-- `src/index.ts` — Commander entrypoint (`check`, `fix`, `validate`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`; `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`/`validate`); `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`); `src/schemas/` (Zod source of truth, `github.ts` included).
+- `src/index.ts` — Commander entrypoint (`check`, `fix`, `validate`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`; `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`/`validate`); `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`); `src/schemas/` (`conform`/`registry`/`project-manifest`/`github-manifest` — Zod source of truth).
 - `.output/` is gitignored build output.
 - This repo dogfoods itself: `conform.json` tracks `AdityaBorkar/tech-stack@<ref>` — read it for the current scopes, don't assume. Reference blueprints/registry live at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read `registry.json`/blueprint files directly instead of guessing.
 

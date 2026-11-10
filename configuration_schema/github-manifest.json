@@ -18,8 +18,8 @@
 				"allowed": {
 					"default": "all",
 					"type": "string",
-					"enum": ["all", "local-only", "selected"],
-					"description": "Which actions and reusable workflows may run."
+					"enum": ["all", "local_only", "selected"],
+					"description": "Which actions and reusable workflows may run (GitHub API values)."
 				},
 				"approvalForExternal": {
 					"default": true,

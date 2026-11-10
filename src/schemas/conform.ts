@@ -29,7 +29,7 @@ const ConformGithubSectionSchema = z.object({
 	blueprint: z
 		.string()
 		.min(1)
-		.describe("GitHub settings blueprint name, e.g. cli-app (reads the manifest github settings)."),
+		.describe("GitHub settings blueprint name, e.g. npm-package (registry github_configs entry)."),
 	repo: z
 		.string()
 		.regex(/^[^/\s]+\/[^/\s]+$/u)

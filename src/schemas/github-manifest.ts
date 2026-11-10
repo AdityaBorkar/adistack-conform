@@ -1,9 +1,5 @@
 import * as z from "zod";
 
-// Desired GitHub repo state, stored as settings files listed in the registry
-// `github_configs` map (e.g. github-configs/*.json).
-// Every field maps to a GitHub REST endpoint; fields with no public API are
-// reported as skipped/manual with a UI hint instead of failing forever.
 export const GithubSchema = z.compile(
 	z.object({
 		$schema: z
@@ -17,8 +13,8 @@ export const GithubSchema = z.compile(
 					.describe("Allow GitHub Actions to create and approve pull requests.")
 					.default(false),
 				allowed: z
-					.enum(["all", "local-only", "selected"])
-					.describe("Which actions and reusable workflows may run.")
+					.enum(["all", "local_only", "selected"])
+					.describe("Which actions and reusable workflows may run (GitHub API values).")
 					.default("all"),
 				approvalForExternal: z
 					.boolean()
