@@ -26,7 +26,7 @@ adistack-conform check [--json] [--verbose] [--project-only | --machine-only | -
 
 Output lists only failures plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | error`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
 
-Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 config error</Badge>. Drift includes unknown blueprints and registry/manifest fetch failures (reported as `<scope>:internal-error`); config errors are a missing file, invalid JSON/schema, or both scope flags.
+Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 config error</Badge>. Drift includes unknown blueprints and registry/blueprint fetch failures (reported as `<scope>:internal-error`); config errors are a missing file, invalid JSON/schema, or both scope flags.
 
 `--json` shape:
 
@@ -97,7 +97,7 @@ Check the tech-stack source itself, not your files:
 adistack-conform validate
 ```
 
-Validates `registry.json` plus the `manifest.json` of every configured project/`github` blueprint (machine blueprints check the registry entry only) at the pinned `source.repo@ref`. Prints one `✓`/`✗` line per file with the error detail.
+Validates `registry.json` plus the blueprint file of every configured project/`github` blueprint (machine blueprints check the registry entry only) at the pinned `source.repo@ref`. Prints one `✓`/`✗` line per file with the error detail.
 
 Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 config error</Badge>.
 

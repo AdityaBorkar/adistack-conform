@@ -1,6 +1,6 @@
 # GitHub scope checks live repo settings via REST with API fixes
 
-The `github` scope compares live repo settings against the preset file referenced by the blueprint `manifest.json` `github` key via the GitHub REST API (`src/stack/github.ts`, schemas in `src/schemas/github.ts`), because repo settings have no filesystem representation to diff; drift is fixed by multi-step `github-api` calls instead of file overwrites. Public repos work unauthenticated until 401/403/rate-limit (then the scope skips, still exit 0); private repos need `GITHUB_TOKEN`, fixes need admin scope.
+The `github` scope compares live repo settings against the preset file referenced by the blueprint `github` key via the GitHub REST API (`src/stack/github.ts`, schemas in `src/schemas/github.ts`), because repo settings have no filesystem representation to diff; drift is fixed by multi-step `github-api` calls instead of file overwrites. Public repos work unauthenticated until 401/403/rate-limit (then the scope skips, still exit 0); private repos need `GITHUB_TOKEN`, fixes need admin scope.
 
 ## Consequences
 

@@ -23,7 +23,8 @@ function dirKey(value: string): string {
 	const segments = normalizeEntryPath(value)
 		.split("/")
 		.filter((part) => part !== "");
-	return segments.at(-1) ?? "";
+	const base = segments.at(-1) ?? "";
+	return base.endsWith(".json") ? base.slice(0, -".json".length) : base;
 }
 
 function findEntry(name: string, entries: readonly RegistryEntry[]): RegistryEntry | undefined {
@@ -92,25 +93,27 @@ export function machineNotFoundError(name: string, registry: RegistryDocument): 
 	);
 }
 
-// Repo-relative form of a manifest source, for raw fetches.
-export function resolveSourceRel(source: string, dirRel: string): string {
+// Repo-relative location of a project source file for raw fetches.
+export function resolveSourceRel(source: string): string {
 	if (source.startsWith("./") || source.startsWith("../")) {
-		const parts: string[] = [];
-		for (const segment of [...dirRel.split("/"), ...source.split("/")]) {
-			if (segment === "" || segment === ".") {
-				continue;
-			}
-			if (segment === "..") {
-				parts.pop();
-				continue;
-			}
-			parts.push(segment);
-		}
-		return parts.join("/");
+		throw new Error(
+			`Source "${source}" must be repo-relative (e.g. projects/files/<group>/<file>); "./" and "../" prefixes are no longer supported.`,
+		);
 	}
 	return source.replace(/^\.\//u, "").replace(/^\/+/u, "");
 }
 
 export function manifestDirRel(entryPath: string): string {
 	return normalizeEntryPath(entryPath);
+}
+
+// Repo-relative location of the project blueprint file itself.
+export function manifestRel(entryPath: string): string {
+	const normalized = normalizeEntryPath(entryPath);
+	if (!normalized.endsWith(".json")) {
+		throw new Error(
+			`Registry entry "${entryPath}" must be a project blueprint file (e.g. ./projects/cli-app.json); directory entries are no longer supported.`,
+		);
+	}
+	return normalized;
 }

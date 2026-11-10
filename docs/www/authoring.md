@@ -4,7 +4,7 @@ description: Writing a tech-stack repo — registry, manifests, presets, and ver
 icon: Pencil
 ---
 
-A tech-stack repo is data-only: `registry.json` + blueprint directories. No build, no CI required. If you can write JSON and lay out folders, you can author one.
+A tech-stack repo is data-only: `registry.json` + blueprint files + payload files. No build, no CI required. If you can write JSON and lay out folders, you can author one.
 
 ## Layout
 
@@ -14,17 +14,13 @@ A tech-stack repo is data-only: `registry.json` + blueprint directories. No buil
 
 <Folder name="projects">
 
-<Folder name="{name}">
+<File name="{name}.json" />
 
-<File name="manifest.json" />
+<Folder name="files">
+
+<File name="{group}/{variant} payload files" />
 
 </Folder>
-
-</Folder>
-
-<Folder name="$presets">
-
-<File name="{payload files}" />
 
 </Folder>
 
@@ -46,19 +42,19 @@ A tech-stack repo is data-only: `registry.json` + blueprint directories. No buil
 
 ```text
 registry.json
-projects/<name>/manifest.json
-projects/$presets/<payload files>   # literal `$` — quote it in shell
+projects/<name>.json            # blueprint, e.g. projects/cli-app.json
+projects/files/<group>/<file>   # payload files copied into generated projects
 machines/main/{flake.nix,home.nix,…}
-machines/main/files/                 # dotfile payloads (sops templates read from here)
+machines/main/files/            # dotfile payloads (sops templates read from here)
 ```
 
-Reference the blueprint directories in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Manifest `files[]` use `source` relative to the manifest dir (`../$presets/<file>`) and `target` as the destination path in generated projects. Top-level `js` pins the toolchain (`pm` plus per-section package→version maps). A `files[]` entry may declare `compare` (`ignore[]`, `strip[]`, `pinned[]`, `versioned[]`) for semantic compare/fix rules — entries with `pinned`/`versioned` are templates whose goldens use `<...>` placeholders for per-project values (e.g. `package.json` `<package-name>`); a verbatim copy fails the check until every placeholder is replaced. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`).
+Reference the blueprints in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Project blueprint `files[]` use `source` repo-relative (e.g. `projects/files/<group>/<file>`) and `target` as the destination path in generated projects. Top-level `js` pins the toolchain (`pm` plus per-section package→version maps). A `files[]` entry may declare `compare` (`ignore[]`, `strip[]`, `versioned[]`) for semantic compare/fix rules — goldens holding `<...>` placeholders are templates with per-project slots (e.g. `package.json` `<package-name>`); a verbatim copy fails the check until every placeholder is replaced. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`).
 
 ## Rules
 
 <Callout type="error" title="Strict JSON, except where it isn't">
 
-`registry.json` and every `manifest.json` are strict JSON — check with `python3 -m json.tool <file>`. Payload files under `$presets/` are tool-consumed and not all strict JSON (e.g. `biome.json` has a trailing comma) — don't "fix" those.
+`registry.json` and every blueprint file are strict JSON — check with `python3 -m json.tool <file>`. Payload files under `projects/files/` are tool-consumed and not all strict JSON — don't "fix" those.
 
 </Callout>
 

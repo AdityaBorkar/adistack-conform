@@ -19,7 +19,7 @@
 					"path": {
 						"type": "string",
 						"minLength": 1,
-						"description": "Blueprint directory relative to the tech-stack root, e.g. ./projects/cli-app/."
+						"description": "Blueprint path relative to the tech-stack root: a project blueprint file (e.g. ./projects/cli-app.json) or a machine flake directory (e.g. ./machines/main/)."
 					}
 				},
 				"required": ["name", "path"]
@@ -39,7 +39,7 @@
 					"path": {
 						"type": "string",
 						"minLength": 1,
-						"description": "Blueprint directory relative to the tech-stack root, e.g. ./projects/cli-app/."
+						"description": "Blueprint path relative to the tech-stack root: a project blueprint file (e.g. ./projects/cli-app.json) or a machine flake directory (e.g. ./machines/main/)."
 					}
 				},
 				"required": ["name", "path"]

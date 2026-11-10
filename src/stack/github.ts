@@ -197,7 +197,7 @@ async function fetchGithubPreset(
 	if (manifest.github === undefined || manifest.github === "") {
 		return {};
 	}
-	const rel = resolveSourceRel(manifest.github, manifest.dirRel);
+	const rel = resolveSourceRel(manifest.github);
 	let text: string;
 	try {
 		text = await fetchTextOrThrow(rawUrl(id, ref, rel), `github preset ${rel}`);
@@ -1253,8 +1253,8 @@ export async function runGithubChecks(
 				failManual(
 					base,
 					"<preset reference missing>",
-					`"github" key in ${spec.blueprint}/manifest.json`,
-					`Point the manifest "github" key at a preset (e.g. "../$presets/github-configs/<name>.json", see configuration_schema/github.json), then re-run check.`,
+					`"github" key in the ${spec.blueprint} blueprint manifest`,
+					`Point the manifest "github" key at a preset (e.g. "projects/files/github-config/<name>.json", see configuration_schema/github.json), then re-run check.`,
 				),
 			];
 		}

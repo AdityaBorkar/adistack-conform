@@ -19,7 +19,7 @@ The tech-stack `registry.json` listing every project and machine blueprint by na
 _Avoid_: catalog, index
 
 **Manifest**:
-A project blueprint's `manifest.json` declaring its files, compare rules, file-structure entries, and toolchain deps.
+A project blueprint file (`projects/<name>.json`) declaring its files, compare rules, file-structure entries, and toolchain deps.
 _Avoid_: blueprint config, spec file
 
 ### Enforcement
@@ -63,7 +63,7 @@ A result that passes without enforcement because its target is docs-only, Window
 _Avoid_: ignored, passed
 
 **Template**:
-A manifest entry declaring `pinned`/`versioned` compare rules whose goldens hold `<...>` placeholders; a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields).
+A manifest entry whose golden holds `<...>` placeholders (or declaring `versioned` compare rules); each placeholder slot accepts any per-project value (non-empty, never placeholders), every other field must match the golden — a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields).
 _Avoid_: parameterized file
 
 **Internal**:

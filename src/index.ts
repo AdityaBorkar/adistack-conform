@@ -430,7 +430,7 @@ program
 
 program
 	.command("validate")
-	.description("Validate the tech-stack registry.json and blueprint manifest.json files.")
+	.description("Validate the tech-stack registry.json and blueprint files.")
 	.action(async (_cmdOptions: Record<string, never>, cmd: Command) => {
 		try {
 			process.exit(await runValidateCommand(cmd));

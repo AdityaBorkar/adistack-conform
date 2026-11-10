@@ -42,7 +42,6 @@ interface NeededFile {
 function collectNeeded(
 	blueprint: string,
 	files: ManifestFile[],
-	dirRel: string,
 	options: TechStackRunOptions,
 	onlyIds?: ReadonlySet<string>,
 ): { needed: NeededFile[]; skips: CheckResult[] } {
@@ -72,7 +71,7 @@ function collectNeeded(
 			fileName: file.name,
 			fileTarget: file.target,
 			sourceLabel: file.source,
-			sourceRel: resolveSourceRel(file.source, dirRel),
+			sourceRel: resolveSourceRel(file.source),
 			targetPath: resolveTargetPath(classified.path, options.baseDir, options.home),
 		});
 	}
@@ -157,13 +156,13 @@ async function runWithManifest(
 	registry: RegistryDocument,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const { dirRel, files, js, structure } = await fetchProjectManifest(
+	const { files, js, structure } = await fetchProjectManifest(
 		spec.id,
 		spec.ref,
 		spec.blueprint,
 		registry,
 	);
-	const { needed, skips } = collectNeeded(spec.blueprint, files, dirRel, options, onlyIds);
+	const { needed, skips } = collectNeeded(spec.blueprint, files, options, onlyIds);
 	const goldens = await fetchGoldens(spec.id, spec.ref, needed);
 	const enforced = await checkNeeded(needed, goldens, options.scope);
 	const structured = await checkFileStructure(spec.blueprint, files, structure, options, onlyIds);

@@ -38,9 +38,9 @@ Refs containing `/` work — plain path segments in `raw.githubusercontent.com` 
 
 At least one of `project` / `machine` / `github` is required — omit the others to track fewer scopes.
 
-| Field       | Meaning                                                                                                                                                  |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `blueprint` | Project blueprint matching a tech-stack root `registry.json` `projects[]` entry — by entry `name`, entry `path`, or directory basename (e.g. `cli-app`). |
+| Field       | Meaning                                                                                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `blueprint` | Project blueprint matching a tech-stack root `registry.json` `projects[]` entry — by entry `name`, entry `path`, or path basename without `.json` (e.g. `cli-app`). |
 
 Project targets resolve against your cwd, so run from the directory that owns `conform.json`.
 
@@ -55,12 +55,12 @@ Machines are entirely nix-managed. See [blueprints](./blueprints.md) for matchin
 
 ## `github` <Badge variant="muted">optional</Badge>
 
-| Field       | Required | Default                                              | Meaning                                                                                      |
-| ----------- | -------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `blueprint` | yes      | —                                                    | Blueprint whose `manifest.json` `github` key points at the settings preset (e.g. `cli-app`). |
-| `repo`      | no       | `$GITHUB_REPOSITORY`, then the cwd git origin remote | `owner/repo` whose settings are checked.                                                     |
+| Field       | Required | Default                                              | Meaning                                                                      |
+| ----------- | -------- | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `blueprint` | yes      | —                                                    | Blueprint whose `github` key points at the settings preset (e.g. `cli-app`). |
+| `repo`      | no       | `$GITHUB_REPOSITORY`, then the cwd git origin remote | `owner/repo` whose settings are checked.                                     |
 
-The golden is the preset file referenced by the blueprint `manifest.json` `github` key (e.g. `../$presets/github-configs/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit, then the scope skips (still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted.
+The golden is the preset file referenced by the blueprint `github` key (e.g. `projects/files/github-config/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit, then the scope skips (still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted.
 
 ## Loading rules
 

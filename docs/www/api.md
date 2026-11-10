@@ -49,12 +49,12 @@ Never hand-edit the generated files. Change the Zod source and regen.
 
 </Callout>
 
-| Schema                                       | Validates                                                   |
-| -------------------------------------------- | ----------------------------------------------------------- |
-| `configuration_schema/conform.json`          | Consumer `conform.json`                                     |
-| `configuration_schema/project-manifest.json` | Blueprint `manifest.json` in the tech-stack repo            |
-| `configuration_schema/registry.json`         | Tech-stack root `registry.json`                             |
-| `configuration_schema/github.json`           | Preset file referenced by a blueprint manifest `github` key |
+| Schema                                       | Validates                                                      |
+| -------------------------------------------- | -------------------------------------------------------------- |
+| `configuration_schema/conform.json`          | Consumer `conform.json`                                        |
+| `configuration_schema/project-manifest.json` | Blueprint file (`projects/<name>.json`) in the tech-stack repo |
+| `configuration_schema/registry.json`         | Tech-stack root `registry.json`                                |
+| `configuration_schema/github.json`           | Preset file referenced by a blueprint manifest `github` key    |
 
 ## Building
 

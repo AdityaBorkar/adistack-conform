@@ -1,6 +1,6 @@
 ---
 title: Blueprints
-description: registry.json layout and how blueprint names resolve to directories and flakes.
+description: registry.json layout and how blueprint names resolve to files and flakes.
 icon: Map
 ---
 
@@ -10,7 +10,7 @@ A tech-stack repo is just a directory of blueprints plus one index. That index i
 {
 	"$schema": "https://stack.adityab.tech/conform/<VERSION>/schemas/registry.json",
 	"machines": [{ "name": "Primary Developer Machine", "path": "./machines/main/" }],
-	"projects": [{ "name": "CLI", "path": "./projects/cli-app/" }],
+	"projects": [{ "name": "CLI", "path": "./projects/cli-app.json" }],
 }
 ```
 
@@ -30,13 +30,13 @@ Your `conform.json` `blueprint` matches by the first hit:
 
 <Step title="Normalized entry path">
 
-`./projects/cli-app/` ≡ `projects/cli-app`. Trailing slashes and leading `./` don't matter.
+`./projects/cli-app.json` ≡ `projects/cli-app.json`. Leading `./` doesn't matter (a trailing `/` marks a machine flake directory).
 
 </Step>
 
-<Step title="Directory basename">
+<Step title="Path basename (`.json` ignored)">
 
-`cli-app` matches the basename of an entry path. Short and usually unambiguous.
+`cli-app` matches the basename of an entry path, with a trailing `.json` stripped. Short and usually unambiguous.
 
 </Step>
 
@@ -56,7 +56,7 @@ Unknown names fail the run with the available names listed (exit 1, reported as 
 
 ## Project blueprints
 
-The entry `path` is the manifest directory: the CLI fetches `<dir>/manifest.json` from the tech-stack repo. See [presets](./presets.md) for how its `files[]` (plus `file_structure[]` entries, `package.json`, and toolchain deps) are enforced.
+The entry `path` is the blueprint file: the CLI fetches it directly from the tech-stack repo. Directory entries are rejected — the path must point at the file (e.g. `./projects/cli-app.json`). See [presets](./presets.md) for how its `files[]` (plus `file_structure[]` entries, `package.json`, and toolchain deps) are enforced.
 
 ## Machine blueprints
 

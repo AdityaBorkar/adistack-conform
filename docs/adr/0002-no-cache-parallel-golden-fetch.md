@@ -1,6 +1,6 @@
 # Fetch goldens fresh every run with no local cache
 
-Each run fetches `registry.json` once per unique `repo@ref`, then each blueprint's `manifest.json`, then only needed goldens deduplicated by repo-relative path at 16-way parallelism (`GOLDEN_FETCH_CONCURRENCY` in `src/stack/index.ts`), because blueprints are versioned by git ref and a cache would need its own invalidation story for little gain.
+Each run fetches `registry.json` once per unique `repo@ref`, then each blueprint file, then only needed goldens deduplicated by repo-relative path at 16-way parallelism (`GOLDEN_FETCH_CONCURRENCY` in `src/stack/index.ts`), because blueprints are versioned by git ref and a cache would need its own invalidation story for little gain.
 
 ## Consequences
 

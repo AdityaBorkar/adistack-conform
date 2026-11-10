@@ -7,7 +7,7 @@ import type {
 	ManifestJs,
 	RegistryDocument,
 } from "#/stack/registry.js";
-import { findProjectEntry, listProjectBlueprintNames, manifestDirRel } from "#/stack/registry.js";
+import { findProjectEntry, listProjectBlueprintNames, manifestRel } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
 import { FETCH_TIMEOUT_MS, authHeaders, encodePathSegments } from "#/utils/net.js";
 import { parseOrThrow } from "#/utils/schema.js";
@@ -67,10 +67,10 @@ export async function fetchProjectManifest(
 	blueprint: string,
 	registry: RegistryDocument,
 ): Promise<{
-	dirRel: string;
 	files: ManifestFile[];
 	github: ManifestGithub;
 	js: ManifestJs | undefined;
+	manifestRel: string;
 	structure: ManifestFileStructure[];
 }> {
 	const entry = findProjectEntry(blueprint, registry);
@@ -79,24 +79,14 @@ export async function fetchProjectManifest(
 		const hint = names.length > 0 ? ` Available blueprints: ${names.join(", ")}.` : "";
 		throw new Error(`Blueprint "${blueprint}" not found in the tech-stack repo.${hint}`);
 	}
-	const dirRel = manifestDirRel(entry.path);
-	const rel = `${dirRel}/manifest.json`;
+	const rel = manifestRel(entry.path);
 	const parsed = await fetchJson(rawUrl(id, ref, rel), `blueprint ${blueprint}`);
-	if (
-		typeof parsed === "object" &&
-		parsed !== null &&
-		("directories" in parsed || "required" in parsed)
-	) {
-		throw new Error(
-			`Blueprint "${blueprint}" manifest still uses "directories"/"required": merge them into "file_structure" (see configuration_schema/project-manifest.json).`,
-		);
-	}
 	const data = parseOrThrow(ManifestSchema, `${rel} (remote)`, parsed, "blueprint");
 	return {
-		dirRel,
 		files: data.files,
 		github: data.github,
 		js: data.js,
+		manifestRel: rel,
 		structure: data.file_structure,
 	};
 }

@@ -5,7 +5,9 @@ const RegistryEntrySchema = z.object({
 	path: z
 		.string()
 		.min(1)
-		.describe("Blueprint directory relative to the tech-stack root, e.g. ./projects/cli-app/."),
+		.describe(
+			"Blueprint path relative to the tech-stack root: a project blueprint file (e.g. ./projects/cli-app.json) or a machine flake directory (e.g. ./machines/main/).",
+		),
 });
 
 export const RegistrySchema = z.compile(

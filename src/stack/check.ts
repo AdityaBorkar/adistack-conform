@@ -9,9 +9,9 @@ export type ClassifiedTarget = { reason: string; type: "skip" } | { path: string
 
 const WINDOWS_ENV_PATTERN = /%[A-Za-z_][A-Za-z0-9_]*%/u;
 
-// Template slots in goldens (e.g. package.json `<package-name>`). Generic like
-// the Windows-env skip above: manifests declare *which* files are templates
-// via pinned/versioned, never the placeholder vocabulary itself.
+// Template slots in goldens (e.g. package.json `<package-name>`). A golden
+// that parses as a JSON object and holds `<...>` placeholders is a template:
+// every slot accepts any per-project value, all other fields must match.
 const PLACEHOLDER_PATTERN = /<[^<>\r\n]+>/gu;
 
 function goldenPlaceholders(golden: string): string[] {
@@ -54,19 +54,36 @@ function baseFor(
 	};
 }
 
-const EMPTY_COMPARE: ManifestCompare = { ignore: [], pinned: [], strip: [], versioned: [] };
+const EMPTY_COMPARE: ManifestCompare = {
+	ignore: [],
+	strip: [],
+	versioned: [],
+};
 
-function isTemplateCompare(compare: ManifestCompare): boolean {
-	return compare.pinned.length > 0 || compare.versioned.length > 0;
+// Placeholders in non-JSON goldens (HTML comments, TS generics) never count:
+// only a JSON-object golden holding `<...>` slots is a template.
+function goldenHasPlaceholders(golden: string): boolean {
+	let parsed: unknown;
+	try {
+		parsed = parseJsonc(golden);
+	} catch {
+		return false;
+	}
+	if (!isRecord(parsed)) {
+		return false;
+	}
+	PLACEHOLDER_PATTERN.lastIndex = 0;
+	const found = PLACEHOLDER_PATTERN.test(stripJsonc(golden));
+	PLACEHOLDER_PATTERN.lastIndex = 0;
+	return found;
+}
+
+function isTemplateGolden(golden: string, compare: ManifestCompare): boolean {
+	return compare.versioned.length > 0 || goldenHasPlaceholders(golden);
 }
 
 function hasCompareRules(compare: ManifestCompare): boolean {
-	return (
-		compare.ignore.length > 0 ||
-		compare.pinned.length > 0 ||
-		compare.strip.length > 0 ||
-		compare.versioned.length > 0
-	);
+	return compare.ignore.length > 0 || compare.strip.length > 0 || compare.versioned.length > 0;
 }
 
 function omitKeys(
@@ -239,23 +256,159 @@ function overlayResult(
 	});
 }
 
+function escapeRegExp(text: string): string {
+	return text.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+// A golden string with `<...>` slots matches any local string holding real
+// values in those slots (each slot needs at least one char).
+function templateStringMatches(golden: string, local: string): boolean {
+	const pattern = golden
+		.split(/<[^<>\r\n]+>/u)
+		.map((part) => escapeRegExp(part))
+		.join("[\\s\\S]+?");
+	return new RegExp(`^${pattern}$`, "u").test(local);
+}
+
+function containsPlaceholderText(text: string): boolean {
+	PLACEHOLDER_PATTERN.lastIndex = 0;
+	const found = PLACEHOLDER_PATTERN.test(text);
+	PLACEHOLDER_PATTERN.lastIndex = 0;
+	return found;
+}
+
+function containsPlaceholder(value: unknown): boolean {
+	if (typeof value === "string") {
+		return containsPlaceholderText(value);
+	}
+	if (Array.isArray(value)) {
+		return value.some((entry) => containsPlaceholder(entry));
+	}
+	if (isRecord(value)) {
+		return (
+			Object.keys(value).some((key) => containsPlaceholderText(key)) ||
+			Object.values(value).some((entry) => containsPlaceholder(entry))
+		);
+	}
+	return false;
+}
+
+function placeholderValueMatches(goldenValue: unknown, localValue: unknown): boolean {
+	if (typeof goldenValue === "string" && containsPlaceholderText(goldenValue)) {
+		return (
+			typeof localValue === "string" &&
+			localValue.trim() !== "" &&
+			!containsPlaceholder(localValue) &&
+			templateStringMatches(goldenValue, localValue)
+		);
+	}
+	if (isRecord(goldenValue) || Array.isArray(goldenValue)) {
+		const nested: string[] = [];
+		collectTemplateIssues(goldenValue, localValue, "", nested);
+		return nested.length === 0;
+	}
+	return deepEqual(goldenValue, localValue);
+}
+
+// Every golden field must hold in local: `<...>` slots accept any real value,
+// all other fields must match exactly. Extra local fields are allowed.
+function collectTemplateIssues(
+	goldenNode: unknown,
+	localNode: unknown,
+	path: string,
+	issues: string[],
+): void {
+	if (typeof goldenNode === "string" && containsPlaceholderText(goldenNode)) {
+		const label = path === "" ? "value" : path;
+		if (typeof localNode !== "string" || localNode.trim() === "") {
+			issues.push(`${label} needs a per-project value`);
+			return;
+		}
+		if (containsPlaceholder(localNode)) {
+			issues.push(`${label} still holds placeholders`);
+			return;
+		}
+		if (!templateStringMatches(goldenNode, localNode)) {
+			issues.push(`${label} does not match the preset template`);
+		}
+		return;
+	}
+	if (isRecord(goldenNode)) {
+		if (!isRecord(localNode)) {
+			issues.push(`${path === "" ? "value" : path} should be an object`);
+			return;
+		}
+		const unmatched = new Set(Object.keys(localNode));
+		for (const [key, goldenValue] of Object.entries(goldenNode)) {
+			const child = path === "" ? key : `${path}.${key}`;
+			if (containsPlaceholderText(key)) {
+				const match = [...unmatched].find(
+					(candidate) =>
+						!containsPlaceholderText(candidate) &&
+						!Object.hasOwn(goldenNode, candidate) &&
+						placeholderValueMatches(goldenValue, localNode[candidate]),
+				);
+				if (match === undefined) {
+					issues.push(`${child} needs a per-project value`);
+				} else {
+					unmatched.delete(match);
+				}
+				continue;
+			}
+			unmatched.delete(key);
+			if (!Object.hasOwn(localNode, key)) {
+				issues.push(`${child} is missing`);
+				continue;
+			}
+			collectTemplateIssues(goldenValue, localNode[key], child, issues);
+		}
+		return;
+	}
+	if (Array.isArray(goldenNode)) {
+		const label = path === "" ? "value" : path;
+		if (!Array.isArray(localNode)) {
+			issues.push(`${label} should be an array`);
+			return;
+		}
+		if (localNode.length < goldenNode.length) {
+			issues.push(`${label} is missing entries`);
+		}
+		const shared = Math.min(goldenNode.length, localNode.length);
+		for (let index = 0; index < shared; index += 1) {
+			collectTemplateIssues(goldenNode[index], localNode[index], `${label}[${index}]`, issues);
+		}
+		for (let index = shared; index < localNode.length; index += 1) {
+			if (containsPlaceholder(localNode[index])) {
+				issues.push(`${label}[${index}] still holds placeholders`);
+			}
+		}
+		return;
+	}
+	if (!deepEqual(goldenNode, localNode)) {
+		issues.push(`${path === "" ? "value" : path} differs from the preset`);
+	}
+}
+
 function templateResult(
 	args: SemanticArgs & { goldenRest: Record<string, unknown>; localRest: Record<string, unknown> },
 ): CheckResult {
 	const { base, compare, golden, goldenRest, localRest, localText, targetPath } = args;
-	const drifted = compare.pinned.filter((key) => {
-		if (!Object.hasOwn(goldenRest, key)) {
-			return false;
-		}
-		const goldenValue = goldenRest[key];
-		const localValue = localRest[key];
-		if (isRecord(goldenValue) && isRecord(localValue)) {
-			return Object.entries(goldenValue).some(
-				([entryKey, entryValue]) => !deepEqual(localValue[entryKey], entryValue),
-			);
-		}
-		return !deepEqual(localValue, goldenValue);
-	});
+	const mismatched: string[] = [];
+	collectTemplateIssues(
+		omitKeys(goldenRest, compare.versioned),
+		omitKeys(localRest, compare.versioned),
+		"",
+		mismatched,
+	);
+	if (mismatched.length > 0) {
+		return failManual(
+			base,
+			`fields differ from the preset template: ${mismatched.join(", ")}`,
+			"preset template with per-project values (no <...> placeholders)",
+			`Reconcile ${targetPath} with the ${args.fileName} preset (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
+		);
+	}
+	const drifted: string[] = [];
 	for (const section of compare.versioned) {
 		const goldenDeps = goldenRest[section];
 		const localDeps = localRest[section];
@@ -280,21 +433,6 @@ function templateResult(
 		return pass(base, "matches preset template", golden);
 	}
 	const merged: Record<string, unknown> = { ...(localRest as Record<string, unknown>) };
-	for (const key of compare.pinned) {
-		const goldenValue = goldenRest[key];
-		const localValue = localRest[key];
-		if (!Object.hasOwn(goldenRest, key)) {
-			continue;
-		}
-		if (isRecord(goldenValue) && isRecord(localValue)) {
-			merged[key] = {
-				...(localValue as Record<string, unknown>),
-				...(goldenValue as Record<string, unknown>),
-			};
-		} else {
-			merged[key] = goldenValue;
-		}
-	}
 	for (const section of compare.versioned) {
 		const goldenDeps = goldenRest[section];
 		const localDeps = localRest[section];
@@ -318,7 +456,7 @@ function templateResult(
 }
 
 function semanticResult(args: SemanticArgs): CheckResult | undefined {
-	const template = isTemplateCompare(args.compare);
+	const template = isTemplateGolden(args.golden, args.compare);
 	let goldenParsed: unknown;
 	try {
 		goldenParsed = parseJsonc(args.golden);
@@ -393,8 +531,8 @@ export async function checkPresetFileWithGolden(args: {
 	targetPath: string;
 }): Promise<CheckResult> {
 	const base = baseFor(args.blueprint, args.fileName, args.fileTarget, args.scope);
-	const compare = args.compare ?? EMPTY_COMPARE;
-	const template = isTemplateCompare(compare);
+	const compare = { ...EMPTY_COMPARE, ...args.compare };
+	const template = isTemplateGolden(args.golden, compare);
 	const targetRead = await readFileSafe(args.targetPath);
 	// Never auto-create or truncate on a blank preset: an empty golden means
 	// defaults, so any existing content is kept and missing stays passing.
@@ -448,7 +586,7 @@ export async function checkPresetFileWithGolden(args: {
 	} else if (targetRead.text === args.golden) {
 		return pass(base, "matches preset", args.golden);
 	}
-	if (hasCompareRules(compare)) {
+	if (template || hasCompareRules(compare)) {
 		const semantic = semanticResult({
 			base,
 			compare,

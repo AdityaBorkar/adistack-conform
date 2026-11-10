@@ -36,7 +36,7 @@ bun run verify              # format && check:lint && check:types && test && bui
 
 - `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`; `src/stack/` (`index`/`check`/`deps`/`machine`/`github`/`registry`/`remote`); `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`); `src/schemas/` (Zod source of truth, `github.ts` included).
 - `.output/` is gitignored build output.
-- This repo dogfoods itself: `conform.json` tracks `AdityaBorkar/tech-stack@<ref>` — read it for the current scopes, don't assume. Reference blueprints/registry live at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read `registry.json`/manifests directly instead of guessing.
+- This repo dogfoods itself: `conform.json` tracks `AdityaBorkar/tech-stack@<ref>` — read it for the current scopes, don't assume. Reference blueprints/registry live at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read `registry.json`/blueprint files directly instead of guessing.
 
 ## Conventions
 

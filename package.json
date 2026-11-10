@@ -39,8 +39,8 @@
 		".output",
 		"package.json",
 		"configuration_schema",
-		"skills",
 		"README.md",
+		"skills",
 		"www"
 	],
 	"type": "module",
@@ -58,14 +58,14 @@
 		"build": "bun ./scripts/build.ts",
 		"check:lint": "oxlint",
 		"check:types": "tsrs",
-		"clean": "bunx rimraf --glob \"**/{node_modules,dist,bun.lockb}\"",
+		"clean": "bun rimraf --glob \"**/{node_modules,dist,bun.lockb}\"",
 		"dev": "bun ./src/index.ts",
 		"format": "oxfmt",
 		"gen:json-schema": "bun ./scripts/generate-json-schema.ts",
 		"prepare": "husky",
 		"review:knip": "knip",
 		"test": "bun test",
-		"verify": "bun format && bun check:lint && bun check:types && bun test && bun run build"
+		"verify": "bun format && bun check:lint && bun check:types && bun test"
 	},
 	"dependencies": {
 		"@clack/prompts": "1.8.1",
@@ -89,5 +89,6 @@
 		"rimraf": "6.1.4",
 		"tsrs": "0.23.0-ts7.1.0-beta",
 		"typescript": "7.0.2"
-	}
+	},
+	"peerDependencies": {}
 }

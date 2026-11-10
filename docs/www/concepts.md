@@ -12,11 +12,11 @@ icon: Lightbulb
 
 Each scope answers one question: is this thing the way the blueprint says it should be?
 
-| Scope     | One result per                                                                                           | ID shape                                                              | What runs                                                                                                                              |
-| --------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `project` | blueprint `manifest.json` `files[]` entry, plus required docs, required dirs, `package.json`, dep checks | `project:<blueprint>:<name>` (deps: `project:<blueprint>:deps:<pkg>`) | File content compared against the golden (byte, semantic, or templated — see [presets](./presets.md)) fetched from the tech-stack repo |
-| `machine` | whole blueprint                                                                                          | `nix:<blueprint>`                                                     | `home-manager switch --flake <flake> --dry-run --impure` (via `home-manager`, else `nix run home-manager -- …`)                        |
-| `github`  | manifest `github` preset entry                                                                           | `github:<blueprint>:<name>`                                           | Live repo settings compared against the golden via the GitHub REST API (needs `GITHUB_TOKEN`)                                          |
+| Scope     | One result per                                                                           | ID shape                                                              | What runs                                                                                                                              |
+| --------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `project` | blueprint `files[]` entry, plus required docs, required dirs, `package.json`, dep checks | `project:<blueprint>:<name>` (deps: `project:<blueprint>:deps:<pkg>`) | File content compared against the golden (byte, semantic, or templated — see [presets](./presets.md)) fetched from the tech-stack repo |
+| `machine` | whole blueprint                                                                          | `nix:<blueprint>`                                                     | `home-manager switch --flake <flake> --dry-run --impure` (via `home-manager`, else `nix run home-manager -- …`)                        |
+| `github`  | manifest `github` preset entry                                                           | `github:<blueprint>:<name>`                                           | Live repo settings compared against the golden via the GitHub REST API (needs `GITHUB_TOKEN`)                                          |
 
 Run one scope at a time with `--project-only` / `--machine-only` / `--github-only`. The machine check shells out to `home-manager` (which owns `$HOME`), so machines have no file targets. Nix fetches the flake itself; the CLI downloads nothing for this scope.
 
@@ -37,6 +37,6 @@ A skipped check still exits 0. If your output is full of `○ … skipped` lines
 
 ## How fetching works
 
-No local cache. Each run fetches `registry.json` once per unique `repo@ref` (shared by every spec), then each project blueprint's `manifest.json`, then only the golden files its `files[]` need — deduplicated by repo-relative path, 16-way parallel. Machine blueprints skip golden downloads entirely. Toolchain dep versions come from the manifest `js` maps themselves, not from any golden.
+No local cache. Each run fetches `registry.json` once per unique `repo@ref` (shared by every spec), then each project blueprint file, then only the golden files its `files[]` need — deduplicated by repo-relative path, 16-way parallel. Machine blueprints skip golden downloads entirely. Toolchain dep versions come from the manifest `js` maps themselves, not from any golden.
 
 After `fix` applies, the CLI re-checks only the selected IDs (falling back to a full re-check on error) and reports how many are still failing.
