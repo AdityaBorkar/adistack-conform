@@ -1,13 +1,9 @@
 import { stat } from "node:fs/promises";
 
 import type { CheckBase, CheckResult, CheckScope } from "#/checks.js";
-import { failFixable, failManual, pass, skipped } from "#/checks.js";
+import { failFixable, failManual, pass } from "#/checks.js";
 import type { ManifestCompare } from "#/stack/registry.js";
 import { readFileSafe } from "#/utils/fs.js";
-
-export type ClassifiedTarget = { reason: string; type: "skip" } | { path: string; type: "path" };
-
-const WINDOWS_ENV_PATTERN = /%[A-Za-z_][A-Za-z0-9_]*%/u;
 
 // Template slots in goldens (e.g. package.json `<package-name>`). A golden
 // that parses as a JSON object and holds `<...>` placeholders is a template:
@@ -16,27 +12,6 @@ const PLACEHOLDER_PATTERN = /<[^<>\r\n]+>/gu;
 
 function goldenPlaceholders(golden: string): string[] {
 	return [...new Set(golden.match(PLACEHOLDER_PATTERN) ?? [])];
-}
-
-export function classifyTarget(target: string, scope: CheckScope): ClassifiedTarget {
-	if (target.startsWith("docs:")) {
-		return { reason: "docs-only, nothing to enforce", type: "skip" };
-	}
-	const [token = ""] = target.split(/\s+/u);
-	if (token === "~" || token.startsWith("~/") || token.startsWith("/")) {
-		return { path: token, type: "path" };
-	}
-	if (WINDOWS_ENV_PATTERN.test(token)) {
-		return { reason: "Windows-only target", type: "skip" };
-	}
-	if (scope === "project" && token !== "") {
-		return { path: token, type: "path" };
-	}
-	return { reason: `no concrete target ("${target}")`, type: "skip" };
-}
-
-function isBlankGolden(golden: string): boolean {
-	return golden.trim() === "";
 }
 
 function baseFor(
@@ -56,8 +31,6 @@ function baseFor(
 
 const EMPTY_COMPARE: ManifestCompare = {
 	ignore: [],
-	strip: [],
-	versioned: [],
 };
 
 // Placeholders in non-JSON goldens (HTML comments, TS generics) never count:
@@ -78,12 +51,12 @@ function goldenHasPlaceholders(golden: string): boolean {
 	return found;
 }
 
-function isTemplateGolden(golden: string, compare: ManifestCompare): boolean {
-	return compare.versioned.length > 0 || goldenHasPlaceholders(golden);
+function isTemplateGolden(golden: string): boolean {
+	return goldenHasPlaceholders(golden);
 }
 
 function hasCompareRules(compare: ManifestCompare): boolean {
-	return compare.ignore.length > 0 || compare.strip.length > 0 || compare.versioned.length > 0;
+	return compare.ignore.length > 0;
 }
 
 function omitKeys(
@@ -199,28 +172,6 @@ function deepEqual(left: unknown, right: unknown): boolean {
 		);
 	}
 	return false;
-}
-
-function missingCompareFix(
-	base: CheckBase,
-	golden: string,
-	targetPath: string,
-	compare: ManifestCompare,
-): CheckResult | undefined {
-	try {
-		const parsed = parseJsonc(golden);
-		if (!isRecord(parsed)) {
-			return undefined;
-		}
-		const newContent = serializeJson(omitKeys(parsed, compare.strip), golden);
-		return failFixable(base, "<missing>", newContent, {
-			filePath: targetPath,
-			kind: "overwrite-file",
-			newContent,
-		});
-	} catch {
-		return undefined;
-	}
 }
 
 interface SemanticArgs {
@@ -392,71 +343,22 @@ function collectTemplateIssues(
 function templateResult(
 	args: SemanticArgs & { goldenRest: Record<string, unknown>; localRest: Record<string, unknown> },
 ): CheckResult {
-	const { base, compare, golden, goldenRest, localRest, localText, targetPath } = args;
+	const { base, golden } = args;
 	const mismatched: string[] = [];
-	collectTemplateIssues(
-		omitKeys(goldenRest, compare.versioned),
-		omitKeys(localRest, compare.versioned),
-		"",
-		mismatched,
-	);
+	collectTemplateIssues(args.goldenRest, args.localRest, "", mismatched);
 	if (mismatched.length > 0) {
 		return failManual(
 			base,
 			`fields differ from the preset template: ${mismatched.join(", ")}`,
 			"preset template with per-project values (no <...> placeholders)",
-			`Reconcile ${targetPath} with the ${args.fileName} preset (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
+			`Reconcile ${args.targetPath} with the ${args.fileName} preset (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
 		);
 	}
-	const drifted: string[] = [];
-	for (const section of compare.versioned) {
-		const goldenDeps = goldenRest[section];
-		const localDeps = localRest[section];
-		if (!isRecord(goldenDeps)) {
-			continue;
-		}
-		if (!isRecord(localDeps)) {
-			if (Object.keys(goldenDeps).length > 0) {
-				for (const pkg of Object.keys(goldenDeps)) {
-					drifted.push(`${section}.${pkg}`);
-				}
-			}
-			continue;
-		}
-		for (const [pkg, version] of Object.entries(goldenDeps)) {
-			if (!Object.hasOwn(localDeps, pkg) || !deepEqual(localDeps[pkg], version)) {
-				drifted.push(`${section}.${pkg}`);
-			}
-		}
-	}
-	if (drifted.length === 0) {
-		return pass(base, "matches preset template", golden);
-	}
-	const merged: Record<string, unknown> = { ...(localRest as Record<string, unknown>) };
-	for (const section of compare.versioned) {
-		const goldenDeps = goldenRest[section];
-		const localDeps = localRest[section];
-		if (!isRecord(goldenDeps)) {
-			continue;
-		}
-		const next: Record<string, unknown> = isRecord(localDeps)
-			? { ...(localDeps as Record<string, unknown>) }
-			: {};
-		for (const [pkg, version] of Object.entries(goldenDeps)) {
-			next[pkg] = version;
-		}
-		merged[section] = next;
-	}
-	const newContent = serializeJson(merged, golden);
-	return failFixable(base, localText, newContent, {
-		filePath: targetPath,
-		kind: "overwrite-file",
-		newContent,
-	});
+	return pass(base, "matches preset template", golden);
 }
 
 function semanticResult(args: SemanticArgs): CheckResult | undefined {
-	const template = isTemplateGolden(args.golden, args.compare);
+	const template = isTemplateGolden(args.golden);
 	let goldenParsed: unknown;
 	try {
 		goldenParsed = parseJsonc(args.golden);
@@ -503,12 +405,10 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 				)
 			: undefined;
 	}
-	const goldenRest = omitKeys(goldenParsed, args.compare.strip);
-	const localRest = omitKeys(localParsed, args.compare.strip);
 	if (template) {
-		return templateResult({ ...args, goldenRest, localRest });
+		return templateResult({ ...args, goldenRest: goldenParsed, localRest: localParsed });
 	}
-	return overlayResult({ ...args, goldenRest, localRest });
+	return overlayResult({ ...args, goldenRest: goldenParsed, localRest: localParsed });
 }
 
 function unreadableTarget(base: CheckBase, golden: string, targetPath: string, error: string) {
@@ -532,20 +432,8 @@ export async function checkPresetFileWithGolden(args: {
 }): Promise<CheckResult> {
 	const base = baseFor(args.blueprint, args.fileName, args.fileTarget, args.scope);
 	const compare = { ...EMPTY_COMPARE, ...args.compare };
-	const template = isTemplateGolden(args.golden, compare);
+	const template = isTemplateGolden(args.golden);
 	const targetRead = await readFileSafe(args.targetPath);
-	// Never auto-create or truncate on a blank preset: an empty golden means
-	// defaults, so any existing content is kept and missing stays passing.
-	if (isBlankGolden(args.golden)) {
-		if (!targetRead.ok && targetRead.reason !== "missing") {
-			return unreadableTarget(base, args.golden, args.targetPath, targetRead.error);
-		}
-		return pass(
-			base,
-			targetRead.ok ? "kept (empty preset = defaults)" : "defaults (empty preset)",
-			"absent (empty preset = defaults)",
-		);
-	}
 	if (!targetRead.ok) {
 		if (targetRead.reason !== "missing") {
 			return unreadableTarget(base, args.golden, args.targetPath, targetRead.error);
@@ -557,10 +445,6 @@ export async function checkPresetFileWithGolden(args: {
 				"exists (templated from preset)",
 				`Copy ${args.sourceLabel} to ${args.targetPath}, adapt per-project fields, then re-run check.`,
 			);
-		}
-		const stripped = missingCompareFix(base, args.golden, args.targetPath, compare);
-		if (stripped !== undefined) {
-			return stripped;
 		}
 		return failFixable(base, "<missing>", args.golden, {
 			filePath: args.targetPath,
@@ -674,15 +558,4 @@ export async function checkFileStructureEntry(args: {
 		"exists (generate per-project content)",
 		`Cannot read ${args.targetPath} (may need sudo): ${outcome.error}`,
 	);
-}
-
-export function skippedForTarget(
-	blueprint: string,
-	fileName: string,
-	sourceLabel: string,
-	fileTarget: string,
-	reason: string,
-	scope: CheckScope,
-): CheckResult {
-	return skipped(baseFor(blueprint, fileName, fileTarget, scope), sourceLabel, reason);
 }

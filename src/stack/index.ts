@@ -1,25 +1,16 @@
-import { join } from "node:path";
-
 import { failManual, type CheckResult, type CheckScope } from "#/checks.js";
 import type { ProjectRunSpec } from "#/config.js";
-import {
-	checkFileStructureEntry,
-	checkPresetFileWithGolden,
-	classifyTarget,
-	skippedForTarget,
-} from "#/stack/check.js";
-import { checkToolchainDeps, parseLocalPackageJson } from "#/stack/deps.js";
+import { checkFileStructureEntry, checkPresetFileWithGolden } from "#/stack/check.js";
 import type {
 	ManifestCompare,
 	ManifestFile,
 	ManifestFileStructure,
-	ManifestJs,
 	RegistryDocument,
 } from "#/stack/registry.js";
 import { resolveSourceRel } from "#/stack/registry.js";
 import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
-import { errorMessage, readFileSafe, resolveTargetPath } from "#/utils/fs.js";
+import { errorMessage, resolveTargetPath } from "#/utils/fs.js";
 
 export const GOLDEN_FETCH_CONCURRENCY = 16;
 
@@ -44,25 +35,10 @@ function collectNeeded(
 	files: ManifestFile[],
 	options: TechStackRunOptions,
 	onlyIds?: ReadonlySet<string>,
-): { needed: NeededFile[]; skips: CheckResult[] } {
+): NeededFile[] {
 	const needed: NeededFile[] = [];
-	const skips: CheckResult[] = [];
 	for (const file of files) {
 		if (onlyIds !== undefined && !onlyIds.has(`project:${blueprint}:${file.name}`)) {
-			continue;
-		}
-		const classified = classifyTarget(file.target, options.scope);
-		if (classified.type === "skip") {
-			skips.push(
-				skippedForTarget(
-					blueprint,
-					file.name,
-					file.source,
-					file.target,
-					classified.reason,
-					options.scope,
-				),
-			);
 			continue;
 		}
 		needed.push({
@@ -72,10 +48,10 @@ function collectNeeded(
 			fileTarget: file.target,
 			sourceLabel: file.source,
 			sourceRel: resolveSourceRel(file.source),
-			targetPath: resolveTargetPath(classified.path, options.baseDir, options.home),
+			targetPath: resolveTargetPath(file.target, options.baseDir, options.home),
 		});
 	}
-	return { needed, skips };
+	return needed;
 }
 
 async function fetchGoldens(
@@ -156,18 +132,17 @@ async function runWithManifest(
 	registry: RegistryDocument,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const { files, js, structure } = await fetchProjectManifest(
+	const { files, structure } = await fetchProjectManifest(
 		spec.id,
 		spec.ref,
 		spec.blueprint,
 		registry,
 	);
-	const { needed, skips } = collectNeeded(spec.blueprint, files, options, onlyIds);
+	const needed = collectNeeded(spec.blueprint, files, options, onlyIds);
 	const goldens = await fetchGoldens(spec.id, spec.ref, needed);
 	const enforced = await checkNeeded(needed, goldens, options.scope);
 	const structured = await checkFileStructure(spec.blueprint, files, structure, options, onlyIds);
-	const depResults = await checkDepsWithVersions(spec, js, options, onlyIds);
-	return [...skips, ...enforced, ...structured, ...depResults];
+	return [...enforced, ...structured];
 }
 
 function checkFileStructure(
@@ -186,51 +161,17 @@ function checkFileStructure(
 		if (onlyIds !== undefined && !onlyIds.has(`project:${blueprint}:${entry.name}`)) {
 			continue;
 		}
-		const classified = classifyTarget(entry.target, options.scope);
-		if (classified.type === "skip") {
-			tasks.push(
-				Promise.resolve(
-					skippedForTarget(
-						blueprint,
-						entry.name,
-						entry.target,
-						entry.target,
-						classified.reason,
-						options.scope,
-					),
-				),
-			);
-			continue;
-		}
 		tasks.push(
 			checkFileStructureEntry({
 				blueprint,
 				entryName: entry.name,
 				kind: entry.kind,
 				scope: options.scope,
-				targetPath: resolveTargetPath(classified.path, options.baseDir, options.home),
+				targetPath: resolveTargetPath(entry.target, options.baseDir, options.home),
 			}),
 		);
 	}
 	return Promise.all(tasks);
-}
-
-async function checkDepsWithVersions(
-	spec: ProjectRunSpec,
-	js: ManifestJs | undefined,
-	options: TechStackRunOptions,
-	onlyIds?: ReadonlySet<string>,
-): Promise<CheckResult[]> {
-	const localPath = join(options.baseDir, "package.json");
-	const localRead = await readFileSafe(localPath);
-	const localText = localRead.ok ? localRead.text : undefined;
-	return checkToolchainDeps({
-		blueprint: spec.blueprint,
-		js,
-		localPkg: parseLocalPackageJson(localText),
-		onlyIds,
-		scope: options.scope,
-	});
 }
 
 export function runProjectChecks(

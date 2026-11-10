@@ -1,6 +1,6 @@
 import type { LoadedConform } from "#/config.js";
 import { findMachineEntry } from "#/stack/registry.js";
-import type { ManifestCompare, RegistryDocument } from "#/stack/registry.js";
+import type { RegistryDocument } from "#/stack/registry.js";
 import { fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
 import { errorMessage } from "#/utils/fs.js";
 
@@ -65,28 +65,6 @@ function machineEntryError(blueprint: string, registry: RegistryDocument): strin
 	}
 }
 
-function compareError(compare: ManifestCompare | undefined, fileName: string): string | undefined {
-	if (compare === undefined) {
-		return undefined;
-	}
-	const groups: [string, readonly string[]][] = [
-		["ignore", compare.ignore],
-		["strip", compare.strip],
-		["versioned", compare.versioned],
-	];
-	const seen = new Map<string, string>();
-	for (const [group, keys] of groups) {
-		for (const key of keys) {
-			const prev = seen.get(key);
-			if (prev !== undefined) {
-				return `Invalid compare in "${fileName}": "${key}" is in both "${prev}" and "${group}" (each key belongs to one group).`;
-			}
-			seen.set(key, group);
-		}
-	}
-	return undefined;
-}
-
 async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<ValidateResult[]> {
 	const registryFile = `registry.json (${target.id}@${target.ref})`;
 	let registry: RegistryDocument;
@@ -108,12 +86,6 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 			try {
 				const manifest = await deps.fetchManifest(target.id, target.ref, blueprint, registry);
 				const manifestFile = `${manifest.manifestRel} (${target.id}@${target.ref})`;
-				for (const fileEntry of manifest.files) {
-					const error = compareError(fileEntry.compare, fileEntry.name);
-					if (error !== undefined) {
-						return { error, file: manifestFile, ok: false };
-					}
-				}
 				return { file: manifestFile, ok: true };
 			} catch (error) {
 				return { error: errorMessage(error), file, ok: false };

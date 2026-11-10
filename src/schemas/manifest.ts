@@ -1,42 +1,10 @@
 import * as z from "zod";
 
-const ManifestDepMapSchema = (description: string) =>
-	z.record(z.string(), z.string().min(1)).describe(description).default({});
-
-const ManifestJsSchema = z
-	.object({
-		dependencies: ManifestDepMapSchema(
-			'Packages required in dependencies, pinned to exact versions; "any" allows any installed version.',
-		),
-		devDependencies: ManifestDepMapSchema(
-			'Packages required in devDependencies, pinned to exact versions; "any" allows any installed version.',
-		),
-		peerDependencies: ManifestDepMapSchema(
-			'Packages required in peerDependencies, pinned to exact versions; "any" allows any installed version.',
-		),
-		pm: z
-			.string()
-			.min(1)
-			.describe("Package manager binary used in install hints, e.g. bun.")
-			.default("bun"),
-	})
-	.strict();
-
 const ManifestCompareSchema = z
 	.object({
 		ignore: z
 			.array(z.string().min(1))
 			.describe("Top-level keys excluded from the compare; local values are preserved by fix.")
-			.default([]),
-		strip: z
-			.array(z.string().min(1))
-			.describe("Top-level keys removed from both sides before comparing and from fix output.")
-			.default([]),
-		versioned: z
-			.array(z.string().min(1))
-			.describe(
-				"Object sections (e.g. dependencies) where versions must match for packages present on both sides; fix takes golden versions.",
-			)
 			.default([]),
 	})
 	.strict();
@@ -85,7 +53,6 @@ export const ManifestSchema = z.compile(
 				.min(1)
 				.describe("Repo-relative source path of the GitHub settings preset.")
 				.optional(),
-			js: ManifestJsSchema.describe("JavaScript packages required in package.json.").optional(),
 		})
 		.strict(),
 );

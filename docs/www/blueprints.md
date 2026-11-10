@@ -56,7 +56,7 @@ Unknown names fail the run with the available names listed (exit 1, reported as 
 
 ## Project blueprints
 
-The entry `path` is the blueprint file: the CLI fetches it directly from the tech-stack repo. Directory entries are rejected — the path must point at the file (e.g. `./projects/cli-app.json`). See [presets](./presets.md) for how its `files[]` (plus `file_structure[]` entries, `package.json`, and toolchain deps) are enforced.
+The entry `path` is the blueprint file: the CLI fetches it directly from the tech-stack repo. Directory entries are rejected — the path must point at the file (e.g. `./projects/cli-app.json`). See [presets](./presets.md) for how its `files[]` plus `file_structure[]` entries are enforced.
 
 ## Machine blueprints
 

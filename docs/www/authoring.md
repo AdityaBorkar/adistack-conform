@@ -48,7 +48,7 @@ machines/main/{flake.nix,home.nix,…}
 machines/main/files/            # dotfile payloads (sops templates read from here)
 ```
 
-Reference the blueprints in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Project blueprint `files[]` use `source` repo-relative (e.g. `projects/files/<group>/<file>`) and `target` as the destination path in generated projects. Top-level `js` pins the toolchain (`pm` plus per-section package→version maps). A `files[]` entry may declare `compare` (`ignore[]`, `strip[]`, `versioned[]`) for semantic compare/fix rules — goldens holding `<...>` placeholders are templates with per-project slots (e.g. `package.json` `<package-name>`); a verbatim copy fails the check until every placeholder is replaced. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`).
+Reference the blueprints in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Project blueprint `files[]` use `source` repo-relative (e.g. `projects/files/<group>/<file>`) and `target` as the cwd-relative destination path in generated projects. A `files[]` entry may declare `compare` (`ignore[]`) for semantic compare/fix rules — goldens holding `<...>` placeholders are templates with per-project slots (e.g. `package.json` `<package-name>`); a verbatim copy fails the check until every placeholder is replaced. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`).
 
 ## Rules
 

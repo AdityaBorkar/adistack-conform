@@ -9,7 +9,6 @@ export type ManifestFileStructure = NonNullable<
 	z.infer<typeof ManifestSchema>["file_structure"]
 >[number];
 export type ManifestGithub = z.infer<typeof ManifestSchema>["github"];
-export type ManifestJs = NonNullable<z.infer<typeof ManifestSchema>["js"]>;
 export type RegistryDocument = z.infer<typeof RegistrySchema>;
 export type RegistryEntry = RegistryDocument["projects"][number];
 

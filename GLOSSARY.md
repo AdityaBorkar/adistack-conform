@@ -19,7 +19,7 @@ The tech-stack `registry.json` listing every project and machine blueprint by na
 _Avoid_: catalog, index
 
 **Manifest**:
-A project blueprint file (`projects/<name>.json`) declaring its files, compare rules, file-structure entries, and toolchain deps.
+A project blueprint file (`projects/<name>.json`) declaring its files, compare rules, and file-structure entries.
 _Avoid_: blueprint config, spec file
 
 ### Enforcement
@@ -33,7 +33,7 @@ The repo-relative path of a golden inside the tech-stack repo.
 _Avoid_: preset path, golden path
 
 **Target**:
-The enforcement destination where a golden must hold, either a filesystem path or an annotation-only label.
+The cwd-relative enforcement destination where a golden must hold.
 _Avoid_: destination, output
 
 **Scope**:
@@ -47,7 +47,7 @@ _Avoid_: diff, failure, mismatch
 ### Results
 
 **Check Result**:
-The outcome of one enforcement comparison, identified as `project:<blueprint>:<name>` (deps: `project:<blueprint>:deps:<pkg>`), `nix:<blueprint>`, `github:<blueprint>:<name>`, or `<scope>:internal-error` on scope failure.
+The outcome of one enforcement comparison, identified as `project:<blueprint>:<name>`, `nix:<blueprint>`, `github:<blueprint>:<name>`, or `<scope>:internal-error` on scope failure.
 _Avoid_: check, report item
 
 **Fixable**:
@@ -59,11 +59,11 @@ A drifted result with no machine remedy, carrying a hint for a human to act on i
 _Avoid_: unfixable, unactionable
 
 **Skipped**:
-A result that passes without enforcement because its target is docs-only, Windows-only, has no concrete path, has no public API (GitHub UI-only settings), or the GitHub API returned 401/403.
+A result that passes without enforcement because it has no public API (GitHub UI-only settings), or the GitHub API returned 401/403.
 _Avoid_: ignored, passed
 
 **Template**:
-A manifest entry whose golden holds `<...>` placeholders (or declaring `versioned` compare rules); each placeholder slot accepts any per-project value (non-empty, never placeholders), every other field must match the golden — a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields).
+A manifest entry whose golden holds `<...>` placeholders; each placeholder slot accepts any per-project value (non-empty, never placeholders), every other field must match the golden — a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields).
 _Avoid_: parameterized file
 
 **Internal**:

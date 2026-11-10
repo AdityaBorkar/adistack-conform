@@ -53,24 +53,6 @@
 									"minLength": 1
 								},
 								"description": "Top-level keys excluded from the compare; local values are preserved by fix."
-							},
-							"strip": {
-								"default": [],
-								"type": "array",
-								"items": {
-									"type": "string",
-									"minLength": 1
-								},
-								"description": "Top-level keys removed from both sides before comparing and from fix output."
-							},
-							"versioned": {
-								"default": [],
-								"type": "array",
-								"items": {
-									"type": "string",
-									"minLength": 1
-								},
-								"description": "Object sections (e.g. dependencies) where versions must match for packages present on both sides; fix takes golden versions."
 							}
 						},
 						"additionalProperties": false,
@@ -101,55 +83,6 @@
 			"type": "string",
 			"minLength": 1,
 			"description": "Repo-relative source path of the GitHub settings preset."
-		},
-		"js": {
-			"type": "object",
-			"properties": {
-				"dependencies": {
-					"default": {},
-					"type": "object",
-					"propertyNames": {
-						"type": "string"
-					},
-					"additionalProperties": {
-						"type": "string",
-						"minLength": 1
-					},
-					"description": "Packages required in dependencies, pinned to exact versions; \"any\" allows any installed version."
-				},
-				"devDependencies": {
-					"default": {},
-					"type": "object",
-					"propertyNames": {
-						"type": "string"
-					},
-					"additionalProperties": {
-						"type": "string",
-						"minLength": 1
-					},
-					"description": "Packages required in devDependencies, pinned to exact versions; \"any\" allows any installed version."
-				},
-				"peerDependencies": {
-					"default": {},
-					"type": "object",
-					"propertyNames": {
-						"type": "string"
-					},
-					"additionalProperties": {
-						"type": "string",
-						"minLength": 1
-					},
-					"description": "Packages required in peerDependencies, pinned to exact versions; \"any\" allows any installed version."
-				},
-				"pm": {
-					"default": "bun",
-					"type": "string",
-					"minLength": 1,
-					"description": "Package manager binary used in install hints, e.g. bun."
-				}
-			},
-			"additionalProperties": false,
-			"description": "JavaScript packages required in package.json."
 		}
 	},
 	"required": ["files"],

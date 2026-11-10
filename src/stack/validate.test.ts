@@ -47,7 +47,6 @@ describe("validateTargets", () => {
 					Promise.resolve({
 						files: [],
 						github: undefined,
-						js: undefined,
 						manifestRel: "projects/cli-app.json",
 						structure: [],
 					}),
@@ -100,36 +99,5 @@ describe("validateTargets", () => {
 		expect(results).toHaveLength(2);
 		expect(results[1]?.ok).toBe(false);
 		expect(results[1]?.error).toContain("Invalid blueprint");
-	});
-
-	test("overlapping compare groups are invalid", async () => {
-		const results = await validateTargets(
-			collectValidateTargets([loaded({ project: { blueprint: "cli-app" } })]),
-			{
-				fetchManifest: () =>
-					Promise.resolve({
-						files: [
-							{
-								compare: {
-									ignore: ["type"],
-									strip: ["type"],
-									versioned: [],
-								},
-								name: "Package JSON",
-								source: "projects/files/package/cli.json",
-								target: "package.json",
-							},
-						],
-						github: undefined,
-						js: undefined,
-						manifestRel: "projects/cli-app.json",
-						structure: [],
-					}),
-				fetchRegistry: () => Promise.resolve(registry),
-			},
-		);
-		expect(results).toHaveLength(2);
-		expect(results[1]?.ok).toBe(false);
-		expect(results[1]?.error).toContain('"type" is in both');
 	});
 });

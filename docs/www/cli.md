@@ -42,7 +42,7 @@ Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="war
 }
 ```
 
-Each result carries `id` (`project:<blueprint>:<name>`, deps use `project:<blueprint>:deps:<pkg>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`preset` | `package` | `nix` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) or `hint` when manual, and `skipped: true` when skipped.
+Each result carries `id` (`project:<blueprint>:<name>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`preset` | `nix` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) or `hint` when manual, and `skipped: true` when skipped.
 
 ## `fix`
 

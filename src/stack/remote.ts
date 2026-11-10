@@ -4,7 +4,6 @@ import type {
 	ManifestFile,
 	ManifestFileStructure,
 	ManifestGithub,
-	ManifestJs,
 	RegistryDocument,
 } from "#/stack/registry.js";
 import { findProjectEntry, listProjectBlueprintNames, manifestRel } from "#/stack/registry.js";
@@ -69,7 +68,6 @@ export async function fetchProjectManifest(
 ): Promise<{
 	files: ManifestFile[];
 	github: ManifestGithub;
-	js: ManifestJs | undefined;
 	manifestRel: string;
 	structure: ManifestFileStructure[];
 }> {
@@ -85,7 +83,6 @@ export async function fetchProjectManifest(
 	return {
 		files: data.files,
 		github: data.github,
-		js: data.js,
 		manifestRel: rel,
 		structure: data.file_structure,
 	};

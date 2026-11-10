@@ -26,22 +26,7 @@ Only the goldens you need are fetched, deduplicated by repo-relative path, 16-wa
 
 ## Where targets land
 
-`target` is the enforcement destination (a leading `~/…`, `/…`, or bare `~` token is used when the line carries a human annotation). The first token decides:
-
-| Target                                   | Verdict                                                                                   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `docs:…`                                 | Skipped (pass, exit 0) — docs-only, nothing to enforce                                    |
-| Contains `%VAR%`                         | Skipped — Windows-only target                                                             |
-| `~`, `~/…`, `/…`                         | Enforced at that absolute path (`~` expands against `$HOME`, respecting the env override) |
-| Bare `./…` / `../…` (project scope only) | Enforced against your cwd                                                                 |
-| Anything else, project scope             | Enforced as a cwd-relative path                                                           |
-| No concrete path                         | Skipped with `no concrete target ("…")`                                                   |
-
-<Callout type="info" title="Skips are the common case">
-
-Unmatched scopes are the usual source of `○ … skipped` lines — they are in sync by definition. A quiet scope is a happy scope.
-
-</Callout>
+`target` is the cwd-relative enforcement destination.
 
 ## How each file is judged
 
@@ -53,7 +38,7 @@ Missing → fixable `overwrite-file`. Mismatch → fixable `overwrite-file`. Unr
 
 <Accordion title="Compare rules — semantic, JSONC-aware">
 
-Per `files[]` entry: `ignore[]` keys are excluded from the compare and your local values are preserved by `fix` (the linter-`overrides` case); `versioned[]` sections must share package versions for packages on both sides, while a golden-listed package missing locally is drift; `strip[]` keys are dropped before comparing. Any golden holding `<...>` placeholders is a template: each slot accepts any per-project value (non-empty, no `<...>` placeholders, matching the surrounding text) while every other field must match the golden — failures are manual. A missing template target is manual (copy the golden and adapt per-project fields). Templates never pass on byte equality — a verbatim copy fails manual until every golden `<...>` placeholder (e.g. `package.json` `<package-name>`) is replaced.
+Per `files[]` entry: `ignore[]` keys are excluded from the compare and your local values are preserved by `fix` (the linter-`overrides` case). Any golden holding `<...>` placeholders is a template: each slot accepts any per-project value (non-empty, no `<...>` placeholders, matching the surrounding text) while every other field must match the golden — failures are manual. A missing template target is manual (copy the golden and adapt per-project fields). Templates never pass on byte equality — a verbatim copy fails manual until every golden `<...>` placeholder (e.g. `package.json` `<package-name>`) is replaced.
 
 </Accordion>
 
@@ -63,16 +48,6 @@ Blueprint `file_structure[]` entries (`name` + `target` + `kind: file|dir`) must
 
 </Accordion>
 
-<Accordion title="Toolchain deps — pinned packages">
-
-The manifest `js` field pins required packages per section (`dependencies` / `devDependencies` / `peerDependencies`) to exact versions (`"any"` means any installed version counts), plus the `pm` binary used in hints. Missing, wrong section, or version drift → manual with an install/move/update hint. IDs are `project:<blueprint>:deps:<pkg>`, `kind` is `package`.
-
 </Accordion>
 
-<Accordion title="Empty goldens — always pass">
-
-Pass regardless of local content (`absent (empty preset = defaults)`; present targets are kept as-is).
-
-</Accordion>
-
-File, directory, and doc checks use IDs shaped `project:<blueprint>:<name>` (`name` is the manifest `name`, e.g. `project:cli-app:Bun Config`); `kind` is `preset`, `source` is `tech-stack:<blueprint>`. Toolchain dep checks use `project:<blueprint>:deps:<pkg>` with `kind` `package` and `target` `package.json`.
+File, directory, and doc checks use IDs shaped `project:<blueprint>:<name>` (`name` is the manifest `name`, e.g. `project:cli-app:Bun Config`); `kind` is `preset`, `source` is `tech-stack:<blueprint>`.
