@@ -40,7 +40,7 @@ bun run build
 
 <Callout type="tip" title="Gate before pushing">
 
-`verify` (`format` → `check:lint` → `check:types` → `build`) is the gate before pushing.
+`verify` (`format` → `check:lint` → `check:types` → `test`) is the gate before pushing. Run `bun run build` separately for the compiled binary.
 
 </Callout>
 
@@ -70,7 +70,7 @@ adistack-conform check --github-only
 adistack-conform check --json   # machine-readable, for scripts
 ```
 
-Exits: <Badge variant="success">0 in sync</Badge> (skips count as ok), <Badge variant="warning">1 drift</Badge>, <Badge variant="error">2 config error</Badge>. The `--*-only` flags are mutually exclusive.
+Exits: <Badge variant="success">0 in sync</Badge> (skips count as ok), <Badge variant="warning">1 drift</Badge>, <Badge variant="error">2 desired-state error</Badge>. The `--*-only` flags are mutually exclusive.
 
 </Step>
 
@@ -83,7 +83,7 @@ adistack-conform fix --all      # apply everything fixable, no prompt
 adistack-conform fix --no-diff  # skip the diff preview
 ```
 
-`fix` shows the unfixable items with hints first, applies the rest, then re-checks only the selected IDs. It needs a TTY unless you pass `--all`; `--dry-run` never prompts. The full flag and exit-code reference lives in [cli](./cli.md).
+`fix` shows the manual items with hints first, applies the rest, then re-checks only the selected IDs. It needs a TTY unless you pass `--all`; `--dry-run` never prompts. The full flag and exit-code reference lives in [cli](./cli.md).
 
 </Step>
 

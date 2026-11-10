@@ -82,7 +82,7 @@
 		"github": {
 			"type": "string",
 			"minLength": 1,
-			"description": "Repo-relative source path of the GitHub settings preset."
+			"description": "Repo-relative source path of the GitHub settings file."
 		}
 	},
 	"required": ["files"],

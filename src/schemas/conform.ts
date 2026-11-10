@@ -5,9 +5,7 @@ const TechStackSourceSchema = z.object({
 	repo: z
 		.string()
 		.regex(/^[^/\s]+\/[^/\s]+$/u)
-		.describe(
-			"GitHub owner/repo holding blueprints and presets (project) or nix flakes (machine).",
-		),
+		.describe("GitHub owner/repo holding blueprints (project) or nix flakes (machine)."),
 	type: z.literal("github").describe("Tech-stack source; only github is supported."),
 });
 
@@ -31,7 +29,7 @@ const ConformGithubSectionSchema = z.object({
 	blueprint: z
 		.string()
 		.min(1)
-		.describe("GitHub settings blueprint name, e.g. cli-app (reads the manifest github preset)."),
+		.describe("GitHub settings blueprint name, e.g. cli-app (reads the manifest github settings)."),
 	repo: z
 		.string()
 		.regex(/^[^/\s]+\/[^/\s]+$/u)

@@ -12,7 +12,7 @@
 				"blueprint": {
 					"type": "string",
 					"minLength": 1,
-					"description": "GitHub settings blueprint name, e.g. cli-app (reads the manifest github preset)."
+					"description": "GitHub settings blueprint name, e.g. cli-app (reads the manifest github settings)."
 				},
 				"repo": {
 					"type": "string",
@@ -64,7 +64,7 @@
 				"repo": {
 					"type": "string",
 					"pattern": "^[^/\\s]+\\/[^/\\s]+$",
-					"description": "GitHub owner/repo holding blueprints and presets (project) or nix flakes (machine)."
+					"description": "GitHub owner/repo holding blueprints (project) or nix flakes (machine)."
 				},
 				"type": {
 					"type": "string",

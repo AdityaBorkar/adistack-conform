@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-// Desired GitHub repo state, stored as preset files referenced by each blueprint
+// Desired GitHub repo state, stored as settings files referenced by each blueprint
 // manifest's `github` key (e.g. projects/files/github-config/*.json).
 // Every field maps to a GitHub REST endpoint; fields with no public API are
 // reported as skipped/manual with a UI hint instead of failing forever.

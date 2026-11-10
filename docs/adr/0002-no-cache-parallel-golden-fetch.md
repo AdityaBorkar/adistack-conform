@@ -4,4 +4,4 @@ Each run fetches `registry.json` once per unique `repo@ref`, then each blueprint
 
 ## Consequences
 
-`check` exits 0 when in sync (skips count as ok) and 1 on drift; missing goldens report as manual `<preset file missing>`; set `GITHUB_TOKEN` for private repos or rate limits.
+`check` exits 0 when in sync (skips count as ok) and 1 on drift; missing goldens report as manual `<blueprint file missing>`; set `GITHUB_TOKEN` for private repos or rate limits.

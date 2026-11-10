@@ -1,4 +1,4 @@
-import type { LoadedConform } from "#/config.js";
+import type { LoadedDesiredState } from "#/config.js";
 import { findMachineEntry } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
 import { fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
@@ -25,7 +25,7 @@ type FetchDeps = {
 const defaultDeps: FetchDeps = { fetchManifest: fetchProjectManifest, fetchRegistry };
 
 export function collectValidateTargets(
-	configs: readonly LoadedConform[],
+	desiredStates: readonly LoadedDesiredState[],
 ): Map<string, ValidateTargets> {
 	const targets = new Map<string, ValidateTargets>();
 	const add = (id: string, ref: string, kind: "machine" | "project", blueprint: string): void => {
@@ -40,7 +40,7 @@ export function collectValidateTargets(
 			list.push(blueprint);
 		}
 	};
-	for (const loaded of configs) {
+	for (const loaded of desiredStates) {
 		const { id, ref } = loaded.source;
 		if (loaded.project !== undefined) {
 			add(id, ref, "project", loaded.project.blueprint);

@@ -19,8 +19,16 @@ The tech-stack `registry.json` listing every project and machine blueprint by na
 _Avoid_: catalog, index
 
 **Manifest**:
-A project blueprint file (`projects/<name>.json`) declaring its files, compare rules, and file-structure entries.
+A project blueprint file (`projects/<name>.json`) declaring its files, compare rules, file-structure entries, and optional `github` settings-file key.
 _Avoid_: blueprint config, spec file
+
+**Compare**:
+The per-file semantic rule declared by a manifest `files[]` entry: `ignore[]` keys are excluded from the compare and local values are preserved by `fix`.
+_Avoid_: compare config
+
+**File Structure**:
+Manifest `file_structure[]` existence-only entries (`name` + `target` + `kind: file|dir`): content is per-project, missing entries are manual with a generate hint (files) or a `mkdir -p` hint (dirs). An entry whose `name` overlaps a `files[]` name is skipped in favor of the file check.
+_Avoid_: required docs, required dirs
 
 ### Enforcement
 
@@ -39,6 +47,10 @@ _Avoid_: destination, output
 **Scope**:
 One of the three enforcement domains: project files, the whole machine flake, or GitHub repo settings.
 _Avoid_: mode, area
+
+**Kind**:
+The check-result taxonomy: `project` (project files and file-structure entries), `nix` (machine flake), `github` (repo settings), or `internal` (scope-level failure).
+_Avoid_: preset
 
 **Drift**:
 Any mismatch between reality and desired state, reported as a failed check in either scope.
@@ -73,3 +85,7 @@ _Avoid_: system error
 **Fix**:
 The act of applying selected fixable remedies, then re-checking only those IDs.
 _Avoid_: repair, sync, apply
+
+**Validate**:
+The act of checking the tech-stack source itself (`registry.json` plus each configured blueprint file at the pinned `source.repo@ref`), not local drift.
+_Avoid_: verify

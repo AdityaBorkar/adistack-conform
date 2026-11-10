@@ -78,13 +78,13 @@ export function failManual(
 export function partitionResults(results: CheckResult[]): {
 	failed: CheckResult[];
 	fixable: CheckResult[];
-	unfixable: CheckResult[];
+	manual: CheckResult[];
 } {
 	const failed = results.filter((item) => !item.ok);
 	return {
 		failed,
 		fixable: failed.filter((item) => isFixable(item)),
-		unfixable: failed.filter((item) => !isFixable(item)),
+		manual: failed.filter((item) => !isFixable(item)),
 	};
 }
 

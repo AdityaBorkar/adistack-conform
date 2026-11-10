@@ -2,15 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checkPresetFileWithGolden } from "#/stack/check.js";
+import { checkProjectFileWithGolden } from "#/stack/check.js";
 
 function tmp(name: string): string {
 	return join(tmpdir(), `conform-test-${process.pid}-${name}`);
 }
 
-describe("checkPresetFileWithGolden", () => {
+describe("checkProjectFileWithGolden", () => {
 	test("missing file offers golden content", async () => {
-		const result = await checkPresetFileWithGolden({
+		const result = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "f.json",
 			fileTarget: "f.json",
@@ -26,7 +26,7 @@ describe("checkPresetFileWithGolden", () => {
 	test("ignore keeps local value", async () => {
 		const path = tmp("ignored.json");
 		await Bun.write(path, '{"keep":"local","same":1}\n');
-		const result = await checkPresetFileWithGolden({
+		const result = await checkProjectFileWithGolden({
 			blueprint: "b",
 			compare: { ignore: ["keep"] },
 			fileName: "f.json",
@@ -44,7 +44,7 @@ describe("checkPresetFileWithGolden", () => {
 			'{"name":"<package-name>","type":"module","scripts":{"build":"bun ./scripts/build.ts"}}\n';
 		const path = tmp("verbatim-pkg.json");
 		await Bun.write(path, golden);
-		const result = await checkPresetFileWithGolden({
+		const result = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -66,7 +66,7 @@ describe("checkPresetFileWithGolden", () => {
 			path,
 			'{"name":"my-pkg","type":"module","scripts":{"build":"bun ./scripts/build.ts"}}\n',
 		);
-		const result = await checkPresetFileWithGolden({
+		const result = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -83,7 +83,7 @@ describe("checkPresetFileWithGolden", () => {
 			'{"name":"<package-name>","type":"module","scripts":{"build":"bun ./scripts/build.ts"}}\n';
 		const path = tmp("drifted-pkg.json");
 		await Bun.write(path, '{"name":"my-pkg","type":"module","scripts":{"build":"old"}}\n');
-		const result = await checkPresetFileWithGolden({
+		const result = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -94,14 +94,14 @@ describe("checkPresetFileWithGolden", () => {
 		});
 		expect(result.ok).toBe(false);
 		expect(result.fix).toBeUndefined();
-		expect(result.actual).toContain("scripts.build differs from the preset");
+		expect(result.actual).toContain("scripts.build differs from the golden");
 	});
 
 	test("placeholders accept per-project values", async () => {
 		const golden = '{"name":"<package-name>","type":"module"}\n';
 		const path = tmp("required-ok.json");
 		await Bun.write(path, '{"name":"my-pkg","type":"module"}\n');
-		const result = await checkPresetFileWithGolden({
+		const result = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -117,7 +117,7 @@ describe("checkPresetFileWithGolden", () => {
 		const golden = '{"name":"<package-name>","type":"module"}\n';
 		const path = tmp("required-missing.json");
 		await Bun.write(path, '{"type":"module"}\n');
-		const result = await checkPresetFileWithGolden({
+		const result = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -135,7 +135,7 @@ describe("checkPresetFileWithGolden", () => {
 		const golden = '{"name":"<package-name>","keywords":["<keyword>"]}\n';
 		const emptyPath = tmp("required-empty.json");
 		await Bun.write(emptyPath, '{"name":"","keywords":["real"]}\n');
-		const emptyResult = await checkPresetFileWithGolden({
+		const emptyResult = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -150,7 +150,7 @@ describe("checkPresetFileWithGolden", () => {
 
 		const placeholderPath = tmp("required-placeholder.json");
 		await Bun.write(placeholderPath, '{"name":"<something-else>","keywords":["real"]}\n');
-		const placeholderResult = await checkPresetFileWithGolden({
+		const placeholderResult = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -168,7 +168,7 @@ describe("checkPresetFileWithGolden", () => {
 		const golden = '{"keywords":["<keyword>"]}\n';
 		const path = tmp("required-type.json");
 		await Bun.write(path, '{"keywords":"not-an-array"}\n');
-		const result = await checkPresetFileWithGolden({
+		const result = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -187,7 +187,7 @@ describe("checkPresetFileWithGolden", () => {
 			'{"homepage":"https://github.com/<owner>/<repo>#readme","name":"<package-name>"}\n';
 		const okPath = tmp("partial-ok.json");
 		await Bun.write(okPath, '{"homepage":"https://github.com/acme/pkg#readme","name":"pkg"}\n');
-		const okResult = await checkPresetFileWithGolden({
+		const okResult = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -200,7 +200,7 @@ describe("checkPresetFileWithGolden", () => {
 
 		const badPath = tmp("partial-bad.json");
 		await Bun.write(badPath, '{"homepage":"https://example.com/other","name":"pkg"}\n');
-		const badResult = await checkPresetFileWithGolden({
+		const badResult = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -211,14 +211,14 @@ describe("checkPresetFileWithGolden", () => {
 		});
 		expect(badResult.ok).toBe(false);
 		expect(badResult.fix).toBeUndefined();
-		expect(badResult.actual).toContain("homepage does not match the preset template");
+		expect(badResult.actual).toContain("homepage does not match the template");
 	});
 
 	test("placeholder keys accept per-project names", async () => {
 		const golden = '{"bin":{"<binary-name>":"./.output/<binary-name>"},"type":"module"}\n';
 		const okPath = tmp("key-ok.json");
 		await Bun.write(okPath, '{"bin":{"my-cli":"./.output/my-cli"},"type":"module"}\n');
-		const okResult = await checkPresetFileWithGolden({
+		const okResult = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",
@@ -231,7 +231,7 @@ describe("checkPresetFileWithGolden", () => {
 
 		const missingPath = tmp("key-missing.json");
 		await Bun.write(missingPath, '{"bin":{},"type":"module"}\n');
-		const missingResult = await checkPresetFileWithGolden({
+		const missingResult = await checkProjectFileWithGolden({
 			blueprint: "b",
 			fileName: "Package JSON",
 			fileTarget: "package.json",

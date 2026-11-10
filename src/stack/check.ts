@@ -22,7 +22,7 @@ function baseFor(
 ): CheckBase {
 	return {
 		id: `project:${blueprint}:${fileName}`,
-		kind: "preset",
+		kind: "project",
 		scope,
 		source: `tech-stack:${blueprint}`,
 		target: fileTarget,
@@ -191,7 +191,7 @@ function overlayResult(
 	if (deepEqual(localKept, goldenKept)) {
 		const kept =
 			args.compare.ignore.length > 0 ? ` (local ${args.compare.ignore.join("/")} kept)` : "";
-		return pass(args.base, `matches preset${kept}`, args.golden);
+		return pass(args.base, `matches golden${kept}`, args.golden);
 	}
 	const merged: Record<string, unknown> = { ...args.goldenRest };
 	for (const [key, value] of Object.entries(args.localRest)) {
@@ -280,7 +280,7 @@ function collectTemplateIssues(
 			return;
 		}
 		if (!templateStringMatches(goldenNode, localNode)) {
-			issues.push(`${label} does not match the preset template`);
+			issues.push(`${label} does not match the template`);
 		}
 		return;
 	}
@@ -336,7 +336,7 @@ function collectTemplateIssues(
 		return;
 	}
 	if (!deepEqual(goldenNode, localNode)) {
-		issues.push(`${path === "" ? "value" : path} differs from the preset`);
+		issues.push(`${path === "" ? "value" : path} differs from the golden`);
 	}
 }
 
@@ -349,12 +349,12 @@ function templateResult(
 	if (mismatched.length > 0) {
 		return failManual(
 			base,
-			`fields differ from the preset template: ${mismatched.join(", ")}`,
-			"preset template with per-project values (no <...> placeholders)",
-			`Reconcile ${args.targetPath} with the ${args.fileName} preset (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
+			`fields differ from the template: ${mismatched.join(", ")}`,
+			"template with per-project values (no <...> placeholders)",
+			`Reconcile ${args.targetPath} with the ${args.fileName} blueprint (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
 		);
 	}
-	return pass(base, "matches preset template", golden);
+	return pass(base, "matches template", golden);
 }
 
 function semanticResult(args: SemanticArgs): CheckResult | undefined {
@@ -368,7 +368,7 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 					args.base,
 					args.localText,
 					args.golden,
-					`Preset ${args.fileName} is not valid JSON; cannot compare.`,
+					`Blueprint ${args.fileName} is not valid JSON; cannot compare.`,
 				)
 			: undefined;
 	}
@@ -378,7 +378,7 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 					args.base,
 					args.localText,
 					args.golden,
-					`Preset ${args.fileName} is not an object; cannot compare.`,
+					`Blueprint ${args.fileName} is not an object; cannot compare.`,
 				)
 			: undefined;
 	}
@@ -420,7 +420,7 @@ function unreadableTarget(base: CheckBase, golden: string, targetPath: string, e
 	);
 }
 
-export async function checkPresetFileWithGolden(args: {
+export async function checkProjectFileWithGolden(args: {
 	blueprint: string;
 	compare?: ManifestCompare;
 	fileName: string;
@@ -442,7 +442,7 @@ export async function checkPresetFileWithGolden(args: {
 			return failManual(
 				base,
 				"<missing>",
-				"exists (templated from preset)",
+				"exists (templated from blueprint)",
 				`Copy ${args.sourceLabel} to ${args.targetPath}, adapt per-project fields, then re-run check.`,
 			);
 		}
@@ -468,7 +468,7 @@ export async function checkPresetFileWithGolden(args: {
 			);
 		}
 	} else if (targetRead.text === args.golden) {
-		return pass(base, "matches preset", args.golden);
+		return pass(base, "matches golden", args.golden);
 	}
 	if (template || hasCompareRules(compare)) {
 		const semantic = semanticResult({
@@ -499,7 +499,7 @@ export async function checkFileStructureEntry(args: {
 }): Promise<CheckResult> {
 	const base: CheckBase = {
 		id: `project:${args.blueprint}:${args.entryName}`,
-		kind: "preset",
+		kind: "project",
 		scope: args.scope,
 		source: `tech-stack:${args.blueprint}`,
 		target: args.entryName,

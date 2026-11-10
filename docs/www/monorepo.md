@@ -4,11 +4,11 @@ description: Running one conform.json per package with shared registry fetches.
 icon: SquareGrid2x2
 ---
 
-No workspace discovery: each invocation loads a single `conform.json` (walks up from your cwd, or one `--config <path>`), and project targets resolve against that invocation's cwd. In a monorepo, run the CLI once per package directory that owns a `conform.json`:
+No workspace discovery: each invocation loads a single `conform.json` (walks up from your cwd, or one `--desired-state <path>`), and project targets resolve against that invocation's cwd. In a monorepo, run the CLI once per package directory that owns a `conform.json`:
 
 ```bash
 for d in packages/*; do (cd "$d" && adistack-conform check); done
-# or: adistack-conform --config ./packages/a/conform.json check
+# or: adistack-conform --desired-state ./packages/a/conform.json check
 # (note: targets still resolve against your shell cwd, so prefer cd + default discovery)
 ```
 

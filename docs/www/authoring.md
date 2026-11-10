@@ -1,6 +1,6 @@
 ---
 title: Authoring
-description: Writing a tech-stack repo — registry, manifests, presets, and versioning.
+description: Writing a tech-stack repo — registry, manifests, blueprint files, and versioning.
 icon: Pencil
 ---
 
@@ -64,10 +64,10 @@ Reference the blueprints in `registry.json` (`machines[]` + `projects[]`, explic
 
 ## Versioning and rollout
 
-Consumers pin `source.ref` (branch, tag, or commit). Publish a tag for breaking preset changes and let repos adopt it deliberately; keep `main` moving for small fixes. Since the CLI has no local cache, pushing a preset change takes effect on the next `check`.
+Consumers pin `source.ref` (branch, tag, or commit). Publish a tag for breaking blueprint changes and let repos adopt it deliberately; keep `main` moving for small fixes. Since the CLI has no local cache, pushing a blueprint change takes effect on the next `check`.
 
 <Callout type="tip" title="After rollout">
 
-Verify generated-project order after rollout: `bun format && bun check:lint && bun check:types && bun run build`.
+Verify generated-project order after rollout: `bun format && bun check:lint && bun check:types && bun test`.
 
 </Callout>

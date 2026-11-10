@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import type { LoadedConform } from "#/config.js";
+import type { LoadedDesiredState } from "#/config.js";
 import type { RegistryDocument } from "#/stack/registry.js";
 import { collectValidateTargets, validateTargets } from "#/stack/validate.js";
 
-function loaded(overrides: Partial<LoadedConform> = {}): LoadedConform {
+function loaded(overrides: Partial<LoadedDesiredState> = {}): LoadedDesiredState {
 	return {
 		dir: "/tmp",
 		path: "/tmp/conform.json",
@@ -19,7 +19,7 @@ const registry = {
 } as unknown as RegistryDocument;
 
 describe("collectValidateTargets", () => {
-	test("dedupes shared project/github blueprints across configs", () => {
+	test("dedupes shared project/github blueprints across desired states", () => {
 		const targets = collectValidateTargets([
 			loaded({ project: { blueprint: "cli-app" } }),
 			loaded({ github: { blueprint: "cli-app" }, project: { blueprint: "cli-app" } }),

@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 
 import { ConformSchema } from "#/schemas/conform.js";
-import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
+import { readJsonFile, resolveDesiredStatePath } from "#/utils/fs.js";
 import { parseOrThrow } from "#/utils/schema.js";
 
 export interface ConformSource {
@@ -24,7 +24,7 @@ export interface ConformProject {
 	blueprint: string;
 }
 
-export interface LoadedConform {
+export interface LoadedDesiredState {
 	dir: string;
 	github?: ConformGithub;
 	machine?: ConformMachine;
@@ -53,11 +53,11 @@ export interface GithubRunSpec {
 	repo?: string;
 }
 
-function toLoadedConfig(path: string, parsed: unknown): LoadedConform {
-	const data = parseOrThrow(ConformSchema, path, parsed, "conform config");
+function toLoadedDesiredState(path: string, parsed: unknown): LoadedDesiredState {
+	const data = parseOrThrow(ConformSchema, path, parsed, "desired state");
 	if (data.github === undefined && data.machine === undefined && data.project === undefined) {
 		throw new Error(
-			`Invalid conform config in ${path}: set at least one of "github", "machine", or "project".`,
+			`Invalid desired state in ${path}: set at least one of "github", "machine", or "project".`,
 		);
 	}
 	return {
@@ -76,35 +76,37 @@ function toLoadedConfig(path: string, parsed: unknown): LoadedConform {
 
 const CONFIG_FILENAME = "conform.json";
 
-export async function loadConfig(configPath: string): Promise<LoadedConform> {
-	const path = resolveConfigPath(configPath);
-	const parsed = await readJsonFile(path, "Config");
-	return toLoadedConfig(path, parsed);
+export async function loadDesiredState(desiredStatePath: string): Promise<LoadedDesiredState> {
+	const path = resolveDesiredStatePath(desiredStatePath);
+	const parsed = await readJsonFile(path, "Desired state");
+	return toLoadedDesiredState(path, parsed);
 }
 
-export async function discoverConfigs(): Promise<LoadedConform[]> {
+export async function discoverDesiredStates(): Promise<LoadedDesiredState[]> {
 	let dir = process.cwd();
 	while (true) {
 		const path = join(dir, CONFIG_FILENAME);
 		if (await Bun.file(path).exists()) {
-			return [await loadConfig(path)];
+			return [await loadDesiredState(path)];
 		}
 		const parent = dirname(dir);
 		if (parent === dir) {
-			throw new Error(`No config found from ${process.cwd()} up (looked for ${CONFIG_FILENAME}).`);
+			throw new Error(
+				`No desired state found from ${process.cwd()} up (looked for ${CONFIG_FILENAME}).`,
+			);
 		}
 		dir = parent;
 	}
 }
 
-export function projectSpecOf(loaded: LoadedConform): ProjectRunSpec | undefined {
+export function projectSpecOf(loaded: LoadedDesiredState): ProjectRunSpec | undefined {
 	if (loaded.project === undefined) {
 		return undefined;
 	}
 	return { blueprint: loaded.project.blueprint, id: loaded.source.id, ref: loaded.source.ref };
 }
 
-export function machineSpecOf(loaded: LoadedConform): MachineRunSpec | undefined {
+export function machineSpecOf(loaded: LoadedDesiredState): MachineRunSpec | undefined {
 	if (loaded.machine === undefined) {
 		return undefined;
 	}
@@ -116,7 +118,7 @@ export function machineSpecOf(loaded: LoadedConform): MachineRunSpec | undefined
 	};
 }
 
-export function githubSpecOf(loaded: LoadedConform): GithubRunSpec | undefined {
+export function githubSpecOf(loaded: LoadedDesiredState): GithubRunSpec | undefined {
 	if (loaded.github === undefined) {
 		return undefined;
 	}

@@ -11,7 +11,7 @@ import { errorMessage } from "#/utils/fs.js";
 import { FETCH_TIMEOUT_MS, apiHeaders, githubToken } from "#/utils/net.js";
 import { parseOrThrow } from "#/utils/schema.js";
 
-export type GithubPreset = z.infer<typeof GithubSchema>;
+export type GithubSettings = z.infer<typeof GithubSchema>;
 
 const GITHUB_API = "https://api.github.com";
 
@@ -182,17 +182,17 @@ function resolveTargetRepo(configured: string | undefined): string {
 	);
 }
 
-type GithubPresetResult =
-	| { golden: GithubPreset; rel: string }
+type GithubSettingsResult =
+	| { golden: GithubSettings; rel: string }
 	| { rel: string }
 	| Record<string, never>;
 
-async function fetchGithubPreset(
+async function fetchGithubSettings(
 	id: string,
 	ref: string,
 	blueprint: string,
 	registry: RegistryDocument,
-): Promise<GithubPresetResult> {
+): Promise<GithubSettingsResult> {
 	const manifest = await fetchProjectManifest(id, ref, blueprint, registry);
 	if (manifest.github === undefined || manifest.github === "") {
 		return {};
@@ -200,7 +200,7 @@ async function fetchGithubPreset(
 	const rel = resolveSourceRel(manifest.github);
 	let text: string;
 	try {
-		text = await fetchTextOrThrow(rawUrl(id, ref, rel), `github preset ${rel}`);
+		text = await fetchTextOrThrow(rawUrl(id, ref, rel), `github settings ${rel}`);
 	} catch (error) {
 		if (errorMessage(error).includes("HTTP 404") || errorMessage(error).includes("not found")) {
 			return { rel };
@@ -211,11 +211,11 @@ async function fetchGithubPreset(
 	try {
 		parsed = JSON.parse(text) as unknown;
 	} catch (error) {
-		throw new Error(`Github preset has invalid JSON in ${rel}: ${errorMessage(error)}`, {
+		throw new Error(`Github settings has invalid JSON in ${rel}: ${errorMessage(error)}`, {
 			cause: error,
 		});
 	}
-	return { golden: parseOrThrow(GithubSchema, `${rel} (remote)`, parsed, "github preset"), rel };
+	return { golden: parseOrThrow(GithubSchema, `${rel} (remote)`, parsed, "github settings"), rel };
 }
 
 function baseFor(blueprint: string, name: string, target: string): CheckBase {
@@ -279,7 +279,7 @@ function compareField(
 async function checkGeneral(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "general", target);
@@ -371,7 +371,7 @@ async function checkGeneral(
 async function checkReleases(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "releases", target);
@@ -414,7 +414,7 @@ async function contentExists(repo: string, path: string): Promise<boolean> {
 async function checkCodeowners(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "codeowners", target);
@@ -443,7 +443,7 @@ async function checkCodeowners(
 async function checkIssueTemplates(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "issue-templates", target);
@@ -604,7 +604,7 @@ function protectionPutBody(
 	};
 }
 
-function protectionInput(golden: GithubPreset): ProtectionInput {
+function protectionInput(golden: GithubSettings): ProtectionInput {
 	return {
 		branch: golden.defaultBranch,
 		checks: golden.checks,
@@ -627,7 +627,7 @@ function checkNames(contexts: unknown): string[] {
 function checkPrChecks(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	read: { missingBranch: boolean; protection: Record<string, unknown> | undefined },
 	target: string,
 ): CheckResult {
@@ -672,7 +672,7 @@ function checkPrChecks(
 async function checkReviews(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	read: { missingBranch: boolean; protection: Record<string, unknown> | undefined },
 	target: string,
 ): Promise<CheckResult> {
@@ -763,7 +763,7 @@ async function checkReviews(
 async function checkRulesets(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "rulesets", target);
@@ -802,7 +802,7 @@ async function checkRulesets(
 async function checkActionsPermissions(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-permissions", target);
@@ -840,7 +840,7 @@ async function checkActionsPermissions(
 async function checkActionsWorkflow(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-workflow", target);
@@ -922,7 +922,7 @@ async function checkActionsWorkflow(
 async function checkActionsRetention(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-retention", target);
@@ -962,7 +962,7 @@ async function checkActionsRetention(
 async function checkActionsOidc(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-oidc", target);
@@ -997,7 +997,7 @@ async function checkActionsOidc(
 async function checkEnvironments(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "environments", target);
@@ -1047,7 +1047,7 @@ function securityStatus(entry: unknown): string | undefined {
 async function checkSecurity(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult[]> {
 	const base = baseFor(blueprint, "security", target);
@@ -1155,7 +1155,7 @@ async function checkSecurity(
 async function checkSecrets(
 	blueprint: string,
 	repo: string,
-	golden: GithubPreset,
+	golden: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "secrets", target);
@@ -1194,7 +1194,7 @@ async function checkSecrets(
 	);
 }
 
-function checkUiOnly(blueprint: string, golden: GithubPreset, target: string): CheckResult[] {
+function checkUiOnly(blueprint: string, golden: GithubSettings, target: string): CheckResult[] {
 	const results: CheckResult[] = [];
 	if (golden.socialPreview) {
 		results.push(
@@ -1243,31 +1243,31 @@ export async function runGithubChecks(
 	spec: GithubRunSpec,
 	registry: RegistryDocument,
 ): Promise<CheckResult[]> {
-	const preset = await fetchGithubPreset(spec.id, spec.ref, spec.blueprint, registry);
+	const settings = await fetchGithubSettings(spec.id, spec.ref, spec.blueprint, registry);
 	const repo = resolveTargetRepo(spec.repo);
 	const target = `${repo} (repo settings)`;
-	if (!("golden" in preset)) {
-		const base = baseFor(spec.blueprint, "preset", target);
-		if (!("rel" in preset)) {
+	if (!("golden" in settings)) {
+		const base = baseFor(spec.blueprint, "settings", target);
+		if (!("rel" in settings)) {
 			return [
 				failManual(
 					base,
-					"<preset reference missing>",
+					"<settings reference missing>",
 					`"github" key in the ${spec.blueprint} blueprint manifest`,
-					`Point the manifest "github" key at a preset (e.g. "projects/files/github-config/<name>.json", see configuration_schema/github.json), then re-run check.`,
+					`Point the manifest "github" key at github settings (e.g. "projects/files/github-config/<name>.json", see configuration_schema/github.json), then re-run check.`,
 				),
 			];
 		}
 		return [
 			failManual(
 				base,
-				"<preset file missing>",
-				preset.rel,
-				`Preset file missing in tech-stack repo: ${preset.rel}`,
+				"<settings file missing>",
+				settings.rel,
+				`Settings file missing in tech-stack repo: ${settings.rel}`,
 			),
 		];
 	}
-	const { golden } = preset;
+	const { golden } = settings;
 	try {
 		const read = await readProtection(repo, golden.defaultBranch);
 		const prChecks = checkPrChecks(spec.blueprint, repo, golden, read, target);

@@ -51,7 +51,7 @@ export const ManifestSchema = z.compile(
 			github: z
 				.string()
 				.min(1)
-				.describe("Repo-relative source path of the GitHub settings preset.")
+				.describe("Repo-relative source path of the GitHub settings file.")
 				.optional(),
 		})
 		.strict(),

@@ -1,5 +1,5 @@
 ---
-title: Presets
+title: Blueprint files
 description: blueprint files, golden fetching, and per-target enforcement rules.
 icon: Wrench
 ---
@@ -22,7 +22,7 @@ Schema: `./configuration_schema/project-manifest.json` (generated, draft 2020-12
 
 `source` is the golden file's repo-relative path, used for `raw.githubusercontent.com` fetches (e.g. `projects/files/<group>/<variant>`; a leading `/` is stripped). Paths starting with `./` or `../` are rejected — sources must be repo-relative.
 
-Only the goldens you need are fetched, deduplicated by repo-relative path, 16-way parallel. A missing golden is a manual failure (`<preset file missing>` with the repo-relative path).
+Only the goldens you need are fetched, deduplicated by repo-relative path, 16-way parallel. A missing golden is a manual failure (`<blueprint file missing>` with the repo-relative path).
 
 ## Where targets land
 
@@ -50,4 +50,4 @@ Blueprint `file_structure[]` entries (`name` + `target` + `kind: file|dir`) must
 
 </Accordion>
 
-File, directory, and doc checks use IDs shaped `project:<blueprint>:<name>` (`name` is the manifest `name`, e.g. `project:cli-app:Bun Config`); `kind` is `preset`, `source` is `tech-stack:<blueprint>`.
+File and directory checks use IDs shaped `project:<blueprint>:<name>` (`name` is the manifest `name`, e.g. `project:cli-app:Bun Config`); `kind` is `project`, `source` is `tech-stack:<blueprint>`.

@@ -3,10 +3,10 @@ import { Command } from "commander";
 
 import type { CheckResult, CheckScope } from "#/checks.js";
 import { partitionResults } from "#/checks.js";
-import type { LoadedConform } from "#/config.js";
+import type { LoadedDesiredState } from "#/config.js";
 import {
-	discoverConfigs,
-	loadConfig,
+	discoverDesiredStates,
+	loadDesiredState,
 	githubSpecOf,
 	machineSpecOf,
 	projectSpecOf,
@@ -27,7 +27,7 @@ import {
 	printJsonSummary,
 	printResults,
 	renderFixDiffs,
-	reportUnfixable,
+	reportManual,
 } from "#/utils/output.js";
 
 const VERSION = "0.1.0";
@@ -55,12 +55,12 @@ function scopeOf(options: ScopeOptions): CheckScope | undefined {
 	return undefined;
 }
 
-async function loadConfigsFromCommand(cmd: Command): Promise<LoadedConform[]> {
-	const config = cmd.optsWithGlobals<{ config?: string }>().config;
-	if (config !== undefined) {
-		return [await loadConfig(config)];
+async function loadDesiredStatesFromCommand(cmd: Command): Promise<LoadedDesiredState[]> {
+	const desiredState = cmd.optsWithGlobals<{ desiredState?: string }>().desiredState;
+	if (desiredState !== undefined) {
+		return [await loadDesiredState(desiredState)];
 	}
-	return discoverConfigs();
+	return discoverDesiredStates();
 }
 
 function failWith(error: unknown): never {
@@ -104,11 +104,11 @@ async function timed<T>(task: Promise<T>): Promise<{ elapsedMs: number; value: T
 // One registry fetch per unique repo@ref, shared by every spec in the run,
 // scoped to a single command: no hidden state, no stale entries.
 async function fetchRegistries(
-	configs: readonly LoadedConform[],
+	desiredStates: readonly LoadedDesiredState[],
 	only: CheckScope | undefined,
 ): Promise<Map<string, RegistryDocument>> {
 	const wanted = new Map<string, { id: string; ref: string }>();
-	for (const loaded of configs) {
+	for (const loaded of desiredStates) {
 		if (only === undefined || only === "project") {
 			const spec = projectSpecOf(loaded);
 			if (spec !== undefined) {
@@ -138,7 +138,7 @@ async function fetchRegistries(
 }
 
 async function runAllChecks(args: {
-	configs: LoadedConform[];
+	desiredStates: LoadedDesiredState[];
 	cwd: string;
 	home: string;
 	only: CheckScope | undefined;
@@ -152,7 +152,7 @@ async function runAllChecks(args: {
 	const projectTasks: Promise<CheckResult[]>[] = [];
 	const machineTasks: Promise<CheckResult[]>[] = [];
 	const githubTasks: Promise<CheckResult[]>[] = [];
-	for (const loaded of args.configs) {
+	for (const loaded of args.desiredStates) {
 		if (args.only === undefined || args.only === "project") {
 			const spec = projectSpecOf(loaded);
 			if (spec !== undefined) {
@@ -199,20 +199,20 @@ async function runAllChecks(args: {
 
 async function prepareRun(cmd: Command, cmdOptions: ScopeOptions) {
 	const only = scopeOf(cmdOptions);
-	const configs = await loadConfigsFromCommand(cmd);
+	const desiredStates = await loadDesiredStatesFromCommand(cmd);
 	const cwd = process.cwd();
 	const home = defaultHome();
-	const registries = await fetchRegistries(configs, only);
-	const run = await runAllChecks({ configs, cwd, home, only, registries });
-	return { configs, cwd, home, only, registries, ...run };
+	const registries = await fetchRegistries(desiredStates, only);
+	const run = await runAllChecks({ cwd, desiredStates, home, only, registries });
+	return { cwd, desiredStates, home, only, registries, ...run };
 }
 
 async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promise<number> {
-	const { configs, githubElapsedMs, machineElapsedMs, projectElapsedMs, results } =
+	const { desiredStates, githubElapsedMs, machineElapsedMs, projectElapsedMs, results } =
 		await prepareRun(cmd, cmdOptions);
 	if (cmdOptions.json) {
 		printJsonSummary(
-			configs.map((entry) => entry.path),
+			desiredStates.map((entry) => entry.path),
 			results,
 		);
 	} else {
@@ -231,15 +231,15 @@ async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promi
 
 async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<number> {
 	const start = performance.now();
-	const { configs, cwd, home, only, registries, results } = await prepareRun(cmd, cmdOptions);
-	const { failed, fixable, unfixable } = partitionResults(results);
+	const { cwd, desiredStates, home, only, registries, results } = await prepareRun(cmd, cmdOptions);
+	const { failed, fixable, manual } = partitionResults(results);
 
 	if (failed.length === 0) {
 		console.log(`All conform checks passed in ${formatDuration(performance.now() - start)}.`);
 		return 0;
 	}
 
-	reportUnfixable(unfixable);
+	reportManual(manual);
 
 	if (fixable.length === 0) {
 		console.log(
@@ -289,7 +289,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 	try {
 		const selectedIds = new Set(selection.selected.map((item) => item.id));
 		const refreshed = await Promise.all(
-			configs.map(async (loaded) => {
+			desiredStates.map(async (loaded) => {
 				const reruns: CheckResult[][] = [];
 				if (only === undefined || only === "project") {
 					const spec = projectSpecOf(loaded);
@@ -349,7 +349,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 		const byId = new Map(refreshed.flat().map((item) => [item.id, item]));
 		rerunResults = results.map((item) => byId.get(item.id) ?? item);
 	} catch {
-		const rerun = await runAllChecks({ configs, cwd, home, only, registries });
+		const rerun = await runAllChecks({ cwd, desiredStates, home, only, registries });
 		rerunResults = rerun.results;
 	}
 	const remaining = rerunResults.filter((item) => !item.ok);
@@ -366,8 +366,8 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 }
 
 async function runValidateCommand(cmd: Command): Promise<number> {
-	const configs = await loadConfigsFromCommand(cmd);
-	const results = await validateTargets(collectValidateTargets(configs));
+	const desiredStates = await loadDesiredStatesFromCommand(cmd);
+	const results = await validateTargets(collectValidateTargets(desiredStates));
 	for (const result of results) {
 		if (result.ok) {
 			console.log(`${okMark(true)} ${result.file}`);
@@ -387,16 +387,16 @@ async function runValidateCommand(cmd: Command): Promise<number> {
 const program = new Command();
 program
 	.description(
-		"Check the current project/machine/repo against the config in the current directory.",
+		"Check the current project/machine/repo against the desired state in the current directory.",
 	)
 	.name("adistack-conform")
-	.option("--config <path>", "Path to conform.json (default: walks up from the cwd)")
+	.option("--desired-state <path>", "Path to conform.json (default: walks up from the cwd)")
 	.version(VERSION);
 
 program
 	.command("check")
 	.description(
-		"Check the config in the current directory against the current project/machine/repo.",
+		"Check the desired state in the current directory against the current project/machine/repo.",
 	)
 	.option("--json", "Print machine-readable JSON.")
 	.option("--verbose", "Show passing checks too.")
@@ -414,7 +414,7 @@ program
 program
 	.command("fix")
 	.description("Interactively fix drift (space to select, enter to apply).")
-	.option("--all", "Apply all auto-fixable items without prompting.")
+	.option("--all", "Apply all fixable items without prompting.")
 	.option("--dry-run", "Show what would be fixed without writing.")
 	.option("--no-diff", "Hide the diff preview.")
 	.option("--project-only", "Only fix project checks.")

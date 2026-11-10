@@ -1,6 +1,6 @@
 import { failManual, type CheckResult, type CheckScope } from "#/checks.js";
 import type { ProjectRunSpec } from "#/config.js";
-import { checkFileStructureEntry, checkPresetFileWithGolden } from "#/stack/check.js";
+import { checkFileStructureEntry, checkProjectFileWithGolden } from "#/stack/check.js";
 import type {
 	ManifestCompare,
 	ManifestFile,
@@ -64,7 +64,7 @@ async function fetchGoldens(
 	await mapWithConcurrency(toFetch, GOLDEN_FETCH_CONCURRENCY, async (rel) => {
 		try {
 			goldens.set(rel, {
-				text: await fetchTextOrThrow(rawUrl(id, ref, rel), `preset file ${rel}`),
+				text: await fetchTextOrThrow(rawUrl(id, ref, rel), `blueprint file ${rel}`),
 			});
 		} catch (error) {
 			goldens.set(rel, { error: errorMessage(error) });
@@ -88,7 +88,7 @@ function checkNeeded(
 			if (golden?.text === undefined) {
 				const base = {
 					id: `project:${item.blueprint}:${item.fileName}`,
-					kind: "preset",
+					kind: "project",
 					scope,
 					source: `tech-stack:${item.blueprint}`,
 					target: item.fileTarget,
@@ -97,22 +97,22 @@ function checkNeeded(
 					return Promise.resolve(
 						failManual(
 							base,
-							"<preset fetch failed>",
+							"<blueprint fetch failed>",
 							item.sourceRel,
-							`Cannot fetch preset ${item.sourceRel}: ${golden.error}`,
+							`Cannot fetch blueprint ${item.sourceRel}: ${golden.error}`,
 						),
 					);
 				}
 				return Promise.resolve(
 					failManual(
 						base,
-						"<preset file missing>",
+						"<blueprint file missing>",
 						item.sourceRel,
-						`Preset file missing in tech-stack repo: ${item.sourceRel}`,
+						`Blueprint file missing in tech-stack repo: ${item.sourceRel}`,
 					),
 				);
 			}
-			return checkPresetFileWithGolden({
+			return checkProjectFileWithGolden({
 				blueprint: item.blueprint,
 				compare: item.compare,
 				fileName: item.fileName,

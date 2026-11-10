@@ -103,13 +103,13 @@ export function printResults(
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
-export function printJsonSummary(configs: string[], results: CheckResult[]): void {
+export function printJsonSummary(desiredStates: string[], results: CheckResult[]): void {
 	const { failed } = partitionResults(results);
 	const skipped = results.filter((item) => item.skipped === true);
 	console.log(
 		JSON.stringify(
 			{
-				configs,
+				desiredStates,
 				failed: failed.length,
 				ok: failed.length === 0,
 				passed: results.length - failed.length - skipped.length,
@@ -123,8 +123,8 @@ export function printJsonSummary(configs: string[], results: CheckResult[]): voi
 	);
 }
 
-export function reportUnfixable(unfixable: CheckResult[]): void {
-	for (const item of unfixable) {
+export function reportManual(manual: CheckResult[]): void {
+	for (const item of manual) {
 		console.error(formatResult(item));
 		if (item.hint === undefined) {
 			console.error(`    fix manually: see target ${item.target}`);

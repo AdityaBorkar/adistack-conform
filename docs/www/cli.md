@@ -4,11 +4,11 @@ description: check and fix flags, exit codes, JSON output, and non-TTY behavior.
 icon: Command
 ---
 
-One binary, two verbs. Global shape first:
+One binary, three verbs. Global shape first:
 
-`adistack-conform [--config <path>] <command>`
+`adistack-conform [--desired-state <path>] <command>`
 
-Without `--config`, the CLI walks up from your cwd to find `conform.json`; `--config` accepts any path.
+Without `--desired-state`, the CLI walks up from your cwd to find `conform.json`; `--desired-state` accepts any path.
 
 ## `check`
 
@@ -26,7 +26,7 @@ adistack-conform check [--json] [--verbose] [--project-only | --machine-only | -
 
 Output lists only failures plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | error`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
 
-Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 config error</Badge>. Drift includes unknown blueprints and registry/blueprint fetch failures (reported as `<scope>:internal-error`); config errors are a missing file, invalid JSON/schema, or both scope flags.
+Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>. Drift includes unknown blueprints and registry/blueprint fetch failures (reported as `<scope>:internal-error`); desired-state errors are a missing file, invalid JSON/schema, or passing two scope flags.
 
 `--json` shape:
 
@@ -42,7 +42,7 @@ Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="war
 }
 ```
 
-Each result carries `id` (`project:<blueprint>:<name>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`preset` | `nix` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) or `hint` when manual, and `skipped: true` when skipped.
+Each result carries `id` (`project:<blueprint>:<name>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `nix` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) or `hint` when manual, and `skipped: true` when skipped.
 
 ## `fix`
 
@@ -54,7 +54,7 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine
 
 | Flag                                                  | Meaning                                                                                                  |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `--all`                                               | Apply all auto-fixable items without prompting. Required for non-TTY use.                                |
+| `--all`                                               | Apply all fixable items without prompting. Required for non-TTY use.                                     |
 | `--dry-run`                                           | Show what would be fixed without writing. Never prompts, never writes. Implies exit 1 when drift exists. |
 | `--no-diff`                                           | Hide the unified diff preview (useful for huge files).                                                   |
 | `--project-only` / `--machine-only` / `--github-only` | Fix one scope. Passing two is an error.                                                                  |
@@ -63,7 +63,7 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine
 
 <Step title="Triage">
 
-`fix` reports the unfixable items first, each with its hint. Read these before anything changes — they need you, not the CLI.
+`fix` reports the manual items first, each with its hint. Read these before anything changes — they need you, not the CLI.
 
 </Step>
 
@@ -87,7 +87,7 @@ Only the selected IDs are re-checked. The run ends with `Fixed X/Y. N still fail
 
 </Steps>
 
-Exit codes: <Badge variant="success">0 nothing remains failing</Badge> <Badge variant="warning">1 drift remains / cancelled / dry-run found drift</Badge> <Badge variant="error">2 config error</Badge> — including no-TTY use without `--all`, and non-TTY `--all` with command/API fixes (`Re-run in a terminal …`).
+Exit codes: <Badge variant="success">0 nothing remains failing</Badge> <Badge variant="warning">1 drift remains / cancelled / dry-run found drift</Badge> <Badge variant="error">2 desired-state error</Badge> — including no-TTY use without `--all`, and non-TTY `--all` with command/API fixes (`Re-run in a terminal …`).
 
 ## `validate`
 
@@ -95,11 +95,12 @@ Check the tech-stack source itself, not your files:
 
 ```bash
 adistack-conform validate
+adistack-conform --desired-state ./packages/a/conform.json validate
 ```
 
-Validates `registry.json` plus the blueprint file of every configured project/`github` blueprint (machine blueprints check the registry entry only) at the pinned `source.repo@ref`. Prints one `✓`/`✗` line per file with the error detail.
+Validates `registry.json` plus the blueprint file of every configured project/`github` blueprint (machine blueprints check the registry entry only) at the pinned `source.repo@ref`. Prints one `✓`/`✗` line per file with the error detail. The global `--desired-state` flag applies here too.
 
-Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 config error</Badge>.
+Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 desired-state error</Badge>.
 
 <Callout type="tip" title="Agents and CI">
 

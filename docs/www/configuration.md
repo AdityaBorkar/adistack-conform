@@ -55,16 +55,16 @@ Machines are entirely nix-managed. See [blueprints](./blueprints.md) for matchin
 
 ## `github` <Badge variant="muted">optional</Badge>
 
-| Field       | Required | Default                                              | Meaning                                                                      |
-| ----------- | -------- | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `blueprint` | yes      | —                                                    | Blueprint whose `github` key points at the settings preset (e.g. `cli-app`). |
-| `repo`      | no       | `$GITHUB_REPOSITORY`, then the cwd git origin remote | `owner/repo` whose settings are checked.                                     |
+| Field       | Required | Default                                              | Meaning                                                                    |
+| ----------- | -------- | ---------------------------------------------------- | -------------------------------------------------------------------------- |
+| `blueprint` | yes      | —                                                    | Blueprint whose `github` key points at the settings file (e.g. `cli-app`). |
+| `repo`      | no       | `$GITHUB_REPOSITORY`, then the cwd git origin remote | `owner/repo` whose settings are checked.                                   |
 
-The golden is the preset file referenced by the blueprint `github` key (e.g. `projects/files/github-config/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit, then the scope skips (still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted.
+The golden is the settings file referenced by the blueprint `github` key (e.g. `projects/files/github-config/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit, then the scope skips (still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted.
 
 ## Loading rules
 
-- Without `--config`, `check` / `fix` walk up from your cwd to find `conform.json`; a missing file exits 2.
-- With `--config <path>`, any path is accepted. The path may use `~` (`untildify`) and resolves against your cwd.
+- Without `--desired-state`, `check` / `fix` / `validate` walk up from your cwd to find `conform.json`; a missing file exits 2.
+- With `--desired-state <path>`, any path is accepted. The path may use `~` (`untildify`) and resolves against your cwd.
 - Invalid JSON or schema violations print a `zod` summary and exit 2.
 - `--project-only` / `--machine-only` / `--github-only` filter at run time; omitting the other scopes from `conform.json` has the same effect permanently.

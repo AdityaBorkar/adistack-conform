@@ -14,12 +14,12 @@ Humans read lines; scripts read JSON:
 adistack-conform check --json --project-only > report.json
 ```
 
-Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` / exit code (<Badge variant="success">0 sync</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 config error</Badge>). Each `CheckResult`:
+Prints `{ desiredStates, ok, passed, failed, skipped, total, results }`. Gate on `ok` / exit code (<Badge variant="success">0 sync</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>). Each `CheckResult`:
 
 ```jsonc
 {
 	"id": "project:cli-app:Bun Config", // or "nix:main" or "github:cli-app:general"
-	"kind": "preset", // "preset" | "nix" | "github" | "internal"
+	"kind": "project", // "project" | "nix" | "github" | "internal"
 	"scope": "project", // "project" | "machine" | "github"
 	"source": "tech-stack:cli-app",
 	"target": "bunfig.toml",
@@ -54,15 +54,15 @@ Never hand-edit the generated files. Change the Zod source and regen.
 | `configuration_schema/conform.json`          | Consumer `conform.json`                                        |
 | `configuration_schema/project-manifest.json` | Blueprint file (`projects/<name>.json`) in the tech-stack repo |
 | `configuration_schema/registry.json`         | Tech-stack root `registry.json`                                |
-| `configuration_schema/github.json`           | Preset file referenced by a blueprint manifest `github` key    |
+| `configuration_schema/github.json`           | Settings file referenced by a blueprint manifest `github` key  |
 
 ## Building
 
 ```bash
 bun install
 bun run dev              # run from source: bun ./src/index.ts
-bun run verify           # format && check:lint && check:types && build (gate before pushing)
-bun run build            # regen schemas + bun build --compile --minify --bytecode to .output/adistack-conform
+bun run verify           # format && check:lint && check:types && test (gate before pushing)
+bun run build            # regen schemas via gen:json-schema + compile --minify --bytecode to .output/adistack-conform
 ```
 
 Conventions: path alias `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` for type-only, tabs + width 100, always `bun run <script>`. The `home-manager` / `nix` fallback, 30s fetch timeout, 10-minute switch timeout, and 16-way golden parallelism are fixed, not configurable.

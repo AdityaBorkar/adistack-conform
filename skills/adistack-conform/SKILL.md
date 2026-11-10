@@ -24,7 +24,7 @@ Bun-only TypeScript CLI that checks the current directory (project files) and th
 - `source.type` is always `"github"`. `source.repo` is `owner/repo`. `source.ref` defaults to `main` (branch, tag, or commit; pin for reproducibility).
 - `project.blueprint` matches a tech-stack root `registry.json` `projects[]` entry by `name`, `path`, or path basename without `.json` (e.g. `cli-app` matches `./projects/cli-app.json`).
 - `machine.blueprint` matches a `registry.json` `machines[]` entry the same way (e.g. `main`). `machine.configuration` is the optional `homeConfigurations` attribute; omit it for home-manager `$USER` auto-select.
-- Config discovery: without `--config`, the CLI walks up from the cwd to find `conform.json`. `--config <path>` accepts any path. Project targets resolve against the cwd.
+- Desired-state discovery: without `--desired-state`, the CLI walks up from the cwd to find `conform.json`. `--desired-state <path>` accepts any path. Project targets resolve against the cwd.
 
 ## Commands
 
@@ -37,12 +37,12 @@ adistack-conform validate
 # from source: bun ./src/index.ts check
 ```
 
-- `check` exits 0 (in sync, skips count as ok), 1 (drift), 2 (config error).
+- `check` exits 0 (in sync, skips count as ok), 1 (drift), 2 (desired-state error).
 - `--project-only` + `--machine-only` + `--github-only` are mutually exclusive (passing two is an error).
-- `--json` prints a machine-readable summary (`{ configs, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically. `--verbose` also shows passing checks (default: failures only).
-- `fix` flow: reports unfixable items with hints, shows a diff preview (unless `--no-diff`, diffs over ~200KB skipped), prompts with space-to-toggle multiselect (each option shows the fix command), applies `overwrite-file` fixes first then commands/API fixes, then re-checks only the selected IDs. `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on config error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes.
+- `--json` prints a machine-readable summary (`{ desiredStates, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically. `--verbose` also shows passing checks (default: failures only).
+- `fix` flow: reports manual items with hints, shows a diff preview (unless `--no-diff`, diffs over ~200KB skipped), prompts with space-to-toggle multiselect (each option shows the fix command), applies `overwrite-file` fixes first then commands/API fixes, then re-checks only the selected IDs. `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on desired-state error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes.
 - `fix` needs a TTY unless `--all` is passed, and non-TTY `--all` refuses command/API fixes (re-run in a terminal). In agents/non-TTY runs use `fix --dry-run` (dry-run never writes and never prompts). Prefer `fix --dry-run` before `fix --all` so the diff is reviewed first.
-- `validate` checks the tech-stack `registry.json` plus the blueprint file (e.g. `projects/cli-app.json`) of every configured project/github blueprint (machine blueprints check the registry entry only). Prints one `✓`/`✗` line per file with the error detail, exits 0 when all valid, 1 when any invalid, 2 on config error.
+- `validate` checks the tech-stack `registry.json` plus the blueprint file (e.g. `projects/cli-app.json`) of every configured project/github blueprint (machine blueprints check the registry entry only). Prints one `✓`/`✗` line per file with the error detail, exits 0 when all valid, 1 when any invalid, 2 on desired-state error. The global `--desired-state` flag applies.
 - Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits. GitHub-scope checks/fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit (then the scope skips, still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); the target repo defaults to `$GITHUB_REPOSITORY`, then the cwd git origin remote (override with `github.repo`).
 
 ## What each scope checks
@@ -62,26 +62,26 @@ Machine (single result, id `nix:<blueprint>`):
 
 GitHub (one result per golden key, id `github:<blueprint>:<name>`, kind `github`):
 
-- Golden is the preset file referenced by the blueprint `github` key (e.g. `projects/files/github-config/<name>.json`); the CLI compares it against live repo settings via the GitHub REST API (needs `GITHUB_TOKEN`). Covers general/repo settings, immutable releases, CODEOWNERS, issue templates, required PR checks, code reviews/push restrictions, rulesets presence, Actions permissions/workflow/retention/OIDC, environments, Advanced Security, and secrets/variables presence.
+- Golden is the settings file referenced by the blueprint `github` key (e.g. `projects/files/github-config/<name>.json`); the CLI compares it against live repo settings via the GitHub REST API (needs `GITHUB_TOKEN`). Covers general/repo settings, immutable releases, CODEOWNERS, issue templates, required PR checks, code reviews/push restrictions, rulesets presence, Actions permissions/workflow/retention/OIDC, environments, Advanced Security, and secrets/variables presence.
 - Fixes are kind `github-api` (multi-step REST calls, needs admin-scoped `GITHUB_TOKEN`).
 - Skipped with a UI hint (still exit 0): items with no public API — social preview, archive toggles, Copilot Autofix, agent suggestions, OIDC-only checks. Whole-scope or per-check 401/403 auth failures also skip. Follow the hint in the GitHub web UI.
 
 ## Agent workflow
 
-1. Locate `conform.json` (cwd or `--config`). Confirm the `source.repo@ref` and which scopes are configured.
+1. Locate `conform.json` (cwd or `--desired-state`). Confirm the `source.repo@ref` and which scopes are configured.
 2. Run `check` (add `--json` for parsing, `--project-only`/`--machine-only`/`--github-only` to narrow). Done when every non-`ok` result is classified fixable vs manual.
 3. For drift, run `fix --dry-run` (plus `--no-diff` only to save tokens on huge files) to preview. Done when the would-fix list matches the fixable set.
 4. Apply with `fix --all` (non-TTY) or interactive `fix` (TTY). Re-check output is authoritative: done when it reports 0 still failing.
-5. Manual items are never auto-fixed: follow the `hint` (export missing env, fix `machine.configuration`, run switch by hand with sudo where noted).
+5. Manual items are never fixed automatically: follow the `hint` (export missing env, fix `machine.configuration`, run switch by hand with sudo where noted).
 
 ## Developing this repo
 
 ```bash
 bun install
 bun run dev              # bun ./src/index.ts
-bun run verify           # format && check:lint && check:types && build (gate before pushing)
+bun run verify           # format && check:lint && check:types && test (gate before pushing)
 ```
 
-- `src/index.ts` is the Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`), `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`), `src/schemas/` (`github.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
+- `src/index.ts` is the Commander entrypoint (`check`, `fix`, `validate`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`/`validate`), `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`), `src/schemas/` (`github.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
 - `configuration_schema/*.json` is generated — never hand-edit (regen via `bun run gen:json-schema` / `build`). Compiled binary lands in `.output/`.
 - Conventions: `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` where type-only, tabs + width 100, no `npm`/`npx` (always `bun run <script>`). Reference blueprints live at `~/repo/tech-stack` — read `registry.json`/blueprint files directly instead of guessing.
