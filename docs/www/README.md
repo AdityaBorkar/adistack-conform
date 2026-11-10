@@ -59,7 +59,7 @@ Every `check` and `fix` flag, exit code, and the non-TTY story.
 Reference material:
 
 - [Blueprints](./blueprints.md) — how names resolve to blueprint files and flakes.
-- [Blueprint files](./presets.md) — per-file compare and fix rules.
+- [Blueprint files](./blueprint-files.md) — per-file compare and fix rules.
 - [Authoring](./authoring.md) — writing your own tech-stack repo.
 - [API](./api.md) — JSON output, schemas, and building from source.
 - [Monorepo](./monorepo.md) — one `conform.json` per package.

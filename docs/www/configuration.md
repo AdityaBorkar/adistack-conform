@@ -11,7 +11,7 @@ Your whole setup in one file. Most repos need fewer than ten lines:
 	"$schema": "./configuration_schema/conform.json",
 	"machine": { "blueprint": "main", "configuration": "adityab" },
 	"project": { "blueprint": "cli-app" },
-	"github": { "blueprint": "cli-app" },
+	"github": { "blueprint": "npm-package" },
 	"source": { "type": "github", "repo": "AdityaBorkar/tech-stack", "ref": "main" },
 }
 ```
@@ -38,29 +38,29 @@ Refs containing `/` work — plain path segments in `raw.githubusercontent.com` 
 
 At least one of `project` / `machine` / `github` is required — omit the others to track fewer scopes.
 
-| Field       | Meaning                                                                                                                                                             |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `blueprint` | Project blueprint matching a tech-stack root `registry.json` `projects[]` entry — by entry `name`, entry `path`, or path basename without `.json` (e.g. `cli-app`). |
+| Field       | Meaning                                                                                                                                          |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `blueprint` | Project blueprint matching a tech-stack root `registry.json` `projects` key — by key, `path`, or path basename without `.json` (e.g. `cli-app`). |
 
-Project targets resolve against your cwd, so run from the directory that owns `conform.json`.
+Project targets resolve against your cwd, so run from the directory that owns `conform.json`. Leading `~` expands against `$HOME`; absolute `target` paths pass through.
 
 ## `machine` <Badge variant="muted">optional</Badge>
 
-| Field           | Meaning                                                                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `blueprint`     | Machine blueprint matching a `registry.json` `machines[]` entry — by entry `name`, entry `path`, or flake directory basename (e.g. `main`). |
-| `configuration` | Optional `homeConfigurations` attribute to switch to (e.g. `adityab`). Omit it and `home-manager` auto-selects from `$USER`.                |
+| Field           | Meaning                                                                                                                                  |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `blueprint`     | Machine blueprint matching a `registry.json` `machines` key — by key, display `name`, `path`, or flake directory basename (e.g. `main`). |
+| `configuration` | Optional `homeConfigurations` attribute to switch to (e.g. `adityab`). Omit it and `home-manager` auto-selects from `$USER`.             |
 
 Machines are entirely nix-managed. See [blueprints](./blueprints.md) for matching details and flake-dir resolution.
 
 ## `github` <Badge variant="muted">optional</Badge>
 
-| Field       | Required | Default                                              | Meaning                                                                    |
-| ----------- | -------- | ---------------------------------------------------- | -------------------------------------------------------------------------- |
-| `blueprint` | yes      | —                                                    | Blueprint whose `github` key points at the settings file (e.g. `cli-app`). |
-| `repo`      | no       | `$GITHUB_REPOSITORY`, then the cwd git origin remote | `owner/repo` whose settings are checked.                                   |
+| Field       | Required | Default                                              | Meaning                                                                   |
+| ----------- | -------- | ---------------------------------------------------- | ------------------------------------------------------------------------- |
+| `blueprint` | yes      | —                                                    | `github_configs` key whose settings file is checked (e.g. `npm-package`). |
+| `repo`      | no       | `$GITHUB_REPOSITORY`, then the cwd git origin remote | `owner/repo` whose settings are checked.                                  |
 
-The golden is the settings file referenced by the blueprint `github` key (e.g. `projects/files/github-config/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit, then the scope skips (still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted.
+The golden is the settings file listed in `registry.json` `github_configs` (e.g. `github-configs/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit, then the scope skips (still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted. When no repo can be resolved (no `github.repo`, no `$GITHUB_REPOSITORY`, no git origin), the scope reports `github:internal-error` drift (exit 1).
 
 ## Loading rules
 

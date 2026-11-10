@@ -1,7 +1,7 @@
 import type { LoadedDesiredState } from "#/config.js";
 import { findMachineEntry } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
-import { fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
+import { fetchGithubConfig, fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
 import { errorMessage } from "#/utils/fs.js";
 
 export interface ValidateResult {
@@ -11,6 +11,7 @@ export interface ValidateResult {
 }
 
 export interface ValidateTargets {
+	githubs: string[];
 	id: string;
 	machines: string[];
 	projects: string[];
@@ -18,24 +19,35 @@ export interface ValidateTargets {
 }
 
 type FetchDeps = {
+	fetchGithub: typeof fetchGithubConfig;
 	fetchManifest: typeof fetchProjectManifest;
 	fetchRegistry: typeof fetchRegistry;
 };
 
-const defaultDeps: FetchDeps = { fetchManifest: fetchProjectManifest, fetchRegistry };
+const defaultDeps: FetchDeps = {
+	fetchGithub: fetchGithubConfig,
+	fetchManifest: fetchProjectManifest,
+	fetchRegistry,
+};
 
 export function collectValidateTargets(
 	desiredStates: readonly LoadedDesiredState[],
 ): Map<string, ValidateTargets> {
 	const targets = new Map<string, ValidateTargets>();
-	const add = (id: string, ref: string, kind: "machine" | "project", blueprint: string): void => {
+	const add = (
+		id: string,
+		ref: string,
+		kind: "github" | "machine" | "project",
+		blueprint: string,
+	): void => {
 		const key = `${id}@${ref}`;
 		let entry = targets.get(key);
 		if (entry === undefined) {
-			entry = { id, machines: [], projects: [], ref };
+			entry = { githubs: [], id, machines: [], projects: [], ref };
 			targets.set(key, entry);
 		}
-		const list = kind === "machine" ? entry.machines : entry.projects;
+		const list =
+			kind === "machine" ? entry.machines : kind === "github" ? entry.githubs : entry.projects;
 		if (!list.includes(blueprint)) {
 			list.push(blueprint);
 		}
@@ -46,7 +58,7 @@ export function collectValidateTargets(
 			add(id, ref, "project", loaded.project.blueprint);
 		}
 		if (loaded.github !== undefined) {
-			add(id, ref, "project", loaded.github.blueprint);
+			add(id, ref, "github", loaded.github.blueprint);
 		}
 		if (loaded.machine !== undefined) {
 			add(id, ref, "machine", loaded.machine.blueprint);
@@ -92,7 +104,19 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 			}
 		}),
 	);
-	return [...results, ...machineResults, ...manifestResults];
+	const githubResults = await Promise.all(
+		target.githubs.toSorted().map(async (blueprint): Promise<ValidateResult> => {
+			const file = `github "${blueprint}" in ${registryFile}`;
+			try {
+				const config = await deps.fetchGithub(target.id, target.ref, blueprint, registry);
+				const configFile = `${config.githubRel} (${target.id}@${target.ref})`;
+				return { file: configFile, ok: true };
+			} catch (error) {
+				return { error: errorMessage(error), file, ok: false };
+			}
+		}),
+	);
+	return [...results, ...machineResults, ...manifestResults, ...githubResults];
 }
 
 export async function validateTargets(

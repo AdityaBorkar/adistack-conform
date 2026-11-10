@@ -14,11 +14,11 @@ Humans read lines; scripts read JSON:
 adistack-conform check --json --project-only > report.json
 ```
 
-Prints `{ desiredStates, ok, passed, failed, skipped, total, results }`. Gate on `ok` / exit code (<Badge variant="success">0 sync</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>). Each `CheckResult`:
+Prints `{ desiredStates, ok, passed, failed, skipped, total, results }` (`--json` ignores `--verbose`; JSON always carries every result). Gate on `ok` / exit code (<Badge variant="success">0 sync</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>). Each `CheckResult`:
 
 ```jsonc
 {
-	"id": "project:cli-app:Bun Config", // or "nix:main" or "github:cli-app:general"
+	"id": "project:cli-app:Bun Config", // or "nix:main" or "github:npm-package:general"
 	"kind": "project", // "project" | "nix" | "github" | "internal"
 	"scope": "project", // "project" | "machine" | "github"
 	"source": "tech-stack:cli-app",
@@ -29,7 +29,8 @@ Prints `{ desiredStates, ok, passed, failed, skipped, total, results }`. Gate on
 	"fix": { "kind": "overwrite-file", "filePath": "<abs>", "newContent": "…" },
 	// or: "fix": { "kind": "run-command", "command": "…", "args": ["…"], "label": "…" },
 	// or: "fix": { "kind": "github-api", …multi-step REST calls… },
-	"hint": "only on manual failures",
+	"hint": "on manual failures; fixable machine/github results may carry both fix and hint",
+	// "source" is omitted on <scope>:internal-error (target is the scope name)
 }
 ```
 
@@ -54,7 +55,7 @@ Never hand-edit the generated files. Change the Zod source and regen.
 | `configuration_schema/conform.json`          | Consumer `conform.json`                                        |
 | `configuration_schema/project-manifest.json` | Blueprint file (`projects/<name>.json`) in the tech-stack repo |
 | `configuration_schema/registry.json`         | Tech-stack root `registry.json`                                |
-| `configuration_schema/github.json`           | Settings file referenced by a blueprint manifest `github` key  |
+| `configuration_schema/github.json`           | Settings file listed in `registry.json` `github_configs`       |
 
 ## Building
 

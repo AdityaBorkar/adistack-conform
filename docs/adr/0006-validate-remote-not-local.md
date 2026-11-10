@@ -4,4 +4,4 @@ The `validate` command (`src/stack/validate.ts`) checks remote tech-stack validi
 
 ## Consequences
 
-One `✓`/`✗` line per file; exit 0 all valid, 1 any invalid, 2 desired-state error. Github blueprints validate through the project-manifest fetch path. Targets are grouped by `repo@ref` and fetched once per run.
+One `✓`/`✗` line per validated file/entry (including the machine registry-entry line); exit 0 all valid, 1 any invalid, 2 desired-state error. Github blueprints validate through the project-manifest fetch path. Targets are grouped by `repo@ref` and fetched once per run. Gap (intentional): only the manifest is fetched — referenced GitHub settings-file content is not validated, so invalid settings JSON is not caught by `validate`.

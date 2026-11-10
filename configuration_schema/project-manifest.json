@@ -6,9 +6,14 @@
 			"type": "string",
 			"description": "JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/project-manifest.json."
 		},
-		"description": {
+		"@description": {
 			"type": "string",
 			"description": "Human-readable blueprint description."
+		},
+		"@name": {
+			"type": "string",
+			"minLength": 1,
+			"description": "Human-readable blueprint name."
 		},
 		"file_structure": {
 			"default": [],
@@ -78,11 +83,6 @@
 				"additionalProperties": false
 			},
 			"description": "Files enforced by this blueprint."
-		},
-		"github": {
-			"type": "string",
-			"minLength": 1,
-			"description": "Repo-relative source path of the GitHub settings file."
 		}
 	},
 	"required": ["files"],

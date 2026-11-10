@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 
 import type { RegistryDocument } from "#/stack/registry.js";
 import {
+	findGithubEntry,
+	findMachineEntry,
 	findProjectEntry,
 	manifestDirRel,
 	manifestRel,
@@ -9,8 +11,9 @@ import {
 } from "#/stack/registry.js";
 
 const registry = {
-	machines: [{ name: "main", path: "./machines/main/" }],
-	projects: [{ name: "CLI", path: "./projects/cli-app.json" }],
+	github_configs: { "npm-package": "./github-configs/npm-package.json" },
+	machines: { main: { name: "Primary Developer Machine", path: "./machines/main/" } },
+	projects: { "cli-app": "./projects/cli-app.json" },
 } as unknown as RegistryDocument;
 
 describe("findProjectEntry", () => {
@@ -18,12 +21,31 @@ describe("findProjectEntry", () => {
 		expect(findProjectEntry("cli-app", registry)?.path).toBe("./projects/cli-app.json");
 	});
 
-	test("matches by entry name and full path", () => {
-		expect(findProjectEntry("CLI", registry)?.path).toBe("./projects/cli-app.json");
+	test("matches by entry key and full path", () => {
+		expect(findProjectEntry("cli-app", registry)?.path).toBe("./projects/cli-app.json");
 		expect(findProjectEntry("projects/cli-app.json", registry)?.path).toBe(
 			"./projects/cli-app.json",
 		);
 		expect(findProjectEntry("projects/cli-app", registry)?.path).toBe("./projects/cli-app.json");
+	});
+});
+
+describe("findMachineEntry", () => {
+	test("matches by key, display name, and directory", () => {
+		expect(findMachineEntry("main", registry)?.path).toBe("./machines/main/");
+		expect(findMachineEntry("Primary Developer Machine", registry)?.path).toBe("./machines/main/");
+		expect(findMachineEntry("machines/main", registry)?.path).toBe("./machines/main/");
+	});
+});
+
+describe("findGithubEntry", () => {
+	test("matches by key and path", () => {
+		expect(findGithubEntry("npm-package", registry)?.path).toBe(
+			"./github-configs/npm-package.json",
+		);
+		expect(findGithubEntry("github-configs/npm-package.json", registry)?.path).toBe(
+			"./github-configs/npm-package.json",
+		);
 	});
 });
 

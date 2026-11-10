@@ -3,13 +3,12 @@ import type * as z from "zod";
 import type { CheckBase, CheckResult, GithubApiFix, GithubApiStep } from "#/checks.js";
 import { failFixable, failManual, pass, skipped } from "#/checks.js";
 import type { GithubRunSpec } from "#/config.js";
-import { GithubSchema } from "#/schemas/github.js";
+import { GithubSchema } from "#/schemas/github-manifest";
 import type { RegistryDocument } from "#/stack/registry.js";
-import { resolveSourceRel } from "#/stack/registry.js";
-import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
+import { findGithubEntry, manifestRel } from "#/stack/registry.js";
+import { fetchGithubConfig } from "#/stack/remote.js";
 import { errorMessage } from "#/utils/fs.js";
 import { FETCH_TIMEOUT_MS, apiHeaders, githubToken } from "#/utils/net.js";
-import { parseOrThrow } from "#/utils/schema.js";
 
 export type GithubSettings = z.infer<typeof GithubSchema>;
 
@@ -193,29 +192,20 @@ async function fetchGithubSettings(
 	blueprint: string,
 	registry: RegistryDocument,
 ): Promise<GithubSettingsResult> {
-	const manifest = await fetchProjectManifest(id, ref, blueprint, registry);
-	if (manifest.github === undefined || manifest.github === "") {
+	const entry = findGithubEntry(blueprint, registry);
+	if (entry === undefined) {
 		return {};
 	}
-	const rel = resolveSourceRel(manifest.github);
-	let text: string;
+	const rel = manifestRel(entry.path);
 	try {
-		text = await fetchTextOrThrow(rawUrl(id, ref, rel), `github settings ${rel}`);
+		const { golden } = await fetchGithubConfig(id, ref, blueprint, registry);
+		return { golden, rel };
 	} catch (error) {
 		if (errorMessage(error).includes("HTTP 404") || errorMessage(error).includes("not found")) {
 			return { rel };
 		}
 		throw error;
 	}
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text) as unknown;
-	} catch (error) {
-		throw new Error(`Github settings has invalid JSON in ${rel}: ${errorMessage(error)}`, {
-			cause: error,
-		});
-	}
-	return { golden: parseOrThrow(GithubSchema, `${rel} (remote)`, parsed, "github settings"), rel };
 }
 
 function baseFor(blueprint: string, name: string, target: string): CheckBase {
@@ -1253,8 +1243,8 @@ export async function runGithubChecks(
 				failManual(
 					base,
 					"<settings reference missing>",
-					`"github" key in the ${spec.blueprint} blueprint manifest`,
-					`Point the manifest "github" key at github settings (e.g. "projects/files/github-config/<name>.json", see configuration_schema/github.json), then re-run check.`,
+					`registry github_configs entry for "${spec.blueprint}"`,
+					`Add "${spec.blueprint}" to registry.json github_configs (e.g. "./github-configs/<name>.json", see configuration_schema/github.json), then re-run check.`,
 				),
 			];
 		}

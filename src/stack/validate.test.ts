@@ -14,18 +14,20 @@ function loaded(overrides: Partial<LoadedDesiredState> = {}): LoadedDesiredState
 }
 
 const registry = {
-	machines: [{ name: "main", path: "./machines/main/" }],
-	projects: [{ name: "cli-app", path: "./projects/cli-app.json" }],
+	github_configs: { "npm-package": "./github-configs/npm-package.json" },
+	machines: { main: { name: "Primary Developer Machine", path: "./machines/main/" } },
+	projects: { "cli-app": "./projects/cli-app.json" },
 } as unknown as RegistryDocument;
 
 describe("collectValidateTargets", () => {
 	test("dedupes shared project/github blueprints across desired states", () => {
 		const targets = collectValidateTargets([
 			loaded({ project: { blueprint: "cli-app" } }),
-			loaded({ github: { blueprint: "cli-app" }, project: { blueprint: "cli-app" } }),
+			loaded({ github: { blueprint: "npm-package" }, project: { blueprint: "cli-app" } }),
 		]);
 		expect(targets.size).toBe(1);
 		expect(targets.get("o/r@main")?.projects).toEqual(["cli-app"]);
+		expect(targets.get("o/r@main")?.githubs).toEqual(["npm-package"]);
 		expect(targets.get("o/r@main")?.machines).toEqual([]);
 	});
 
@@ -43,10 +45,10 @@ describe("validateTargets", () => {
 		const results = await validateTargets(
 			collectValidateTargets([loaded({ project: { blueprint: "cli-app" } })]),
 			{
+				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchManifest: () =>
 					Promise.resolve({
 						files: [],
-						github: undefined,
 						manifestRel: "projects/cli-app.json",
 						structure: [],
 					}),
@@ -60,10 +62,31 @@ describe("validateTargets", () => {
 		expect(results.every((item) => item.ok)).toBe(true);
 	});
 
+	test("reports registry plus github config results in order", async () => {
+		const results = await validateTargets(
+			collectValidateTargets([loaded({ github: { blueprint: "npm-package" } })]),
+			{
+				fetchGithub: () =>
+					Promise.resolve({
+						githubRel: "github-configs/npm-package.json",
+						golden: {} as never,
+					}),
+				fetchManifest: () => Promise.reject(new Error("must not be called")),
+				fetchRegistry: () => Promise.resolve(registry),
+			},
+		);
+		expect(results.map((item) => item.file)).toEqual([
+			"registry.json (o/r@main)",
+			"github-configs/npm-package.json (o/r@main)",
+		]);
+		expect(results.every((item) => item.ok)).toBe(true);
+	});
+
 	test("registry fetch failure skips manifests for that ref", async () => {
 		const results = await validateTargets(
 			collectValidateTargets([loaded({ project: { blueprint: "cli-app" } })]),
 			{
+				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchManifest: () => Promise.reject(new Error("must not be called")),
 				fetchRegistry: () =>
 					Promise.reject(new Error("registry.json fetch failed (boom): HTTP 404.")),
@@ -78,6 +101,7 @@ describe("validateTargets", () => {
 		const results = await validateTargets(
 			collectValidateTargets([loaded({ machine: { blueprint: "nope" } })]),
 			{
+				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchManifest: () => Promise.reject(new Error("must not be called")),
 				fetchRegistry: () => Promise.resolve(registry),
 			},
@@ -92,6 +116,7 @@ describe("validateTargets", () => {
 		const results = await validateTargets(
 			collectValidateTargets([loaded({ project: { blueprint: "cli-app" } })]),
 			{
+				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchManifest: () => Promise.reject(new Error("Invalid blueprint in x:\nfiles: Required")),
 				fetchRegistry: () => Promise.resolve(registry),
 			},

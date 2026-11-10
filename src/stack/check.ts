@@ -146,7 +146,7 @@ function stripJsonc(text: string): string {
 	return out;
 }
 
-function parseJsonc(text: string): unknown {
+export function parseJsonc(text: string): unknown {
 	return JSON.parse(stripJsonc(text)) as unknown;
 }
 

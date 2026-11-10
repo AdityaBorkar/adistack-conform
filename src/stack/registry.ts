@@ -1,6 +1,6 @@
 import type * as z from "zod";
 
-import type { ManifestSchema } from "#/schemas/manifest.js";
+import type { ManifestSchema } from "#/schemas/project-manifest.js";
 import type { RegistrySchema } from "#/schemas/registry.js";
 
 export type ManifestFile = z.infer<typeof ManifestSchema>["files"][number];
@@ -8,9 +8,11 @@ export type ManifestCompare = NonNullable<ManifestFile["compare"]>;
 export type ManifestFileStructure = NonNullable<
 	z.infer<typeof ManifestSchema>["file_structure"]
 >[number];
-export type ManifestGithub = z.infer<typeof ManifestSchema>["github"];
 export type RegistryDocument = z.infer<typeof RegistrySchema>;
-export type RegistryEntry = RegistryDocument["projects"][number];
+export type RegistryEntry = {
+	name: string;
+	path: string;
+};
 
 export const MAX_LIST_SHOWN = 10;
 
@@ -26,29 +28,35 @@ function dirKey(value: string): string {
 	return base.endsWith(".json") ? base.slice(0, -".json".length) : base;
 }
 
-function findEntry(name: string, entries: readonly RegistryEntry[]): RegistryEntry | undefined {
+function findInPathMap(
+	name: string,
+	map: Readonly<Record<string, string>>,
+): RegistryEntry | undefined {
 	const want = name.trim();
 	if (want === "") {
 		return undefined;
 	}
-	const exact = entries.find((entry) => entry.name === want);
-	if (exact !== undefined) {
-		return exact;
+	const direct = map[want];
+	if (direct !== undefined) {
+		return { name: want, path: direct };
 	}
 	const wantPath = normalizeEntryPath(want);
-	const byPath = entries.find((entry) => normalizeEntryPath(entry.path) === wantPath);
-	if (byPath !== undefined) {
-		return byPath;
+	for (const [key, path] of Object.entries(map)) {
+		if (normalizeEntryPath(path) === wantPath) {
+			return { name: key, path };
+		}
 	}
-	const byDir = entries.find((entry) => dirKey(entry.path) === want);
-	if (byDir !== undefined) {
-		return byDir;
+	for (const [key, path] of Object.entries(map)) {
+		if (dirKey(path) === want) {
+			return { name: key, path };
+		}
 	}
 	const wantDir = dirKey(want);
 	if (wantDir !== "") {
-		const byWantDir = entries.find((entry) => dirKey(entry.path) === wantDir);
-		if (byWantDir !== undefined) {
-			return byWantDir;
+		for (const [key, path] of Object.entries(map)) {
+			if (dirKey(path) === wantDir) {
+				return { name: key, path };
+			}
 		}
 	}
 	return undefined;
@@ -65,30 +73,80 @@ function hint(names: string[], label: string): string {
 }
 
 export function listMachineBlueprintNames(registry: RegistryDocument): string[] {
-	return registry.machines.map((entry) => entry.name).toSorted();
+	return Object.keys(registry.machines).toSorted();
 }
 
 export function listProjectBlueprintNames(registry: RegistryDocument): string[] {
-	return registry.projects.map((entry) => entry.name).toSorted();
+	return Object.keys(registry.projects).toSorted();
+}
+
+export function listGithubBlueprintNames(registry: RegistryDocument): string[] {
+	return Object.keys(registry.github_configs).toSorted();
 }
 
 export function findProjectEntry(
 	name: string,
 	registry: RegistryDocument,
 ): RegistryEntry | undefined {
-	return findEntry(name, registry.projects);
+	return findInPathMap(name, registry.projects);
+}
+
+export function findGithubEntry(
+	name: string,
+	registry: RegistryDocument,
+): RegistryEntry | undefined {
+	return findInPathMap(name, registry.github_configs);
 }
 
 export function findMachineEntry(
 	name: string,
 	registry: RegistryDocument,
 ): RegistryEntry | undefined {
-	return findEntry(name, registry.machines);
+	const want = name.trim();
+	if (want === "") {
+		return undefined;
+	}
+	const machines = registry.machines;
+	const direct = machines[want];
+	if (direct !== undefined) {
+		return { name: want, path: direct.path };
+	}
+	for (const [key, entry] of Object.entries(machines)) {
+		if (entry.name === want) {
+			return { name: key, path: entry.path };
+		}
+	}
+	const wantPath = normalizeEntryPath(want);
+	for (const [key, entry] of Object.entries(machines)) {
+		if (normalizeEntryPath(entry.path) === wantPath) {
+			return { name: key, path: entry.path };
+		}
+	}
+	for (const [key, entry] of Object.entries(machines)) {
+		if (dirKey(entry.path) === want) {
+			return { name: key, path: entry.path };
+		}
+	}
+	const wantDir = dirKey(want);
+	if (wantDir !== "") {
+		for (const [key, entry] of Object.entries(machines)) {
+			if (dirKey(entry.path) === wantDir) {
+				return { name: key, path: entry.path };
+			}
+		}
+	}
+	return undefined;
 }
 
 export function machineNotFoundError(name: string, registry: RegistryDocument): Error {
 	return new Error(
 		`Machine blueprint "${name}" not found in the tech-stack repo.${hint(listMachineBlueprintNames(registry), "machine blueprints")}`,
+	);
+}
+
+export function githubNotFoundError(name: string, registry: RegistryDocument): Error {
+	return new Error(
+		`GitHub blueprint "${name}" not found in the tech-stack repo.${hint(listGithubBlueprintNames(registry), "github blueprints")}`,
 	);
 }
 

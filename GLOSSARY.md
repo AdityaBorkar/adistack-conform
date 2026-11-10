@@ -11,15 +11,15 @@ The `conform.json` declaration of which project and machine blueprints the direc
 _Avoid_: config, spec
 
 **Blueprint**:
-A named desired state from the tech-stack registry, either a project file set or a machine nix flake.
+A named desired state from the tech-stack registry: a project file set, a machine nix flake, or a GitHub settings set listed in the registry `github_configs` map.
 _Avoid_: preset, template
 
 **Registry**:
-The tech-stack `registry.json` listing every project and machine blueprint by name and path.
+The tech-stack `registry.json` listing every project, machine, and GitHub blueprint (projects/github settings as key/path pairs, machines as key/entry pairs).
 _Avoid_: catalog, index
 
 **Manifest**:
-A project blueprint file (`projects/<name>.json`) declaring its files, compare rules, file-structure entries, and optional `github` settings-file key.
+A project blueprint file (`projects/<name>.json`) declaring `@name`/`@description` plus its files, compare rules, and file-structure entries.
 _Avoid_: blueprint config, spec file
 
 **Compare**:
@@ -37,11 +37,11 @@ The desired file content fetched from the tech-stack repo that a target is compa
 _Avoid_: preset file, expected content
 
 **Source**:
-The repo-relative path of a golden inside the tech-stack repo.
+The repo-relative path of a golden inside the tech-stack repo. (`CheckResult.source` is separately `tech-stack:<blueprint>`; `ConformSource.source` is the provider `"github"`.)
 _Avoid_: preset path, golden path
 
 **Target**:
-The cwd-relative enforcement destination where a golden must hold.
+The manifest-declared enforcement destination (cwd-relative path for project files, flake URL for machine, `owner/repo (repo settings)` for GitHub); the CLI resolves `~`/absolute project paths before reading.
 _Avoid_: destination, output
 
 **Scope**:
@@ -49,11 +49,11 @@ One of the three enforcement domains: project files, the whole machine flake, or
 _Avoid_: mode, area
 
 **Kind**:
-The check-result taxonomy: `project` (project files and file-structure entries), `nix` (machine flake), `github` (repo settings), or `internal` (scope-level failure).
+The check-result taxonomy: `project` (project files and file-structure entries), `nix` (machine flake), `github` (repo settings), or `internal` (scope-level failure). (The word `kind` is reused in code for fix/prompt/validate taxonomies; this glossary entry covers check results only.)
 _Avoid_: preset
 
 **Drift**:
-Any mismatch between reality and desired state, reported as a failed check in either scope.
+Any mismatch between reality and desired state, reported as a failed check in any scope.
 _Avoid_: diff, failure, mismatch
 
 ### Results
@@ -71,15 +71,15 @@ A drifted result with no machine remedy, carrying a hint for a human to act on i
 _Avoid_: unfixable, unactionable
 
 **Skipped**:
-A result that passes without enforcement because it has no public API (GitHub UI-only settings), or the GitHub API returned 401/403.
+A result that passes without enforcement: GitHub items with no public API (UI-only settings), 401/403 auth failures, or goldens that do not require the check (including 404 OIDC).
 _Avoid_: ignored, passed
 
 **Template**:
-A manifest entry whose golden holds `<...>` placeholders; each placeholder slot accepts any per-project value (non-empty, never placeholders), every other field must match the golden — a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields).
+A JSON-object manifest entry whose golden holds `<...>` placeholder slots; each placeholder slot accepts any per-project value (non-empty, never placeholders), extra local fields and array items are allowed, every other field must match the golden — a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields). Non-JSON goldens are never templates.
 _Avoid_: parameterized file
 
 **Internal**:
-A scope-level failure (`<scope>:internal-error`) when registry fetch, blueprint match, or scope run throws; reported as drift (exit 1), not a config error.
+A scope-level failure (`<scope>:internal-error`) when the scoped run throws; reported as drift (exit 1), not a config error. A top-level registry fetch failure outside the scoped run exits 2 instead.
 _Avoid_: system error
 
 **Fix**:
@@ -87,5 +87,5 @@ The act of applying selected fixable remedies, then re-checking only those IDs.
 _Avoid_: repair, sync, apply
 
 **Validate**:
-The act of checking the tech-stack source itself (`registry.json` plus each configured blueprint file at the pinned `source.repo@ref`), not local drift.
+The act of checking the tech-stack source itself (`registry.json` plus each configured project blueprint and github settings file at the pinned `source.repo@ref`), not local drift.
 _Avoid_: verify

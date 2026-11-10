@@ -42,17 +42,13 @@ export const ManifestSchema = z.compile(
 					"JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/project-manifest.json.",
 				)
 				.optional(),
-			description: z.string().describe("Human-readable blueprint description.").optional(),
+			"@description": z.string().describe("Human-readable blueprint description.").optional(),
+			"@name": z.string().min(1).describe("Human-readable blueprint name.").optional(),
 			file_structure: z
 				.array(ManifestFileStructureSchema)
 				.describe("Existence-only entries enforced by this blueprint (no content compare).")
 				.default([]),
 			files: z.array(ManifestFileSchema).describe("Files enforced by this blueprint."),
-			github: z
-				.string()
-				.min(1)
-				.describe("Repo-relative source path of the GitHub settings file.")
-				.optional(),
 		})
 		.strict(),
 );

@@ -6,9 +6,23 @@
 			"type": "string",
 			"description": "JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/registry.json."
 		},
+		"github_configs": {
+			"type": "object",
+			"propertyNames": {
+				"type": "string"
+			},
+			"additionalProperties": {
+				"type": "string",
+				"minLength": 1
+			},
+			"description": "GitHub settings blueprints as key/path entries."
+		},
 		"machines": {
-			"type": "array",
-			"items": {
+			"type": "object",
+			"propertyNames": {
+				"type": "string"
+			},
+			"additionalProperties": {
 				"type": "object",
 				"properties": {
 					"name": {
@@ -19,33 +33,24 @@
 					"path": {
 						"type": "string",
 						"minLength": 1,
-						"description": "Blueprint path relative to the tech-stack root: a project blueprint file (e.g. ./projects/cli-app.json) or a machine flake directory (e.g. ./machines/main/)."
+						"description": "Machine flake directory relative to the tech-stack root (e.g. ./machines/main/)."
 					}
 				},
 				"required": ["name", "path"]
 			},
-			"description": "Machine blueprints as explicit name/path entries."
+			"description": "Machine blueprints as key/entry pairs."
 		},
 		"projects": {
-			"type": "array",
-			"items": {
-				"type": "object",
-				"properties": {
-					"name": {
-						"type": "string",
-						"minLength": 1,
-						"description": "Display name for the blueprint."
-					},
-					"path": {
-						"type": "string",
-						"minLength": 1,
-						"description": "Blueprint path relative to the tech-stack root: a project blueprint file (e.g. ./projects/cli-app.json) or a machine flake directory (e.g. ./machines/main/)."
-					}
-				},
-				"required": ["name", "path"]
+			"type": "object",
+			"propertyNames": {
+				"type": "string"
 			},
-			"description": "Project blueprints as explicit name/path entries."
+			"additionalProperties": {
+				"type": "string",
+				"minLength": 1
+			},
+			"description": "Project blueprints as key/path entries."
 		}
 	},
-	"required": ["machines", "projects"]
+	"required": ["github_configs", "machines", "projects"]
 }

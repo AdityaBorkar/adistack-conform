@@ -4,15 +4,15 @@ import { join } from "node:path";
 import * as z from "zod";
 
 import { ConformSchema } from "#/schemas/conform.js";
-import { GithubSchema } from "#/schemas/github.js";
-import { ManifestSchema } from "#/schemas/manifest.js";
+import { GithubSchema } from "#/schemas/github-manifest";
+import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 
 const OUTPUT_DIR = join(import.meta.dir, "..", "configuration_schema");
 
 const TARGETS = {
 	"conform.json": ConformSchema,
-	"github.json": GithubSchema,
+	"github-manifest.json": GithubSchema,
 	"project-manifest.json": ManifestSchema,
 	"registry.json": RegistrySchema,
 } as const;

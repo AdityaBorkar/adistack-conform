@@ -26,13 +26,13 @@ adistack-conform check [--json] [--verbose] [--project-only | --machine-only | -
 
 Output lists only failures plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | error`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
 
-Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>. Drift includes unknown blueprints and registry/blueprint fetch failures (reported as `<scope>:internal-error`); desired-state errors are a missing file, invalid JSON/schema, or passing two scope flags.
+Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>. Drift includes unknown blueprints and scoped-run fetch failures (reported as `<scope>:internal-error` with no `source`); top-level registry fetch failures outside the scoped run exit 2. Desired-state errors are a missing file, invalid JSON/schema, or passing two scope flags. An unresolvable GitHub target repo (no `github.repo`, no `$GITHUB_REPOSITORY`, no git origin) is drift (`github:internal-error`, exit 1), not a desired-state error.
 
 `--json` shape:
 
 ```jsonc
 {
-	"configs": ["<path>"],
+	"desiredStates": ["<path>"],
 	"ok": true,
 	"passed": 9,
 	"failed": 0,
@@ -42,7 +42,7 @@ Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="war
 }
 ```
 
-Each result carries `id` (`project:<blueprint>:<name>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `nix` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `source` (`tech-stack:<blueprint>`), `target`, `expected`, `actual`, plus `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) or `hint` when manual, and `skipped: true` when skipped.
+`--json` ignores `--verbose` (JSON always carries every result). Each result carries `id` (`project:<blueprint>:<name>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `nix` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `target`, `expected`, `actual`, plus `source` (`tech-stack:<blueprint>`, omitted on `internal-error` where `target` is the scope name), `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) and/or `hint` (manual always hints; fixable machine/github results may carry both), and `skipped: true` when skipped.
 
 ## `fix`
 
@@ -81,7 +81,7 @@ A group-multiselect prompt lists each fix (each option shows the fix command; sp
 
 <Step title="Re-check">
 
-Only the selected IDs are re-checked. The run ends with `Fixed X/Y. N still failing`.
+Only the selected IDs are re-checked (falling back to a full re-check on error). The run ends with `Fixed X/Y. N still failing`.
 
 </Step>
 
@@ -98,7 +98,7 @@ adistack-conform validate
 adistack-conform --desired-state ./packages/a/conform.json validate
 ```
 
-Validates `registry.json` plus the blueprint file of every configured project/`github` blueprint (machine blueprints check the registry entry only) at the pinned `source.repo@ref`. Prints one `✓`/`✗` line per file with the error detail. The global `--desired-state` flag applies here too.
+Validates `registry.json` plus the blueprint file of every configured project blueprint and the settings file of every configured `github` blueprint (machine blueprints check the registry entry only) at the pinned `source.repo@ref`. Prints one `✓`/`✗` line per validated file/entry with the error detail. The global `--desired-state` flag applies here too.
 
 Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 desired-state error</Badge>.
 

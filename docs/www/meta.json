@@ -9,7 +9,7 @@
 		"monorepo",
 		"---Reference---",
 		"blueprints",
-		"presets",
+		"blueprint-files",
 		"authoring",
 		"api"
 	],

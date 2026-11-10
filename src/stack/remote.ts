@@ -1,12 +1,17 @@
-import { ManifestSchema } from "#/schemas/manifest.js";
+import type * as z from "zod";
+
+import { GithubSchema } from "#/schemas/github-manifest";
+import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
-import type {
-	ManifestFile,
-	ManifestFileStructure,
-	ManifestGithub,
-	RegistryDocument,
+import { parseJsonc } from "#/stack/check.js";
+import type { ManifestFile, ManifestFileStructure, RegistryDocument } from "#/stack/registry.js";
+import {
+	findGithubEntry,
+	findProjectEntry,
+	listGithubBlueprintNames,
+	listProjectBlueprintNames,
+	manifestRel,
 } from "#/stack/registry.js";
-import { findProjectEntry, listProjectBlueprintNames, manifestRel } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
 import { FETCH_TIMEOUT_MS, authHeaders, encodePathSegments } from "#/utils/net.js";
 import { parseOrThrow } from "#/utils/schema.js";
@@ -55,6 +60,17 @@ async function fetchJson(url: string, label: string): Promise<unknown> {
 	}
 }
 
+async function fetchJsonc(url: string, label: string): Promise<unknown> {
+	const text = await fetchTextOrThrow(url, label);
+	try {
+		return parseJsonc(text);
+	} catch (error) {
+		throw new Error(`${label} has invalid JSON in ${url}: ${errorMessage(error)}`, {
+			cause: error,
+		});
+	}
+}
+
 export async function fetchRegistry(id: string, ref: string): Promise<RegistryDocument> {
 	const parsed = await fetchJson(rawUrl(id, ref, "registry.json"), "tech-stack registry");
 	return parseOrThrow(RegistrySchema, "registry.json (remote)", parsed, "tech-stack registry");
@@ -67,7 +83,6 @@ export async function fetchProjectManifest(
 	registry: RegistryDocument,
 ): Promise<{
 	files: ManifestFile[];
-	github: ManifestGithub;
 	manifestRel: string;
 	structure: ManifestFileStructure[];
 }> {
@@ -82,8 +97,28 @@ export async function fetchProjectManifest(
 	const data = parseOrThrow(ManifestSchema, `${rel} (remote)`, parsed, "blueprint");
 	return {
 		files: data.files,
-		github: data.github,
 		manifestRel: rel,
 		structure: data.file_structure,
 	};
+}
+
+export async function fetchGithubConfig(
+	id: string,
+	ref: string,
+	blueprint: string,
+	registry: RegistryDocument,
+): Promise<{
+	githubRel: string;
+	golden: z.infer<typeof GithubSchema>;
+}> {
+	const entry = findGithubEntry(blueprint, registry);
+	if (entry === undefined) {
+		const names = listGithubBlueprintNames(registry);
+		const hint = names.length > 0 ? ` Available blueprints: ${names.join(", ")}.` : "";
+		throw new Error(`GitHub blueprint "${blueprint}" not found in the tech-stack repo.${hint}`);
+	}
+	const rel = manifestRel(entry.path);
+	const parsed = await fetchJsonc(rawUrl(id, ref, rel), `github settings ${blueprint}`);
+	const golden = parseOrThrow(GithubSchema, `${rel} (remote)`, parsed, "github settings");
+	return { githubRel: rel, golden };
 }

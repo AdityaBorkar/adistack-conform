@@ -1,7 +1,7 @@
 import * as z from "zod";
 
-// Desired GitHub repo state, stored as settings files referenced by each blueprint
-// manifest's `github` key (e.g. projects/files/github-config/*.json).
+// Desired GitHub repo state, stored as settings files listed in the registry
+// `github_configs` map (e.g. github-configs/*.json).
 // Every field maps to a GitHub REST endpoint; fields with no public API are
 // reported as skipped/manual with a UI hint instead of failing forever.
 export const GithubSchema = z.compile(
