@@ -9,6 +9,15 @@ export type ClassifiedTarget = { reason: string; type: "skip" } | { path: string
 
 const WINDOWS_ENV_PATTERN = /%[A-Za-z_][A-Za-z0-9_]*%/u;
 
+// Template slots in goldens (e.g. package.json `<package-name>`). Generic like
+// the Windows-env skip above: manifests declare *which* files are templates
+// via pinned/versioned, never the placeholder vocabulary itself.
+const PLACEHOLDER_PATTERN = /<[^<>\r\n]+>/gu;
+
+function goldenPlaceholders(golden: string): string[] {
+	return [...new Set(golden.match(PLACEHOLDER_PATTERN) ?? [])];
+}
+
 export function classifyTarget(target: string, scope: CheckScope): ClassifiedTarget {
 	if (target.startsWith("docs:")) {
 		return { reason: "docs-only, nothing to enforce", type: "skip" };
@@ -385,6 +394,7 @@ export async function checkPresetFileWithGolden(args: {
 }): Promise<CheckResult> {
 	const base = baseFor(args.blueprint, args.fileName, args.fileTarget, args.scope);
 	const compare = args.compare ?? EMPTY_COMPARE;
+	const template = isTemplateCompare(compare);
 	const targetRead = await readFileSafe(args.targetPath);
 	// Never auto-create or truncate on a blank preset: an empty golden means
 	// defaults, so any existing content is kept and missing stays passing.
@@ -402,7 +412,7 @@ export async function checkPresetFileWithGolden(args: {
 		if (targetRead.reason !== "missing") {
 			return unreadableTarget(base, args.golden, args.targetPath, targetRead.error);
 		}
-		if (isTemplateCompare(compare)) {
+		if (template) {
 			return failManual(
 				base,
 				"<missing>",
@@ -420,7 +430,22 @@ export async function checkPresetFileWithGolden(args: {
 			newContent: args.golden,
 		});
 	}
-	if (targetRead.text === args.golden) {
+	// Templates never pass on byte equality: a verbatim copy still holds
+	// placeholders, so it must go through the semantic path and fail manual
+	// until every golden `<...>` slot is replaced with per-project values.
+	if (template) {
+		const unadapted = goldenPlaceholders(args.golden).filter((token) =>
+			targetRead.text.includes(token),
+		);
+		if (unadapted.length > 0) {
+			return failManual(
+				base,
+				`contains placeholders: ${unadapted.join(", ")}`,
+				"adapted template (no <...> placeholders)",
+				`Replace ${unadapted.join(", ")} in ${args.targetPath} with per-project values (copied from ${args.sourceLabel}), then re-run check.`,
+			);
+		}
+	} else if (targetRead.text === args.golden) {
 		return pass(base, "matches preset", args.golden);
 	}
 	if (hasCompareRules(compare)) {

@@ -52,7 +52,7 @@ machines/main/{flake.nix,home.nix,…}
 machines/main/files/                 # dotfile payloads (sops templates read from here)
 ```
 
-Reference the blueprint directories in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Manifest `files[]` use `source` relative to the manifest dir (`../$presets/<file>`) and `target` as the destination path in generated projects. Top-level `js` pins the toolchain (`pm` plus per-section package→version maps). A `files[]` entry may declare `compare` (`ignore[]`, `strip[]`, `pinned[]`, `versioned[]`) for semantic compare/fix rules. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`).
+Reference the blueprint directories in `registry.json` (`machines[]` + `projects[]`, explicit `name`/`path` pairs). Manifest `files[]` use `source` relative to the manifest dir (`../$presets/<file>`) and `target` as the destination path in generated projects. Top-level `js` pins the toolchain (`pm` plus per-section package→version maps). A `files[]` entry may declare `compare` (`ignore[]`, `strip[]`, `pinned[]`, `versioned[]`) for semantic compare/fix rules — entries with `pinned`/`versioned` are templates whose goldens use `<...>` placeholders for per-project values (e.g. `package.json` `<package-name>`); a verbatim copy fails the check until every placeholder is replaced. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`).
 
 ## Rules
 

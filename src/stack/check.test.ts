@@ -89,4 +89,69 @@ describe("checkPresetFileWithGolden", () => {
 		});
 		expect(result.ok).toBe(true);
 	});
+
+	test("template byte-identical copy fails as unadapted", async () => {
+		const golden =
+			'{"name":"<package-name>","type":"module","scripts":{"build":"bun ./scripts/build.ts"}}\n';
+		const path = tmp("verbatim-pkg.json");
+		await Bun.write(path, golden);
+		const result = await checkPresetFileWithGolden({
+			blueprint: "b",
+			compare: { ignore: [], pinned: ["scripts", "type"], strip: [], versioned: [] },
+			fileName: "Package JSON",
+			fileTarget: "package.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: path,
+		});
+		expect(result.ok).toBe(false);
+		expect(result.fix).toBeUndefined();
+		expect(result.actual).toContain("<package-name>");
+	});
+
+	test("adapted template passes when pinned keys match", async () => {
+		const golden =
+			'{"name":"<package-name>","type":"module","scripts":{"build":"bun ./scripts/build.ts"}}\n';
+		const path = tmp("adapted-pkg.json");
+		await Bun.write(
+			path,
+			'{"name":"my-pkg","type":"module","scripts":{"build":"bun ./scripts/build.ts"}}\n',
+		);
+		const result = await checkPresetFileWithGolden({
+			blueprint: "b",
+			compare: { ignore: [], pinned: ["scripts", "type"], strip: [], versioned: [] },
+			fileName: "Package JSON",
+			fileTarget: "package.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: path,
+		});
+		expect(result.ok).toBe(true);
+	});
+
+	test("template pinned drift stays fixable without reintroducing placeholders", async () => {
+		const golden =
+			'{"name":"<package-name>","type":"module","scripts":{"build":"bun ./scripts/build.ts"}}\n';
+		const path = tmp("drifted-pkg.json");
+		await Bun.write(path, '{"name":"my-pkg","type":"module","scripts":{"build":"old"}}\n');
+		const result = await checkPresetFileWithGolden({
+			blueprint: "b",
+			compare: { ignore: [], pinned: ["scripts", "type"], strip: [], versioned: [] },
+			fileName: "Package JSON",
+			fileTarget: "package.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: path,
+		});
+		expect(result.ok).toBe(false);
+		if (result.fix?.kind !== "overwrite-file") {
+			throw new Error("expected overwrite fix");
+		}
+		expect(result.fix.newContent).toContain("my-pkg");
+		expect(result.fix.newContent).toContain("bun ./scripts/build.ts");
+		expect(result.fix.newContent).not.toContain("<package-name>");
+	});
 });

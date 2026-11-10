@@ -23,6 +23,10 @@ function pmCommands(pm: string): { add: string; dev: string; remove: string } {
 	return PM_COMMANDS[pm] ?? GENERIC_PM_COMMANDS;
 }
 
+function isAnyVersion(version: string): boolean {
+	return version === "" || version === "any";
+}
+
 function installCommand(pm: string, section: DepSection, pkg: string, versionHint: string): string {
 	const cmd = pmCommands(pm);
 	const flag = section === "devDependencies" ? `${cmd.dev} ` : "";
@@ -75,7 +79,7 @@ export function checkToolchainDeps(args: {
 	for (const [pkg, req] of needed) {
 		const section = req.section;
 		const expected = req.version;
-		const versionHint = expected === "" ? "" : `@${expected}`;
+		const versionHint = isAnyVersion(expected) ? "" : `@${expected}`;
 		const id = `project:${args.blueprint}:deps:${pkg}`;
 		if (args.onlyIds !== undefined && !args.onlyIds.has(id)) {
 			continue;
@@ -105,7 +109,7 @@ export function checkToolchainDeps(args: {
 		};
 		if (Object.hasOwn(sections[section], pkg)) {
 			const version = sections[section][pkg] as string;
-			if (expected !== "" && version !== expected) {
+			if (!isAnyVersion(expected) && version !== expected) {
 				results.push(
 					failManual(
 						base,

@@ -63,7 +63,7 @@ A result that passes without enforcement because its target is docs-only, Window
 _Avoid_: ignored, passed
 
 **Template**:
-A manifest entry declaring `pinned`/`versioned` compare rules whose goldens hold placeholders; a missing target is manual (copy and adapt per-project fields).
+A manifest entry declaring `pinned`/`versioned` compare rules whose goldens hold `<...>` placeholders; a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields).
 _Avoid_: parameterized file
 
 **Internal**:

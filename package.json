@@ -40,6 +40,7 @@
 		"package.json",
 		"configuration_schema",
 		"skills",
+		"README.md",
 		"www"
 	],
 	"type": "module",
@@ -68,7 +69,7 @@
 	},
 	"dependencies": {
 		"@clack/prompts": "1.8.1",
-		"commander": "15.0.0",
+		"commander": "15.1.0",
 		"diff": "9.0.0",
 		"picocolors": "1.1.1",
 		"untildify": "6.0.0",
@@ -81,10 +82,10 @@
 		"@types/node": "26.6.6",
 		"@valibot/to-json-schema": "1.8.0",
 		"husky": "9.1.7",
-		"knip": "6.43.0",
-		"oxfmt": "0.75.0",
-		"oxlint": "1.90.0",
-		"tsrs": "0.20.1-ts7.1.0-beta",
+		"knip": "6.44.1",
+		"oxfmt": "0.76.0",
+		"oxlint": "1.92.0",
+		"tsrs": "0.23.0-ts7.1.0-beta",
 		"typescript": "7.0.2"
 	}
 }

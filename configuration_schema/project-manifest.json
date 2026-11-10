@@ -120,7 +120,7 @@
 						"type": "string",
 						"minLength": 1
 					},
-					"description": "Packages required in dependencies, pinned to exact versions.",
+					"description": "Packages required in dependencies, pinned to exact versions; \"any\" allows any installed version.",
 					"default": {}
 				},
 				"devDependencies": {
@@ -132,7 +132,7 @@
 						"type": "string",
 						"minLength": 1
 					},
-					"description": "Packages required in devDependencies, pinned to exact versions.",
+					"description": "Packages required in devDependencies, pinned to exact versions; \"any\" allows any installed version.",
 					"default": {}
 				},
 				"peerDependencies": {
@@ -144,7 +144,7 @@
 						"type": "string",
 						"minLength": 1
 					},
-					"description": "Packages required in peerDependencies, pinned to exact versions.",
+					"description": "Packages required in peerDependencies, pinned to exact versions; \"any\" allows any installed version.",
 					"default": {}
 				},
 				"pm": {

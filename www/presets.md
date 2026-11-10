@@ -54,7 +54,7 @@ Missing → fixable `overwrite-file`. Mismatch → fixable `overwrite-file`. Unr
 
 <Accordion title="Compare rules — semantic, JSONC-aware">
 
-Per `files[]` entry: `ignore[]` keys are excluded from the compare and your local values are preserved by `fix` (the linter-`overrides` case); `pinned[]` keys must match the golden, objects merge per key so local extras survive; `versioned[]` sections must share package versions for packages on both sides, while a golden-listed package missing locally is drift; `strip[]` keys are dropped before comparing. Entries with `pinned`/`versioned` are templates: rest matches → pass; other drift → fixable merged overwrite; a missing target is manual (copy the golden and adapt per-project fields, since goldens hold placeholders).
+Per `files[]` entry: `ignore[]` keys are excluded from the compare and your local values are preserved by `fix` (the linter-`overrides` case); `pinned[]` keys must match the golden, objects merge per key so local extras survive; `versioned[]` sections must share package versions for packages on both sides, while a golden-listed package missing locally is drift; `strip[]` keys are dropped before comparing. Entries with `pinned`/`versioned` are templates: rest matches → pass; other drift → fixable merged overwrite; a missing target is manual (copy the golden and adapt per-project fields, since goldens hold placeholders). Templates never pass on byte equality — a verbatim copy fails manual until every golden `<...>` placeholder (e.g. `package.json` `<package-name>`) is replaced.
 
 </Accordion>
 
@@ -66,7 +66,7 @@ Per `files[]` entry: `ignore[]` keys are excluded from the compare and your loca
 
 <Accordion title="Toolchain deps — pinned packages">
 
-The manifest `js` field pins required packages per section (`dependencies` / `devDependencies` / `peerDependencies`) to exact versions, plus the `pm` binary used in hints. Missing, wrong section, or version drift → manual with an install/move/update hint. IDs are `project:<blueprint>:deps:<pkg>`, `kind` is `package`.
+The manifest `js` field pins required packages per section (`dependencies` / `devDependencies` / `peerDependencies`) to exact versions (`"any"` means any installed version counts), plus the `pm` binary used in hints. Missing, wrong section, or version drift → manual with an install/move/update hint. IDs are `project:<blueprint>:deps:<pkg>`, `kind` is `package`.
 
 </Accordion>
 

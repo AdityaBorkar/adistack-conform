@@ -8,13 +8,13 @@ const ManifestDepMapSchema = (description: string) =>
 
 const ManifestJsSchema = v.object({
 	dependencies: ManifestDepMapSchema(
-		"Packages required in dependencies, pinned to exact versions.",
+		'Packages required in dependencies, pinned to exact versions; "any" allows any installed version.',
 	),
 	devDependencies: ManifestDepMapSchema(
-		"Packages required in devDependencies, pinned to exact versions.",
+		'Packages required in devDependencies, pinned to exact versions; "any" allows any installed version.',
 	),
 	peerDependencies: ManifestDepMapSchema(
-		"Packages required in peerDependencies, pinned to exact versions.",
+		'Packages required in peerDependencies, pinned to exact versions; "any" allows any installed version.',
 	),
 	pm: v.optional(
 		v.pipe(
