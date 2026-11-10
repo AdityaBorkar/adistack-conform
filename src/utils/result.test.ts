@@ -27,6 +27,6 @@ describe("describeFix", () => {
 				scope: "machine",
 				target: "t",
 			}),
-		).toBe("run nix a");
+		).toBe("run l");
 	});
 });

@@ -2,11 +2,11 @@ import { findMachineEntry, machineNotFoundError, blueprintDirRel } from "#/stack
 import type { RegistryDocument } from "#/stack/registry.js";
 import type { MachineRunState } from "#/utils/config.js";
 import { errorMessage } from "#/utils/fs.js";
-import { encodePathSegments } from "#/utils/net.js";
+import { assertRef, assertRepoId, encodePathSegments } from "#/utils/net.js";
 import type { CheckBase, CheckResult } from "#/utils/result.js";
 import { failFixable, failManual, pass } from "#/utils/result.js";
 
-const SWITCH_TIMEOUT_MS = 10 * 60_000;
+export const SWITCH_TIMEOUT_MS = 10 * 60_000;
 const OUTPUT_TAIL_CHARS = 4000;
 const OUTPUT_TAIL_LINES = 30;
 
@@ -27,6 +27,8 @@ function encodeDir(dirRel: string): string {
 // tech-stack repo locally: one registry fetch resolves the flake
 // subdirectory, then nix uses its own store (no custom download/cache).
 function flakeUrl(state: MachineRunState, dirRel: string): string {
+	assertRepoId(state.id, "machine source");
+	assertRef(state.ref, "machine source");
 	const base = `git+https://github.com/${state.id}?ref=${encodeURIComponent(state.ref)}&dir=${encodeDir(dirRel)}`;
 	if (state.configuration === undefined || state.configuration === "") {
 		return base;
@@ -103,6 +105,13 @@ async function runCapture(
 			timer = setTimeout(() => {
 				try {
 					proc.kill();
+					setTimeout(() => {
+						try {
+							proc.kill(9);
+						} catch {
+							// Already exited.
+						}
+					}, 5000).unref?.();
 				} catch {
 					// Already exited; the race below settles on `done`.
 				}

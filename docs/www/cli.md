@@ -75,7 +75,7 @@ Unless you passed `--no-diff`, you get a unified diff preview (diffs over ~200KB
 
 <Step title="Pick and apply">
 
-A group-multiselect prompt lists each fix (each option shows the fix command; space toggles). `overwrite-file` fixes apply first, then commands/API fixes.
+A group-multiselect prompt lists each fix (each option shows the fix command; space toggles). `overwrite-file` fixes apply first, then commands/API fixes. Each `overwrite-file` fix writes a `.conform.bak` backup next to the target before writing (numbered `.conform.bak.N` when one already exists); writes through symlinks are refused. Non-TTY `--all` also refuses file fixes outside the project directory.
 
 </Step>
 
@@ -87,7 +87,7 @@ Only the selected IDs are re-checked (falling back to a full re-check on error).
 
 </Steps>
 
-Exit codes: <Badge variant="success">0 nothing remains failing</Badge> <Badge variant="warning">1 drift remains / cancelled / dry-run found drift</Badge> <Badge variant="error">2 desired-state error</Badge> — including no-TTY use without `--all`, and non-TTY `--all` with command/API fixes (`Re-run in a terminal …`).
+Exit codes: <Badge variant="success">0 nothing remains failing</Badge> <Badge variant="warning">1 drift remains / cancelled / dry-run found drift</Badge> <Badge variant="error">2 desired-state error</Badge> — including no-TTY use without `--all`, and non-TTY `--all` with command/API fixes or file fixes outside the project dir (`Re-run in a terminal …`).
 
 ## `validate`
 
@@ -98,9 +98,9 @@ adistack-conform validate
 adistack-conform --desired-state ./packages/a/conform.json validate
 ```
 
-Validates `registry.json` plus the blueprint file of every configured project blueprint and the settings file of every configured `github` blueprint (machine blueprints check the registry entry only) at the pinned `source.repo@ref`. Prints one `✓`/`✗` line per validated file/entry with the error detail. The global `--desired-state` flag applies here too.
+Validates `registry.json` plus the blueprint file of every configured project blueprint and the settings file of every configured `github` blueprint (machine blueprints check the registry entry only, including path sanity) at the pinned `source.repo@ref`. Prints one `✓` line per valid file/entry to stdout and `✗` lines with the error detail to stderr. The global `--desired-state` flag applies here too.
 
-Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 desired-state error</Badge>.
+Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 desired-state error, or nothing configured</Badge>.
 
 <Callout type="tip" title="Agents and CI">
 

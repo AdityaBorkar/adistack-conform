@@ -72,4 +72,10 @@ describe("blueprintRel and blueprintDirRel", () => {
 		expect(() => resolveSourceRel("./files/bunfig.toml")).toThrow("repo-relative");
 		expect(() => resolveSourceRel("../files/bunfig.toml")).toThrow("repo-relative");
 	});
+
+	test("interior parent segments are rejected", () => {
+		expect(() => resolveSourceRel("projects/files/../../conform.json")).toThrow("..");
+		expect(() => resolveSourceRel("projects//files/x.json")).toThrow("empty");
+		expect(() => blueprintRel("projects/../../x.json")).toThrow("..");
+	});
 });

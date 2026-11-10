@@ -18,6 +18,9 @@ export function renderDiff(
 ): string {
 	const normalizedActual = normalize(actual);
 	const normalizedExpected = normalize(expected);
+	if (normalizedActual === normalizedExpected && actual !== expected) {
+		return "(line endings differ only: check CRLF vs LF)";
+	}
 	if (normalizedActual.length + normalizedExpected.length > MAX_DIFF_CHARS) {
 		return `(diff skipped: ${normalizedActual.length + normalizedExpected.length} chars > ${MAX_DIFF_CHARS})`;
 	}

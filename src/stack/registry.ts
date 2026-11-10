@@ -106,36 +106,19 @@ export function findMachineEntry(
 	if (want === "") {
 		return undefined;
 	}
-	const machines = registry.machines;
-	const direct = machines[want];
+	const direct = registry.machines[want];
 	if (direct !== undefined) {
 		return { name: want, path: direct.path };
 	}
-	for (const [key, entry] of Object.entries(machines)) {
+	for (const [key, entry] of Object.entries(registry.machines)) {
 		if (entry.name === want) {
 			return { name: key, path: entry.path };
 		}
 	}
-	const wantPath = normalizeEntryPath(want);
-	for (const [key, entry] of Object.entries(machines)) {
-		if (normalizeEntryPath(entry.path) === wantPath) {
-			return { name: key, path: entry.path };
-		}
-	}
-	for (const [key, entry] of Object.entries(machines)) {
-		if (dirKey(entry.path) === want) {
-			return { name: key, path: entry.path };
-		}
-	}
-	const wantDir = dirKey(want);
-	if (wantDir !== "") {
-		for (const [key, entry] of Object.entries(machines)) {
-			if (dirKey(entry.path) === wantDir) {
-				return { name: key, path: entry.path };
-			}
-		}
-	}
-	return undefined;
+	const paths = Object.fromEntries(
+		Object.entries(registry.machines).map(([key, entry]) => [key, entry.path]),
+	);
+	return findInPathMap(name, paths);
 }
 
 export function machineNotFoundError(name: string, registry: RegistryDocument): Error {
@@ -151,11 +134,34 @@ export function resolveSourceRel(source: string): string {
 			`Source "${source}" must be repo-relative (e.g. projects/files/<group>/<file>); "./" and "../" prefixes are no longer supported.`,
 		);
 	}
-	return source.replace(/^\.\//u, "").replace(/^\/+/u, "");
+	const stripped = source.replace(/^\.\//u, "").replace(/^\/+/u, "");
+	const segments = stripped.split("/");
+	if (segments.some((part) => part === "" || part === "." || part === "..")) {
+		throw new Error(
+			`Source "${source}" must be repo-relative without empty, ".", or ".." segments.`,
+		);
+	}
+	if (stripped.includes("\\")) {
+		throw new Error(`Source "${source}" must use "/" separators.`);
+	}
+	return stripped;
+}
+
+function assertSafeRel(normalized: string, original: string, label: string): string {
+	const segments = normalized.split("/");
+	if (segments.some((part) => part === "" || part === "." || part === "..")) {
+		throw new Error(
+			`${label} "${original}" must stay inside the repo (no empty, ".", or ".." segments).`,
+		);
+	}
+	if (normalized.includes("\\")) {
+		throw new Error(`${label} "${original}" must use "/" separators.`);
+	}
+	return normalized;
 }
 
 export function blueprintDirRel(entryPath: string): string {
-	return normalizeEntryPath(entryPath);
+	return assertSafeRel(normalizeEntryPath(entryPath), entryPath, "Machine blueprint path");
 }
 
 // Repo-relative location of a blueprint file itself (project manifest or GitHub settings).
@@ -166,5 +172,5 @@ export function blueprintRel(entryPath: string): string {
 			`Registry entry "${entryPath}" must be a project blueprint file (e.g. ./projects/cli-app.json); directory entries are no longer supported.`,
 		);
 	}
-	return normalized;
+	return assertSafeRel(normalized, entryPath, "Registry entry");
 }

@@ -12,7 +12,7 @@ const OUTPUT_DIR = join(import.meta.dir, "..", "configuration_schema");
 
 const TARGETS = {
 	"conform.json": ConformSchema,
-	"github-manifest.json": GithubSchema,
+	"github.json": GithubSchema,
 	"project-manifest.json": ManifestSchema,
 	"registry.json": RegistrySchema,
 } as const;

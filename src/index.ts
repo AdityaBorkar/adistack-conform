@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
 import { Command } from "commander";
 
 import { runCheckCommand, type CheckCmdOptions } from "#/commands/check.js";
@@ -6,7 +9,26 @@ import { runFixCommand, type FixCmdOptions } from "#/commands/fix/command.js";
 import { runValidateCommand } from "#/commands/validate.js";
 import { errorMessage } from "#/utils/fs.js";
 
-const VERSION = "0.1.0";
+declare const CONFORM_VERSION: string | undefined;
+
+function packageVersion(): string {
+	if (typeof CONFORM_VERSION === "string" && CONFORM_VERSION !== "") {
+		return CONFORM_VERSION;
+	}
+	try {
+		const pkg = JSON.parse(
+			readFileSync(join(dirname(new URL(import.meta.url).pathname), "..", "package.json"), "utf8"),
+		) as { version?: unknown };
+		if (typeof pkg.version === "string" && pkg.version !== "") {
+			return pkg.version;
+		}
+	} catch {
+		// Compiled binary without package.json nearby; fall through.
+	}
+	return "0.0.0-dev";
+}
+
+const VERSION = packageVersion();
 
 function failWith(error: unknown): never {
 	console.error(errorMessage(error));

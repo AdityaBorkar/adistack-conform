@@ -50,5 +50,26 @@ export const ManifestSchema = z.compile(
 				.default([]),
 			files: z.array(ManifestFileSchema).describe("Files enforced by this blueprint."),
 		})
-		.strict(),
+		.strict()
+		.superRefine((data, ctx) => {
+			if (data.files.length === 0 && data.file_structure.length === 0) {
+				ctx.addIssue({
+					code: "custom",
+					message:
+						"Blueprint enforces nothing: add at least one files[] or file_structure[] entry.",
+				});
+			}
+			for (const [label, names] of [
+				["files", data.files.map((file) => file.name)],
+				["file_structure", data.file_structure.map((entry) => entry.name)],
+			] as const) {
+				const seen = new Set<string>();
+				for (const name of names) {
+					if (seen.has(name)) {
+						ctx.addIssue({ code: "custom", message: `${label} has duplicate name "${name}".` });
+					}
+					seen.add(name);
+				}
+			}
+		}),
 );

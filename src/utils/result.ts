@@ -90,7 +90,10 @@ export function desiredContent(result: CheckResult): string {
 	if (result.fix?.kind === "run-command" || result.fix?.kind === "github-api") {
 		return result.fix.label;
 	}
-	return result.fix?.newContent ?? result.expected;
+	if (result.fix?.kind === "overwrite-file") {
+		return result.fix.newContent;
+	}
+	return result.expected;
 }
 
 export function describeFix(result: CheckResult): string {
@@ -104,5 +107,5 @@ export function describeFix(result: CheckResult): string {
 	if (fix.kind === "github-api") {
 		return `api ${fix.label}`;
 	}
-	return `run ${fix.command} ${fix.args.join(" ")}`.trim();
+	return `run ${fix.label}`;
 }

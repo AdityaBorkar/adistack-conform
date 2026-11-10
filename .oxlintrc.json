@@ -12,7 +12,15 @@
 	},
 	"overrides": [
 		{
-			"files": ["src/stack/github-api.ts", "src/commands/fix/apply.ts", "src/config.ts"],
+			"files": [
+				"src/stack/github-api.ts",
+				"src/stack/remote.ts",
+				"src/commands/fix/apply.ts",
+				"src/utils/config.ts",
+				"src/utils/concurrency.ts",
+				"src/utils/net.ts",
+				"src/utils/run.ts"
+			],
 			"rules": {
 				"no-await-in-loop": "off"
 			}

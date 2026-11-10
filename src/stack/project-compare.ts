@@ -9,10 +9,11 @@ import { failFixable, failManual, pass } from "#/utils/result.js";
 // Template slots in goldens (e.g. package.json `<package-name>`). A golden
 // that parses as a JSON object and holds `<...>` placeholders is a template:
 // every slot accepts any per-project value, all other fields must match.
-const PLACEHOLDER_PATTERN = /<[^<>\r\n]+>/gu;
+const PLACEHOLDER = /<[^<>\r\n]+>/u;
+const PLACEHOLDER_ALL = /<[^<>\r\n]+>/gu;
 
 function goldenPlaceholders(golden: string): string[] {
-	return [...new Set(golden.match(PLACEHOLDER_PATTERN) ?? [])];
+	return [...new Set(golden.match(PLACEHOLDER_ALL) ?? [])];
 }
 
 function baseFor(
@@ -35,7 +36,7 @@ const EMPTY_COMPARE: ManifestCompare = {
 };
 
 // Placeholders in non-JSON goldens (HTML comments, TS generics) never count:
-// only a JSON-object golden holding `<...>` slots is a template.
+// only a golden that parses as JSON and holds `<...>` slots is a template.
 function goldenHasPlaceholders(golden: string): boolean {
 	let parsed: unknown;
 	try {
@@ -43,13 +44,10 @@ function goldenHasPlaceholders(golden: string): boolean {
 	} catch {
 		return false;
 	}
-	if (!isRecord(parsed)) {
+	if (!isRecord(parsed) && !Array.isArray(parsed)) {
 		return false;
 	}
-	PLACEHOLDER_PATTERN.lastIndex = 0;
-	const found = PLACEHOLDER_PATTERN.test(stripJsonc(golden));
-	PLACEHOLDER_PATTERN.lastIndex = 0;
-	return found;
+	return PLACEHOLDER.test(stripJsonc(golden));
 }
 
 function isTemplateGolden(golden: string): boolean {
@@ -60,6 +58,21 @@ function hasCompareRules(compare: ManifestCompare): boolean {
 	return compare.ignore.length > 0;
 }
 
+function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
+	// "__proto__" assignment would mutate the prototype instead of creating an
+	// own property, so define it explicitly.
+	if (key === "__proto__") {
+		Object.defineProperty(target, key, {
+			configurable: true,
+			enumerable: true,
+			value,
+			writable: true,
+		});
+		return;
+	}
+	target[key] = value;
+}
+
 function omitKeys(
 	value: Record<string, unknown>,
 	keys: readonly string[],
@@ -67,7 +80,7 @@ function omitKeys(
 	const out: Record<string, unknown> = {};
 	for (const [key, entry] of Object.entries(value)) {
 		if (!keys.includes(key)) {
-			out[key] = entry;
+			setOwn(out, key, entry);
 		}
 	}
 	return out;
@@ -123,7 +136,12 @@ function overlayResult(
 ): CheckResult | undefined {
 	const goldenKept = omitKeys(args.goldenRest, args.compare.ignore);
 	const localKept = omitKeys(args.localRest, args.compare.ignore);
-	if (deepEqual(localKept, goldenKept)) {
+	// Extra local keys are preserved by fix, so they pass here too: only
+	// golden keys must match. Otherwise fix would never converge.
+	const matches = Object.entries(goldenKept).every(
+		([key, value]) => Object.hasOwn(localKept, key) && deepEqual(localKept[key], value),
+	);
+	if (matches) {
 		const kept =
 			args.compare.ignore.length > 0 ? ` (local ${args.compare.ignore.join("/")} kept)` : "";
 		return pass(args.base, `matches golden${kept}`, args.golden);
@@ -131,7 +149,7 @@ function overlayResult(
 	const merged: Record<string, unknown> = { ...args.goldenRest };
 	for (const [key, value] of Object.entries(args.localRest)) {
 		if (!Object.hasOwn(merged, key) || args.compare.ignore.includes(key)) {
-			merged[key] = value;
+			setOwn(merged, key, value);
 		}
 	}
 	const newContent = serializeJson(merged, args.golden);
@@ -142,41 +160,75 @@ function overlayResult(
 	});
 }
 
-function escapeRegExp(text: string): string {
-	return text.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
-
 // A golden string with `<...>` slots matches any local string holding real
-// values in those slots (each slot needs at least one char).
+// values in those slots (each slot needs at least one char). Segment-wise
+// scan: memoized backtracking bounds the blow-up. Each
+// literal is tried at every occurrence (backtracking) so repeated suffixes
+// still match (e.g. `a<x>aa` accepts `aaaaa`).
 function templateStringMatches(golden: string, local: string): boolean {
-	const pattern = golden
-		.split(/<[^<>\r\n]+>/u)
-		.map((part) => escapeRegExp(part))
-		.join("[\\s\\S]+?");
-	return new RegExp(`^${pattern}$`, "u").test(local);
+	const parts = golden.split(/<[^<>\r\n]+>/u);
+	if (parts.length === 1) {
+		return golden === local;
+	}
+	const first = parts[0] as string;
+	if (!local.startsWith(first)) {
+		return false;
+	}
+	const rest = parts.slice(1);
+	const failed = new Set<string>();
+	function matchFrom(segment: number, pos: number): boolean {
+		const key = `${segment}:${pos}`;
+		if (failed.has(key)) {
+			return false;
+		}
+		if (segment === rest.length) {
+			const ok = pos === local.length;
+			if (!ok) {
+				failed.add(key);
+			}
+			return ok;
+		}
+		const part = rest[segment] as string;
+		if (part === "") {
+			if (segment === rest.length - 1) {
+				const ok = local.length - pos >= 1;
+				if (!ok) {
+					failed.add(key);
+				}
+				return ok;
+			}
+			if (pos >= local.length) {
+				failed.add(key);
+				return false;
+			}
+			const ok = matchFrom(segment + 1, pos + 1);
+			if (!ok) {
+				failed.add(key);
+			}
+			return ok;
+		}
+		let found = local.indexOf(part, pos + 1);
+		while (found !== -1) {
+			if (matchFrom(segment + 1, found + part.length)) {
+				return true;
+			}
+			found = local.indexOf(part, found + 1);
+		}
+		failed.add(key);
+		return false;
+	}
+	return matchFrom(0, first.length);
 }
 
 function containsPlaceholderText(text: string): boolean {
-	PLACEHOLDER_PATTERN.lastIndex = 0;
-	const found = PLACEHOLDER_PATTERN.test(text);
-	PLACEHOLDER_PATTERN.lastIndex = 0;
-	return found;
+	return PLACEHOLDER.test(text);
 }
 
-function containsPlaceholder(value: unknown): boolean {
-	if (typeof value === "string") {
-		return containsPlaceholderText(value);
-	}
-	if (Array.isArray(value)) {
-		return value.some((entry) => containsPlaceholder(entry));
-	}
-	if (isRecord(value)) {
-		return (
-			Object.keys(value).some((key) => containsPlaceholderText(key)) ||
-			Object.values(value).some((entry) => containsPlaceholder(entry))
-		);
-	}
-	return false;
+// A local value that is itself a `<...>` token is an unadapted leftover, not a
+// per-project value. Angle brackets embedded in a larger value (e.g. `Array<T>`)
+// are fine and match template slots by surrounding text.
+function isLeftoverPlaceholder(value: string): boolean {
+	return /^<[^<>\r\n]+>$/u.test(value.trim());
 }
 
 function placeholderValueMatches(goldenValue: unknown, localValue: unknown): boolean {
@@ -184,17 +236,19 @@ function placeholderValueMatches(goldenValue: unknown, localValue: unknown): boo
 		return (
 			typeof localValue === "string" &&
 			localValue.trim() !== "" &&
-			!containsPlaceholder(localValue) &&
+			!isLeftoverPlaceholder(localValue) &&
 			templateStringMatches(goldenValue, localValue)
 		);
 	}
 	if (isRecord(goldenValue) || Array.isArray(goldenValue)) {
 		const nested: string[] = [];
-		collectTemplateIssues(goldenValue, localValue, "", nested);
+		collectTemplateIssues(goldenValue, localValue, "", nested, 0);
 		return nested.length === 0;
 	}
 	return deepEqual(goldenValue, localValue);
 }
+
+const MAX_TEMPLATE_DEPTH = 50;
 
 // Every golden field must hold in local: `<...>` slots accept any real value,
 // all other fields must match exactly. Extra local fields are allowed.
@@ -203,14 +257,19 @@ function collectTemplateIssues(
 	localNode: unknown,
 	path: string,
 	issues: string[],
+	depth: number,
 ): void {
+	if (depth > MAX_TEMPLATE_DEPTH) {
+		issues.push(`${path === "" ? "value" : path} is nested too deeply to compare`);
+		return;
+	}
 	if (typeof goldenNode === "string" && containsPlaceholderText(goldenNode)) {
 		const label = path === "" ? "value" : path;
 		if (typeof localNode !== "string" || localNode.trim() === "") {
 			issues.push(`${label} needs a per-project value`);
 			return;
 		}
-		if (containsPlaceholder(localNode)) {
+		if (isLeftoverPlaceholder(localNode)) {
 			issues.push(`${label} still holds placeholders`);
 			return;
 		}
@@ -246,7 +305,7 @@ function collectTemplateIssues(
 				issues.push(`${child} is missing`);
 				continue;
 			}
-			collectTemplateIssues(goldenValue, localNode[key], child, issues);
+			collectTemplateIssues(goldenValue, localNode[key], child, issues, depth + 1);
 		}
 		return;
 	}
@@ -261,10 +320,17 @@ function collectTemplateIssues(
 		}
 		const shared = Math.min(goldenNode.length, localNode.length);
 		for (let index = 0; index < shared; index += 1) {
-			collectTemplateIssues(goldenNode[index], localNode[index], `${label}[${index}]`, issues);
+			collectTemplateIssues(
+				goldenNode[index],
+				localNode[index],
+				`${label}[${index}]`,
+				issues,
+				depth + 1,
+			);
 		}
 		for (let index = shared; index < localNode.length; index += 1) {
-			if (containsPlaceholder(localNode[index])) {
+			const extra = localNode[index];
+			if (typeof extra === "string" && isLeftoverPlaceholder(extra)) {
 				issues.push(`${label}[${index}] still holds placeholders`);
 			}
 		}
@@ -275,73 +341,94 @@ function collectTemplateIssues(
 	}
 }
 
-function templateResult(
-	args: SemanticArgs & { goldenRest: Record<string, unknown>; localRest: Record<string, unknown> },
-): CheckResult {
-	const { base, golden } = args;
-	const differing: string[] = [];
-	collectTemplateIssues(args.goldenRest, args.localRest, "", differing);
-	if (differing.length > 0) {
-		return failManual(
-			base,
-			`fields differ from the template: ${differing.join(", ")}`,
-			"template with per-project values (no <...> placeholders)",
-			`Reconcile ${args.targetPath} with the ${args.fileName} blueprint (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
-		);
-	}
-	return pass(base, "matches template", golden);
-}
-
 function semanticResult(args: SemanticArgs): CheckResult | undefined {
 	const template = isTemplateGolden(args.golden);
+	const needsJson = template || hasCompareRules(args.compare);
 	let goldenParsed: unknown;
 	try {
 		goldenParsed = parseJsonc(args.golden);
 	} catch {
-		return template
-			? failManual(
-					args.base,
-					args.localText,
-					args.golden,
-					`Blueprint ${args.fileName} is not valid JSON; cannot compare.`,
-				)
-			: undefined;
+		if (template) {
+			return failManual(
+				args.base,
+				args.localText,
+				args.golden,
+				`Blueprint ${args.fileName} is not valid JSON; cannot compare.`,
+			);
+		}
+		if (hasCompareRules(args.compare)) {
+			return failManual(
+				args.base,
+				args.localText,
+				args.golden,
+				`Cannot apply compare rules for ${args.fileName}: the golden is not a JSON object; fix the blueprint manually.`,
+			);
+		}
+		return undefined;
 	}
-	if (!isRecord(goldenParsed)) {
-		return template
-			? failManual(
-					args.base,
-					args.localText,
-					args.golden,
-					`Blueprint ${args.fileName} is not an object; cannot compare.`,
-				)
-			: undefined;
+	if (!isRecord(goldenParsed) && !Array.isArray(goldenParsed)) {
+		if (template) {
+			return failManual(
+				args.base,
+				args.localText,
+				args.golden,
+				`Blueprint ${args.fileName} is not an object; cannot compare.`,
+			);
+		}
+		if (hasCompareRules(args.compare)) {
+			return failManual(
+				args.base,
+				args.localText,
+				args.golden,
+				`Cannot apply compare rules for ${args.fileName}: the golden is not a JSON object; fix the blueprint manually.`,
+			);
+		}
+		return undefined;
 	}
 	let localParsed: unknown;
 	try {
 		localParsed = parseJsonc(args.localText);
 	} catch {
-		return template
-			? failManual(
-					args.base,
-					"<unparsable>",
-					args.golden,
-					`Cannot parse ${args.targetPath} as JSON; fix the syntax manually.`,
-				)
-			: undefined;
-	}
-	if (!isRecord(localParsed)) {
-		return template
-			? failManual(
-					args.base,
-					"<unparsable>",
-					args.golden,
-					`Expected ${args.targetPath} to be a JSON object; fix it manually.`,
-				)
-			: undefined;
+		if (needsJson) {
+			return failManual(
+				args.base,
+				"<unparsable>",
+				args.golden,
+				`Cannot parse ${args.targetPath} as JSON; fix the syntax manually.`,
+			);
+		}
+		return undefined;
 	}
 	if (template) {
-		return templateResult({ ...args, goldenRest: goldenParsed, localRest: localParsed });
+		const differing: string[] = [];
+		if (isRecord(goldenParsed) && isRecord(localParsed) && hasCompareRules(args.compare)) {
+			collectTemplateIssues(
+				omitKeys(goldenParsed, args.compare.ignore),
+				omitKeys(localParsed, args.compare.ignore),
+				"",
+				differing,
+				0,
+			);
+		} else {
+			collectTemplateIssues(goldenParsed, localParsed, "", differing, 0);
+		}
+		if (differing.length > 0) {
+			return failManual(
+				args.base,
+				`fields differ from the template: ${differing.join(", ")}`,
+				"template with per-project values (no <...> placeholders)",
+				`Reconcile ${args.targetPath} with the ${args.fileName} blueprint (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
+			);
+		}
+		return pass(args.base, "matches template", args.golden);
+	}
+	if (!isRecord(goldenParsed) || !isRecord(localParsed)) {
+		return failManual(
+			args.base,
+			args.localText,
+			args.golden,
+			`Cannot apply compare rules for ${args.fileName}: both files must be JSON objects; reconcile manually.`,
+		);
 	}
 	return overlayResult({ ...args, goldenRest: goldenParsed, localRest: localParsed });
 }
@@ -417,6 +504,19 @@ export async function checkProjectFileWithGolden(args: {
 		if (semantic !== undefined) {
 			return semantic;
 		}
+	}
+	const trimmedGolden = args.golden.trimStart();
+	if (
+		(trimmedGolden.startsWith("{") || trimmedGolden.startsWith("[")) &&
+		goldenPlaceholders(args.golden).length === 0 &&
+		containsPlaceholderText(args.golden)
+	) {
+		return failManual(
+			base,
+			targetRead.text,
+			args.golden,
+			`Blueprint ${args.fileName} is not valid JSON; cannot compare.`,
+		);
 	}
 	return failFixable(base, targetRead.text, args.golden, {
 		filePath: args.targetPath,

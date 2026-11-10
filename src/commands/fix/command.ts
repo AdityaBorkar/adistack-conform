@@ -1,11 +1,10 @@
+import { isAbsolute, relative, resolve } from "node:path";
+
 import type { Command } from "commander";
 
 import { applySelected } from "#/commands/fix/apply.js";
 import { isInteractive, resolveSelection } from "#/commands/fix/select.js";
-import { recheckGithubSelected } from "#/stack/github.js";
-import { recheckMachineSelected } from "#/stack/machine.js";
-import { recheckProjectSelected } from "#/stack/project.js";
-import { githubStateOf, machineStateOf, projectStateOf } from "#/utils/config.js";
+import { errorMessage } from "#/utils/fs.js";
 import {
 	formatDuration,
 	outroAllPassed,
@@ -17,9 +16,14 @@ import {
 import type { CheckResult } from "#/utils/result.js";
 import { partitionResults } from "#/utils/result.js";
 import type { ScopeOptions } from "#/utils/run.js";
-import { prepareRun, requireRegistry, runAllChecks } from "#/utils/run.js";
+import { prepareRun, recheckSelected, runAllChecks } from "#/utils/run.js";
 
 export type FixCmdOptions = ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean };
+
+function isInsideDir(filePath: string, dir: string): boolean {
+	const rel = relative(resolve(dir), resolve(filePath));
+	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
 
 export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<number> {
 	const start = performance.now();
@@ -58,6 +62,15 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 			);
 			return 2;
 		}
+		const outside = fixable.filter(
+			(item) => item.fix?.kind === "overwrite-file" && !isInsideDir(item.fix.filePath, cwd),
+		);
+		if (outside.length > 0) {
+			console.error(
+				`Refusing --all in non-TTY: ${outside.length} file fix(es) write outside the project dir (${outside.map((item) => item.id).join(", ")}). Re-run in a terminal to confirm.`,
+			);
+			return 2;
+		}
 	}
 
 	const selection = await resolveSelection(fixable, cmdOptions.all);
@@ -80,67 +93,18 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 	let rerunResults: CheckResult[];
 	try {
 		const selectedIds = new Set(selection.selected.map((item) => item.id));
-		const refreshed = await Promise.all(
-			desiredStates.map(async (loaded) => {
-				const reruns: CheckResult[][] = [];
-				if (only === undefined || only === "project") {
-					const state = projectStateOf(loaded);
-					if (state !== undefined) {
-						const scopedIds = new Set(
-							[...selectedIds].filter((id) => id.startsWith(`project:${state.blueprint}:`)),
-						);
-						if (scopedIds.size > 0) {
-							reruns.push(
-								await recheckProjectSelected(
-									state,
-									{ baseDir: cwd, home, scope: "project" },
-									requireRegistry(registries, state.id, state.ref),
-									scopedIds,
-								),
-							);
-						}
-					}
-				}
-				if (only === undefined || only === "machine") {
-					const state = machineStateOf(loaded);
-					if (state !== undefined) {
-						const scopedIds = new Set(
-							[...selectedIds].filter((id) => id === `nix:${state.blueprint}`),
-						);
-						if (scopedIds.size > 0) {
-							reruns.push(
-								await recheckMachineSelected(
-									state,
-									requireRegistry(registries, state.id, state.ref),
-									scopedIds,
-								),
-							);
-						}
-					}
-				}
-				if (only === undefined || only === "github") {
-					const state = githubStateOf(loaded);
-					if (state !== undefined) {
-						const scopedIds = new Set(
-							[...selectedIds].filter((id) => id.startsWith(`github:${state.blueprint}:`)),
-						);
-						if (scopedIds.size > 0) {
-							reruns.push(
-								await recheckGithubSelected(
-									state,
-									requireRegistry(registries, state.id, state.ref),
-									scopedIds,
-								),
-							);
-						}
-					}
-				}
-				return reruns.flat();
-			}),
-		);
-		const byId = new Map(refreshed.flat().map((item) => [item.id, item]));
+		const refreshed = await recheckSelected({
+			cwd,
+			desiredStates,
+			home,
+			only,
+			registries,
+			selectedIds,
+		});
+		const byId = new Map(refreshed.map((item) => [item.id, item]));
 		rerunResults = results.map((item) => byId.get(item.id) ?? item);
-	} catch {
+	} catch (error) {
+		console.error(`Selective re-check failed, running a full re-check: ${errorMessage(error)}`);
 		const rerun = await runAllChecks({ cwd, desiredStates, home, only, registries });
 		rerunResults = rerun.results;
 	}
