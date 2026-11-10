@@ -36,7 +36,8 @@
 						"description": "Machine flake directory relative to the tech-stack root (e.g. ./machines/main/)."
 					}
 				},
-				"required": ["name", "path"]
+				"required": ["name", "path"],
+				"additionalProperties": false
 			},
 			"description": "Machine blueprints as key/entry pairs."
 		},
@@ -52,5 +53,6 @@
 			"description": "Project blueprints as key/path entries."
 		}
 	},
-	"required": ["github_configs", "machines", "projects"]
+	"required": ["github_configs", "machines", "projects"],
+	"additionalProperties": false
 }

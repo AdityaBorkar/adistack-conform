@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import type { LoadedDesiredState } from "#/config.js";
+import { collectValidateTargets, validateTargets } from "#/commands/validate.js";
 import type { RegistryDocument } from "#/stack/registry.js";
-import { collectValidateTargets, validateTargets } from "#/stack/validate.js";
+import type { LoadedDesiredState } from "#/utils/config.js";
 
 function loaded(overrides: Partial<LoadedDesiredState> = {}): LoadedDesiredState {
 	return {

@@ -18,8 +18,8 @@
 				"allowed": {
 					"default": "all",
 					"type": "string",
-					"enum": ["all", "local-only", "selected"],
-					"description": "Which actions and reusable workflows may run."
+					"enum": ["all", "local_only", "selected"],
+					"description": "Which actions and reusable workflows may run (GitHub API values)."
 				},
 				"approvalForExternal": {
 					"default": true,
@@ -41,7 +41,7 @@
 					"default": 90,
 					"type": "integer",
 					"minimum": 1,
-					"maximum": 9007199254740991,
+					"maximum": 400,
 					"description": "Artifact and log retention in days."
 				},
 				"shaPinningRequired": {
@@ -50,7 +50,7 @@
 					"description": "Require actions to be pinned to a full-length commit SHA."
 				}
 			},
-			"description": "GitHub Actions permissions and retention."
+			"additionalProperties": false
 		},
 		"agentSuggestions": {
 			"default": "full-control",
@@ -75,11 +75,11 @@
 				"pushUpdateLimit": {
 					"type": "integer",
 					"minimum": 1,
-					"maximum": 9007199254740991,
+					"maximum": 10000,
 					"description": "Max branches/tags updated in a single push. Omit to skip (no public API)."
 				}
 			},
-			"description": "Repo archive/push toggles. Check-only: no public API, verify in Settings."
+			"additionalProperties": false
 		},
 		"checks": {
 			"default": ["conform", "format", "lint", "types"],
@@ -136,7 +136,7 @@
 					"type": "boolean"
 				}
 			},
-			"description": "Repo feature toggles."
+			"additionalProperties": false
 		},
 		"merge": {
 			"default": {},
@@ -184,7 +184,7 @@
 					"enum": ["commit-title", "pr-title"]
 				}
 			},
-			"description": "Merge methods, commit message defaults, and PR automation."
+			"additionalProperties": false
 		},
 		"releasesImmutable": {
 			"default": true,
@@ -215,7 +215,7 @@
 					"default": 1,
 					"type": "integer",
 					"minimum": 0,
-					"maximum": 9007199254740991
+					"maximum": 10
 				},
 				"restrictPushes": {
 					"default": true,
@@ -223,7 +223,7 @@
 					"description": "Limit pushes to users explicitly granted read or higher access."
 				}
 			},
-			"description": "Default-branch code review and push restrictions."
+			"additionalProperties": false
 		},
 		"rulesets": {
 			"default": [],
@@ -278,7 +278,7 @@
 					"type": "boolean"
 				}
 			},
-			"description": "Advanced Security toggles."
+			"additionalProperties": false
 		},
 		"signoffRequired": {
 			"default": false,
@@ -299,5 +299,6 @@
 			},
 			"description": "Required Actions variable names (presence only)."
 		}
-	}
+	},
+	"additionalProperties": false
 }

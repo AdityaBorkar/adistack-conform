@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checkProjectFileWithGolden } from "#/stack/check.js";
+import { checkProjectFileWithGolden } from "#/stack/project-compare.js";
 
 function tmp(name: string): string {
 	return join(tmpdir(), `conform-test-${process.pid}-${name}`);
@@ -243,5 +243,131 @@ describe("checkProjectFileWithGolden", () => {
 		expect(missingResult.ok).toBe(false);
 		expect(missingResult.fix).toBeUndefined();
 		expect(missingResult.actual).toContain("bin.<binary-name> needs a per-project value");
+	});
+
+	test("template honors compare.ignore keys", async () => {
+		const golden = '{"name":"<package-name>","cfg":{"a":1}}\n';
+		const ignoredPath = tmp("template-ignore.json");
+		await Bun.write(ignoredPath, '{"name":"my-pkg","cfg":{"a":2}}\n');
+		const ignored = await checkProjectFileWithGolden({
+			blueprint: "b",
+			compare: { ignore: ["cfg"] },
+			fileName: "Package JSON",
+			fileTarget: "package.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: ignoredPath,
+		});
+		expect(ignored.ok).toBe(true);
+
+		const strictPath = tmp("template-no-ignore.json");
+		await Bun.write(strictPath, '{"name":"my-pkg","cfg":{"a":2}}\n');
+		const strict = await checkProjectFileWithGolden({
+			blueprint: "b",
+			fileName: "Package JSON",
+			fileTarget: "package.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: strictPath,
+		});
+		expect(strict.ok).toBe(false);
+	});
+
+	test("array-root template goldens compare element-wise, never overwrite", async () => {
+		const golden = '["<step>"]\n';
+		const okPath = tmp("array-template-ok.json");
+		await Bun.write(okPath, '["build"]\n');
+		const okResult = await checkProjectFileWithGolden({
+			blueprint: "b",
+			fileName: "steps.json",
+			fileTarget: "steps.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: okPath,
+		});
+		expect(okResult.ok).toBe(true);
+
+		const verbatimPath = tmp("array-template-verbatim.json");
+		await Bun.write(verbatimPath, golden);
+		const verbatimResult = await checkProjectFileWithGolden({
+			blueprint: "b",
+			fileName: "steps.json",
+			fileTarget: "steps.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: verbatimPath,
+		});
+		expect(verbatimResult.ok).toBe(false);
+		expect(verbatimResult.fix).toBeUndefined();
+	});
+
+	test("compare.ignore with a non-JSON golden fails manual, never overwrites", async () => {
+		const path = tmp("ignore-text.md");
+		await Bun.write(path, "# local title\n");
+		const result = await checkProjectFileWithGolden({
+			blueprint: "b",
+			compare: { ignore: ["keep"] },
+			fileName: "doc.md",
+			fileTarget: "doc.md",
+			golden: "# golden title\n",
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: path,
+		});
+		expect(result.ok).toBe(false);
+		expect(result.fix).toBeUndefined();
+	});
+
+	test("angle brackets inside a larger value are not leftover placeholders", async () => {
+		const golden = '{"desc":"<desc>"}\n';
+		const path = tmp("angle-ok.json");
+		await Bun.write(path, '{"desc":"Use Array<T> here"}\n');
+		const result = await checkProjectFileWithGolden({
+			blueprint: "b",
+			fileName: "doc.json",
+			fileTarget: "doc.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: path,
+		});
+		expect(result.ok).toBe(true);
+	});
+
+	test("template backtracks past repeated suffixes", async () => {
+		const golden = '{"v":"a<x>aa"}\n';
+		const path = tmp("template-backtrack.json");
+		await Bun.write(path, '{"v":"aaaaa"}\n');
+		const result = await checkProjectFileWithGolden({
+			blueprint: "b",
+			fileName: "doc.json",
+			fileTarget: "doc.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: path,
+		});
+		expect(result.ok).toBe(true);
+	});
+
+	test("compare.ignore keeps extra local keys and still passes", async () => {
+		const golden = '{"keep":"golden","same":1}\n';
+		const path = tmp("ignore-extra.json");
+		await Bun.write(path, '{"keep":"local","same":1,"extra":2}\n');
+		const result = await checkProjectFileWithGolden({
+			blueprint: "b",
+			compare: { ignore: ["keep"] },
+			fileName: "doc.json",
+			fileTarget: "doc.json",
+			golden,
+			scope: "project",
+			sourceLabel: "s",
+			targetPath: path,
+		});
+		expect(result.ok).toBe(true);
 	});
 });

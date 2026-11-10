@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { generateJsonSchema } from "./generate-json-schema";
 
 const root = join(import.meta.dir, "..");
+const pkg = (await Bun.file(join(root, "package.json")).json()) as { version?: unknown };
+const version = typeof pkg.version === "string" ? pkg.version : "0.0.0-dev";
 
 const results = await Promise.allSettled([
 	generateJsonSchema(),
@@ -13,6 +15,9 @@ const results = await Promise.allSettled([
 			autoloadPackageJson: false,
 			autoloadTsconfig: false,
 			outfile: join(root, ".output", "adistack-conform"),
+		},
+		define: {
+			CONFORM_VERSION: JSON.stringify(version),
 		},
 		entrypoints: [join(root, "src", "index.ts")],
 		minify: true,

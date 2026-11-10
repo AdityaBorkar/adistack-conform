@@ -1,6 +1,5 @@
-import type { CheckResult } from "#/checks.js";
-import { applyFix, describeFix } from "#/checks.js";
-import { errorMessage } from "#/utils/fs.js";
+import type { CheckResult } from "#/utils/result.js";
+import { describeFix } from "#/utils/result.js";
 
 export type PromptOutcome =
 	| { kind: "cancelled" }
@@ -59,30 +58,4 @@ export async function resolveSelection(
 		return { kind: "cancelled" };
 	}
 	return { kind: "selected", selected: outcome.selected };
-}
-
-export async function applySelected(selected: CheckResult[]): Promise<number> {
-	const byFile = new Map<string, CheckResult[]>();
-	const others: CheckResult[] = [];
-	for (const item of selected) {
-		if (item.fix?.kind === "overwrite-file") {
-			const list = byFile.get(item.fix.filePath) ?? [];
-			list.push(item);
-			byFile.set(item.fix.filePath, list);
-		} else {
-			others.push(item);
-		}
-	}
-	const ordered = [...[...byFile.values()].flat(), ...others];
-	let applied = 0;
-	for (const item of ordered) {
-		try {
-			await applyFix(item);
-			applied += 1;
-			console.log(`✓ fixed ${item.id}`);
-		} catch (error) {
-			console.error(`✗ not fixed ${item.id}: ${errorMessage(error)}`);
-		}
-	}
-	return applied;
 }

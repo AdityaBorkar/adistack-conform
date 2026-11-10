@@ -12,21 +12,29 @@ export async function mapWithConcurrency<T, R>(
 	const lanes = Math.min(safeLimit, items.length);
 	const results = Array.from({ length: items.length }) as R[];
 	let next = 0;
-	const runners = Array.from({ length: lanes }, () => {
-		const runNext = (): Promise<void> => {
+	let failed: unknown;
+	let hasFailed = false;
+	const runLane = async (): Promise<void> => {
+		while (!hasFailed) {
 			if (next >= items.length) {
-				return Promise.resolve();
+				return;
 			}
 			const current = next;
 			next += 1;
 			const item = items[current] as T;
-			return worker(item, current).then((value) => {
-				results[current] = value;
-				return runNext();
-			});
-		};
-		return runNext();
-	});
+			try {
+				results[current] = await worker(item, current);
+			} catch (error) {
+				hasFailed = true;
+				failed ??= error;
+				return;
+			}
+		}
+	};
+	const runners = Array.from({ length: lanes }, () => runLane());
 	await Promise.all(runners);
-	return results;
+	if (hasFailed) {
+		throw failed;
+	}
+	return results as R[];
 }

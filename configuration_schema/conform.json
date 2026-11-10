@@ -21,6 +21,7 @@
 				}
 			},
 			"required": ["blueprint"],
+			"additionalProperties": false,
 			"description": "GitHub repo settings desired state."
 		},
 		"machine": {
@@ -38,6 +39,7 @@
 				}
 			},
 			"required": ["blueprint"],
+			"additionalProperties": false,
 			"description": "Machine desired state."
 		},
 		"project": {
@@ -50,6 +52,7 @@
 				}
 			},
 			"required": ["blueprint"],
+			"additionalProperties": false,
 			"description": "Project desired state."
 		},
 		"source": {
@@ -73,8 +76,10 @@
 				}
 			},
 			"required": ["repo", "type"],
+			"additionalProperties": false,
 			"description": "Tech-stack repo holding blueprints and nix flakes."
 		}
 	},
-	"required": ["source"]
+	"required": ["source"],
+	"additionalProperties": false
 }

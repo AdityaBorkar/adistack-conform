@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
@@ -41,14 +41,20 @@ function isMissingError(error: unknown): boolean {
 	if (typeof error !== "object" || error === null) {
 		return false;
 	}
-	if ("code" in error && (error as { code?: unknown }).code === "ENOENT") {
-		return true;
-	}
-	const message = error instanceof Error ? error.message : String(error);
-	return message.includes("ENOENT") || message.includes("No such file");
+	return (error as { code?: unknown }).code === "ENOENT";
 }
 
 export async function writeFileEnsuringDir(path: string, content: string): Promise<void> {
+	try {
+		const stat = await lstat(path);
+		if (stat.isSymbolicLink()) {
+			throw new Error(`Refusing to write through symlink: ${path}`);
+		}
+	} catch (error) {
+		if ((error as { code?: unknown } | null)?.code !== "ENOENT") {
+			throw error;
+		}
+	}
 	await mkdir(dirname(path), { recursive: true });
 	await Bun.write(path, content);
 }
@@ -81,5 +87,5 @@ export function resolveTargetPath(raw: string, baseDir: string, home: string): s
 }
 
 export function resolveDesiredStatePath(raw: string): string {
-	return resolveAgainstBase(raw, process.cwd(), (value) => untildify(value));
+	return resolveAgainstBase(raw, process.cwd(), (value) => expandHome(value, defaultHome()));
 }

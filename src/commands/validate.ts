@@ -1,8 +1,13 @@
-import type { LoadedDesiredState } from "#/config.js";
-import { findMachineEntry } from "#/stack/registry.js";
+import type { Command } from "commander";
+
+import { blueprintDirRel, findMachineEntry } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
 import { fetchGithubSettings, fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
+import { mapWithConcurrency } from "#/utils/concurrency.js";
+import type { LoadedDesiredState } from "#/utils/config.js";
 import { errorMessage } from "#/utils/fs.js";
+import { okMark } from "#/utils/output.js";
+import { loadDesiredStatesFromCommand } from "#/utils/run.js";
 
 export interface ValidateResult {
 	error?: string;
@@ -68,13 +73,19 @@ export function collectValidateTargets(
 }
 
 function machineEntryError(blueprint: string, registry: RegistryDocument): string | undefined {
+	const entry = findMachineEntry(blueprint, registry);
+	if (entry === undefined) {
+		return `Machine blueprint "${blueprint}" not found in the tech-stack repo.`;
+	}
 	try {
-		return findMachineEntry(blueprint, registry) === undefined
-			? `Machine blueprint "${blueprint}" not found in the tech-stack repo.`
-			: undefined;
+		const dirRel = blueprintDirRel(entry.path);
+		if (dirRel === "") {
+			return `Machine blueprint "${blueprint}" has an empty path in the registry.`;
+		}
 	} catch (error) {
 		return errorMessage(error);
 	}
+	return undefined;
 }
 
 async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<ValidateResult[]> {
@@ -92,8 +103,10 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 			? { file: `machine "${blueprint}" in ${registryFile}`, ok: true }
 			: { error, file: `machine "${blueprint}" in ${registryFile}`, ok: false };
 	});
-	const manifestResults = await Promise.all(
-		target.projects.toSorted().map(async (blueprint): Promise<ValidateResult> => {
+	const manifestResults = await mapWithConcurrency(
+		target.projects.toSorted(),
+		8,
+		async (blueprint): Promise<ValidateResult> => {
 			const file = `blueprint "${blueprint}" in ${registryFile}`;
 			try {
 				const manifest = await deps.fetchManifest(target.id, target.ref, blueprint, registry);
@@ -102,10 +115,12 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 			} catch (error) {
 				return { error: errorMessage(error), file, ok: false };
 			}
-		}),
+		},
 	);
-	const githubResults = await Promise.all(
-		target.githubs.toSorted().map(async (blueprint): Promise<ValidateResult> => {
+	const githubResults = await mapWithConcurrency(
+		target.githubs.toSorted(),
+		8,
+		async (blueprint): Promise<ValidateResult> => {
 			const file = `github "${blueprint}" in ${registryFile}`;
 			try {
 				const settings = await deps.fetchGithub(target.id, target.ref, blueprint, registry);
@@ -114,7 +129,7 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 			} catch (error) {
 				return { error: errorMessage(error), file, ok: false };
 			}
-		}),
+		},
 	);
 	return [...results, ...machineResults, ...manifestResults, ...githubResults];
 }
@@ -133,4 +148,27 @@ export async function validateTargets(
 		}),
 	);
 	return perKey.flat();
+}
+
+export async function runValidateCommand(cmd: Command): Promise<number> {
+	const desiredStates = await loadDesiredStatesFromCommand(cmd);
+	const results = await validateTargets(collectValidateTargets(desiredStates));
+	if (results.length === 0) {
+		console.error("Validate: no tech-stack targets configured.");
+		return 2;
+	}
+	for (const result of results) {
+		if (result.ok) {
+			console.log(`${okMark(true)} ${result.file}`);
+		} else {
+			console.error(`${okMark(false)} ${result.file}\n    ${result.error ?? "invalid"}`);
+		}
+	}
+	const invalid = results.filter((item) => !item.ok).length;
+	if (invalid === 0) {
+		console.log(`\nAll ${results.length} tech-stack file(s) valid.`);
+		return 0;
+	}
+	console.log(`\nValidate: ${results.length - invalid} valid, ${invalid} invalid.`);
+	return 1;
 }

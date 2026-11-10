@@ -37,11 +37,12 @@
 	},
 	"files": [
 		".output",
+		"src",
 		"package.json",
 		"configuration_schema",
 		"README.md",
 		"skills",
-		"www"
+		"docs/www"
 	],
 	"type": "module",
 	"imports": {

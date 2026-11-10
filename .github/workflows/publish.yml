@@ -30,6 +30,7 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: bun install
+      - run: bun run build
       # No-ops when there is nothing to version; opens/updates the
       # version PR (CHANGELOG.md + package.json bump) otherwise.
       - uses: changesets/action/version@v2

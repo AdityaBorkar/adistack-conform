@@ -1,6 +1,4 @@
-import { failManual, type CheckResult, type CheckScope } from "#/checks.js";
-import type { ProjectRunState } from "#/config.js";
-import { checkFileStructureEntry, checkProjectFileWithGolden } from "#/stack/check.js";
+import { checkFileStructureEntry, checkProjectFileWithGolden } from "#/stack/project-compare.js";
 import type {
 	ManifestCompare,
 	ManifestFile,
@@ -10,7 +8,9 @@ import type {
 import { resolveSourceRel } from "#/stack/registry.js";
 import { fetchProjectManifest, fetchTextOrThrow, rawUrl } from "#/stack/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
+import type { ProjectRunState } from "#/utils/config.js";
 import { errorMessage, resolveTargetPath } from "#/utils/fs.js";
+import { failManual, skipped, type CheckResult, type CheckScope } from "#/utils/result.js";
 
 export const GOLDEN_FETCH_CONCURRENCY = 16;
 
@@ -145,33 +145,56 @@ async function runWithManifest(
 	return [...enforced, ...structured];
 }
 
-function checkFileStructure(
+async function checkFileStructure(
 	blueprint: string,
 	files: ManifestFile[],
 	structure: ManifestFileStructure[],
 	options: TechStackRunOptions,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const manifestNames = new Set(files.map((file) => file.name));
+	const enforcedTargets = new Set(
+		files.map((file) => resolveTargetPath(file.target, options.baseDir, options.home)),
+	);
 	const tasks: Promise<CheckResult>[] = [];
+	const notes: CheckResult[] = [];
+	const seenTargets = new Map<string, string>();
 	for (const entry of structure) {
-		if (manifestNames.has(entry.name)) {
+		const targetPath = resolveTargetPath(entry.target, options.baseDir, options.home);
+		if (enforcedTargets.has(targetPath)) {
 			continue;
 		}
 		if (onlyIds !== undefined && !onlyIds.has(`project:${blueprint}:${entry.name}`)) {
 			continue;
 		}
+		if (seenTargets.has(targetPath)) {
+			notes.push(
+				skipped(
+					{
+						id: `project:${blueprint}:${entry.name}`,
+						kind: "project",
+						scope: options.scope,
+						source: `tech-stack:${blueprint}`,
+						target: entry.target,
+					},
+					"duplicate file-structure target",
+					`same target as "${seenTargets.get(targetPath)}"; keeping the first entry`,
+				),
+			);
+			continue;
+		}
+		seenTargets.set(targetPath, entry.name);
 		tasks.push(
 			checkFileStructureEntry({
 				blueprint,
 				entryName: entry.name,
 				kind: entry.kind,
 				scope: options.scope,
-				targetPath: resolveTargetPath(entry.target, options.baseDir, options.home),
+				targetPath,
 			}),
 		);
 	}
-	return Promise.all(tasks);
+	const results = await Promise.all(tasks);
+	return [...results, ...notes];
 }
 
 export function runProjectChecks(

@@ -1,1 +1,1 @@
-bun fmt --staged
+bun run format
