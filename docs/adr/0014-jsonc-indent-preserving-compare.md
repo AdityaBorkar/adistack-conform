@@ -1,6 +1,6 @@
 # JSONC-tolerant compare with indent-preserving fix
 
-Project file compare parses JSONC (comments and trailing commas allowed) and `fix` serializes back preserving the local indent style (`src/stack/check.ts`), because blueprints ship canonical JSON while repos carry comments. Non-object or unparsable goldens fall back to byte compare (or manual when templated but uncomparable).
+Project file compare parses JSONC (comments and trailing commas allowed) and `fix` serializes back preserving the local indent style (`stripJsonc`/`serializeJson`/`overlayResult` in `src/stack/check.ts`), because blueprints ship canonical JSON while repos carry comments. Non-object or unparsable goldens fall back to byte compare (or manual when templated but uncomparable).
 
 ## Consequences
 

@@ -7,7 +7,7 @@ The domain of declaring desired project and machine state in `conform.json` and 
 ### Desired state
 
 **Desired State**:
-The `conform.json` declaration of which project and machine blueprints the directory and machine should match, plus the tech-stack repo and ref holding the truth.
+The `conform.json` declaration of which project, machine, and GitHub blueprints the directory, machine, and repo should match, plus the tech-stack repo and ref holding the truth. Found by walking up from the cwd or via `--desired-state`.
 _Avoid_: config, spec
 
 **Blueprint**:
@@ -27,7 +27,7 @@ The per-file semantic rule declared by a manifest `files[]` entry: `ignore[]` ke
 _Avoid_: compare config
 
 **File Structure**:
-Manifest `file_structure[]` existence-only entries (`name` + `target` + `kind: file|dir`): content is per-project, missing entries are manual with a generate hint (files) or a `mkdir -p` hint (dirs). An entry whose `name` overlaps a `files[]` name is skipped in favor of the file check.
+Manifest `file_structure[]` existence-only entries (`name` + `target` + `kind: file|dir`): content is per-project, missing entries are manual with a generate hint (files) or a `mkdir -p` hint (dirs). An entry whose `name` overlaps a `files[]` name is dropped with no result in favor of the file check.
 _Avoid_: required docs, required dirs
 
 ### Enforcement

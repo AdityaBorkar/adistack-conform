@@ -1,6 +1,6 @@
 # Non-TTY `fix --all` refuses risky fixes
 
-`fix --all` outside a TTY applies file overwrites but refuses `run-command` and `github-api` fixes (exit 2), because commands execute arbitrary binaries and API calls mutate shared repo state — both need a human at a terminal to review the diff preview first. In agents and CI, preview with `fix --dry-run` (never writes, never prompts) and run interactive `fix` in a terminal for the risky remainder.
+`fix --all` outside a TTY applies file overwrites but refuses `run-command` and `github-api` fixes (exit 2, `src/index.ts`), because commands execute arbitrary binaries and API calls mutate shared repo state — both need a human at a terminal to review the diff preview first. In agents and CI, preview with `fix --dry-run` (never writes, never prompts) and run interactive `fix` in a terminal for the risky remainder.
 
 ## Consequences
 

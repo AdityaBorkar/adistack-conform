@@ -4,4 +4,4 @@ Network fetches time out at 30s (`FETCH_TIMEOUT_MS` in `src/utils/net.ts`), the 
 
 ## Consequences
 
-No CLI flags for timeouts or concurrency. Slow runs point at the underlying service; the machine tail is captured on timeout so the failing derivation is visible.
+No CLI flags for timeouts or concurrency. Slow runs point at the underlying service; the machine tail (`OUTPUT_TAIL_CHARS`/`OUTPUT_TAIL_LINES`) is captured on timeout so the failing derivation is visible.
