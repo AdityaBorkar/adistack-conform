@@ -1,4 +1,5 @@
 {
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"type": "object",
 	"properties": {
 		"$schema": {
@@ -46,6 +47,5 @@
 			"description": "Project blueprints as explicit name/path entries."
 		}
 	},
-	"required": ["machines", "projects"],
-	"$schema": "https://json-schema.org/draft/2020-12/schema"
+	"required": ["machines", "projects"]
 }

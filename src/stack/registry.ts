@@ -1,16 +1,16 @@
-import type * as v from "valibot";
+import type * as z from "zod";
 
 import type { ManifestSchema } from "#/schemas/manifest.js";
 import type { RegistrySchema } from "#/schemas/registry.js";
 
-export type ManifestFile = v.InferOutput<typeof ManifestSchema>["files"][number];
+export type ManifestFile = z.infer<typeof ManifestSchema>["files"][number];
 export type ManifestCompare = NonNullable<ManifestFile["compare"]>;
 export type ManifestFileStructure = NonNullable<
-	v.InferOutput<typeof ManifestSchema>["file_structure"]
+	z.infer<typeof ManifestSchema>["file_structure"]
 >[number];
-export type ManifestGithub = v.InferOutput<typeof ManifestSchema>["github"];
-export type ManifestJs = NonNullable<v.InferOutput<typeof ManifestSchema>["js"]>;
-export type RegistryDocument = v.InferOutput<typeof RegistrySchema>;
+export type ManifestGithub = z.infer<typeof ManifestSchema>["github"];
+export type ManifestJs = NonNullable<z.infer<typeof ManifestSchema>["js"]>;
+export type RegistryDocument = z.infer<typeof RegistrySchema>;
 export type RegistryEntry = RegistryDocument["projects"][number];
 
 export const MAX_LIST_SHOWN = 10;

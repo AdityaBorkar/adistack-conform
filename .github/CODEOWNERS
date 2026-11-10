@@ -1,0 +1,5 @@
+# Config and trust-boundary files require owner review.
+
+/conform.json @AdityaBorkar
+/package.json @AdityaBorkar
+/bun.lock @AdityaBorkar

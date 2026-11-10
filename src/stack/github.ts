@@ -1,4 +1,4 @@
-import type * as v from "valibot";
+import type * as z from "zod";
 
 import type { CheckBase, CheckResult, GithubApiFix, GithubApiStep } from "#/checks.js";
 import { failFixable, failManual, pass, skipped } from "#/checks.js";
@@ -11,7 +11,7 @@ import { errorMessage } from "#/utils/fs.js";
 import { FETCH_TIMEOUT_MS, apiHeaders, githubToken } from "#/utils/net.js";
 import { parseOrThrow } from "#/utils/schema.js";
 
-export type GithubPreset = v.InferOutput<typeof GithubSchema>;
+export type GithubPreset = z.infer<typeof GithubSchema>;
 
 const GITHUB_API = "https://api.github.com";
 

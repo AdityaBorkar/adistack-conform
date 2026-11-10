@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { toJsonSchema } from "@valibot/to-json-schema";
+import * as z from "zod";
 
 import { ConformSchema } from "#/schemas/conform.js";
 import { GithubSchema } from "#/schemas/github.js";
@@ -23,7 +23,7 @@ export async function generateJsonSchema() {
 	await Promise.all(
 		Object.entries(TARGETS).map(async ([file, schema]) => {
 			const outPath = join(OUTPUT_DIR, file);
-			const jsonSchema = toJsonSchema(schema, { errorMode: "warn", target: "draft-2020-12" });
+			const jsonSchema = z.toJSONSchema(schema, { io: "input", target: "draft-2020-12" });
 			await Bun.write(outPath, `${JSON.stringify(jsonSchema, null, "\t")}\n`);
 			console.log(`Wrote ${outPath}`);
 		}),

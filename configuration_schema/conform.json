@@ -1,4 +1,5 @@
 {
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"type": "object",
 	"properties": {
 		"$schema": {
@@ -55,10 +56,10 @@
 			"type": "object",
 			"properties": {
 				"ref": {
+					"default": "main",
 					"type": "string",
 					"minLength": 1,
-					"description": "Git branch, tag, or commit.",
-					"default": "main"
+					"description": "Git branch, tag, or commit."
 				},
 				"repo": {
 					"type": "string",
@@ -66,6 +67,7 @@
 					"description": "GitHub owner/repo holding blueprints and presets (project) or nix flakes (machine)."
 				},
 				"type": {
+					"type": "string",
 					"const": "github",
 					"description": "Tech-stack source; only github is supported."
 				}
@@ -74,6 +76,5 @@
 			"description": "Tech-stack repo holding blueprints and nix flakes."
 		}
 	},
-	"required": ["source"],
-	"$schema": "https://json-schema.org/draft/2020-12/schema"
+	"required": ["source"]
 }

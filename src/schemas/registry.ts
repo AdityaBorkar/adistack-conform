@@ -1,29 +1,26 @@
-import * as v from "valibot";
+import * as z from "zod";
 
-const RegistryEntrySchema = v.object({
-	name: v.pipe(v.string(), v.minLength(1), v.description("Display name for the blueprint.")),
-	path: v.pipe(
-		v.string(),
-		v.minLength(1),
-		v.description("Blueprint directory relative to the tech-stack root, e.g. ./projects/cli-app/."),
-	),
+const RegistryEntrySchema = z.object({
+	name: z.string().min(1).describe("Display name for the blueprint."),
+	path: z
+		.string()
+		.min(1)
+		.describe("Blueprint directory relative to the tech-stack root, e.g. ./projects/cli-app/."),
 });
 
-export const RegistrySchema = v.object({
-	$schema: v.optional(
-		v.pipe(
-			v.string(),
-			v.description(
+export const RegistrySchema = z.compile(
+	z.object({
+		$schema: z
+			.string()
+			.describe(
 				"JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/registry.json.",
-			),
-		),
-	),
-	machines: v.pipe(
-		v.array(RegistryEntrySchema),
-		v.description("Machine blueprints as explicit name/path entries."),
-	),
-	projects: v.pipe(
-		v.array(RegistryEntrySchema),
-		v.description("Project blueprints as explicit name/path entries."),
-	),
-});
+			)
+			.optional(),
+		machines: z
+			.array(RegistryEntrySchema)
+			.describe("Machine blueprints as explicit name/path entries."),
+		projects: z
+			.array(RegistryEntrySchema)
+			.describe("Project blueprints as explicit name/path entries."),
+	}),
+);

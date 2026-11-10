@@ -1,16 +1,14 @@
-import * as v from "valibot";
+import * as z from "zod";
 
 export function parseOrThrow<T>(
-	schema: v.GenericSchema<unknown, T>,
+	schema: z.ZodType<T>,
 	path: string,
 	parsed: unknown,
 	label: string,
 ): T {
-	const result = v.safeParse(schema, parsed);
+	const result = schema.safeParse(parsed);
 	if (!result.success) {
-		throw new Error(
-			`Invalid ${label} in ${path}:\n${v.summarize(result.issues as [v.BaseIssue<unknown>, ...v.BaseIssue<unknown>[]])}`,
-		);
+		throw new Error(`Invalid ${label} in ${path}:\n${z.prettifyError(result.error)}`);
 	}
-	return result.output;
+	return result.data;
 }

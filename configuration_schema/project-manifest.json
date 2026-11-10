@@ -1,4 +1,5 @@
 {
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"type": "object",
 	"properties": {
 		"$schema": {
@@ -10,13 +11,14 @@
 			"description": "Human-readable blueprint description."
 		},
 		"file_structure": {
+			"default": [],
 			"type": "array",
 			"items": {
 				"type": "object",
 				"properties": {
 					"kind": {
-						"enum": ["dir", "file"],
 						"type": "string",
+						"enum": ["dir", "file"],
 						"description": "Required entry kind: dir must exist as a directory, file must exist as a file."
 					},
 					"name": {
@@ -32,8 +34,7 @@
 				},
 				"required": ["kind", "name", "target"]
 			},
-			"description": "Existence-only entries enforced by this blueprint (no content compare).",
-			"default": []
+			"description": "Existence-only entries enforced by this blueprint (no content compare)."
 		},
 		"files": {
 			"type": "array",
@@ -44,43 +45,42 @@
 						"type": "object",
 						"properties": {
 							"ignore": {
+								"default": [],
 								"type": "array",
 								"items": {
 									"type": "string",
 									"minLength": 1
 								},
-								"description": "Top-level keys excluded from the compare; local values are preserved by fix.",
-								"default": []
+								"description": "Top-level keys excluded from the compare; local values are preserved by fix."
 							},
 							"pinned": {
+								"default": [],
 								"type": "array",
 								"items": {
 									"type": "string",
 									"minLength": 1
 								},
-								"description": "Top-level keys that must match the golden (objects merge per key, so local extras are allowed); fix takes golden values.",
-								"default": []
+								"description": "Top-level keys that must match the golden (objects merge per key, so local extras are allowed); fix takes golden values."
 							},
 							"strip": {
+								"default": [],
 								"type": "array",
 								"items": {
 									"type": "string",
 									"minLength": 1
 								},
-								"description": "Top-level keys removed from both sides before comparing and from fix output.",
-								"default": []
+								"description": "Top-level keys removed from both sides before comparing and from fix output."
 							},
 							"versioned": {
+								"default": [],
 								"type": "array",
 								"items": {
 									"type": "string",
 									"minLength": 1
 								},
-								"description": "Object sections (e.g. dependencies) where versions must match for packages present on both sides; fix takes golden versions.",
-								"default": []
+								"description": "Object sections (e.g. dependencies) where versions must match for packages present on both sides; fix takes golden versions."
 							}
 						},
-						"required": [],
 						"description": "Semantic compare/fix rules for this file."
 					},
 					"name": {
@@ -112,6 +112,7 @@
 			"type": "object",
 			"properties": {
 				"dependencies": {
+					"default": {},
 					"type": "object",
 					"propertyNames": {
 						"type": "string"
@@ -120,10 +121,10 @@
 						"type": "string",
 						"minLength": 1
 					},
-					"description": "Packages required in dependencies, pinned to exact versions; \"any\" allows any installed version.",
-					"default": {}
+					"description": "Packages required in dependencies, pinned to exact versions; \"any\" allows any installed version."
 				},
 				"devDependencies": {
+					"default": {},
 					"type": "object",
 					"propertyNames": {
 						"type": "string"
@@ -132,10 +133,10 @@
 						"type": "string",
 						"minLength": 1
 					},
-					"description": "Packages required in devDependencies, pinned to exact versions; \"any\" allows any installed version.",
-					"default": {}
+					"description": "Packages required in devDependencies, pinned to exact versions; \"any\" allows any installed version."
 				},
 				"peerDependencies": {
+					"default": {},
 					"type": "object",
 					"propertyNames": {
 						"type": "string"
@@ -144,20 +145,17 @@
 						"type": "string",
 						"minLength": 1
 					},
-					"description": "Packages required in peerDependencies, pinned to exact versions; \"any\" allows any installed version.",
-					"default": {}
+					"description": "Packages required in peerDependencies, pinned to exact versions; \"any\" allows any installed version."
 				},
 				"pm": {
+					"default": "bun",
 					"type": "string",
 					"minLength": 1,
-					"description": "Package manager binary used in install hints, e.g. bun.",
-					"default": "bun"
+					"description": "Package manager binary used in install hints, e.g. bun."
 				}
 			},
-			"required": [],
 			"description": "JavaScript packages required in package.json."
 		}
 	},
-	"required": ["files"],
-	"$schema": "https://json-schema.org/draft/2020-12/schema"
+	"required": ["files"]
 }

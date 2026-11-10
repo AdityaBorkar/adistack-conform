@@ -1,4 +1,5 @@
 {
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"type": "object",
 	"properties": {
 		"$schema": {
@@ -6,88 +7,88 @@
 			"description": "JSON Schema reference, e.g. ./configuration_schema/github.json."
 		},
 		"actions": {
+			"default": {},
 			"type": "object",
 			"properties": {
 				"allowApprovePRs": {
+					"default": false,
 					"type": "boolean",
-					"description": "Allow GitHub Actions to create and approve pull requests.",
-					"default": false
+					"description": "Allow GitHub Actions to create and approve pull requests."
 				},
 				"allowed": {
-					"enum": ["all", "local-only", "selected"],
+					"default": "all",
 					"type": "string",
-					"description": "Which actions and reusable workflows may run.",
-					"default": "all"
+					"enum": ["all", "local-only", "selected"],
+					"description": "Which actions and reusable workflows may run."
 				},
 				"approvalForExternal": {
+					"default": true,
 					"type": "boolean",
-					"description": "Require approval for all external contributors (fork PR workflows).",
-					"default": true
+					"description": "Require approval for all external contributors (fork PR workflows)."
 				},
 				"defaultWorkflowPermissions": {
-					"enum": ["read", "write"],
+					"default": "read",
 					"type": "string",
-					"description": "Default GITHUB_TOKEN permissions.",
-					"default": "read"
+					"enum": ["read", "write"],
+					"description": "Default GITHUB_TOKEN permissions."
 				},
 				"oidcImmutableSubject": {
+					"default": true,
 					"type": "boolean",
-					"description": "Use the immutable subject claim for OIDC. Check-only: no public fix API.",
-					"default": true
+					"description": "Use the immutable subject claim for OIDC. Check-only: no public fix API."
 				},
 				"retentionDays": {
+					"default": 90,
 					"type": "integer",
 					"minimum": 1,
-					"description": "Artifact and log retention in days.",
-					"default": 90
+					"maximum": 9007199254740991,
+					"description": "Artifact and log retention in days."
 				},
 				"shaPinningRequired": {
+					"default": true,
 					"type": "boolean",
-					"description": "Require actions to be pinned to a full-length commit SHA.",
-					"default": true
+					"description": "Require actions to be pinned to a full-length commit SHA."
 				}
 			},
-			"required": [],
-			"description": "GitHub Actions permissions and retention.",
-			"default": {}
+			"description": "GitHub Actions permissions and retention."
 		},
 		"agentSuggestions": {
-			"enum": ["full-control", "disabled"],
+			"default": "full-control",
 			"type": "string",
-			"description": "Agent suggestions for issues. Check-only: no public API, verify in the UI.",
-			"default": "full-control"
+			"enum": ["full-control", "disabled"],
+			"description": "Agent suggestions for issues. Check-only: no public API, verify in the UI."
 		},
 		"archiveSettings": {
+			"default": {},
 			"type": "object",
 			"properties": {
 				"commitComments": {
+					"default": false,
 					"type": "boolean",
-					"description": "Allow comments on individual commits.",
-					"default": false
+					"description": "Allow comments on individual commits."
 				},
 				"includeLfsInArchives": {
+					"default": false,
 					"type": "boolean",
-					"description": "Include Git LFS objects in archives.",
-					"default": false
+					"description": "Include Git LFS objects in archives."
 				},
 				"pushUpdateLimit": {
 					"type": "integer",
 					"minimum": 1,
+					"maximum": 9007199254740991,
 					"description": "Max branches/tags updated in a single push. Omit to skip (no public API)."
 				}
 			},
-			"required": [],
-			"description": "Repo archive/push toggles. Check-only: no public API, verify in Settings.",
-			"default": {}
+			"description": "Repo archive/push toggles. Check-only: no public API, verify in Settings."
 		},
 		"checks": {
+			"default": ["conform", "format", "lint", "types"],
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
 			},
-			"description": "Required status check contexts on the default branch.",
-			"default": ["conform", "format", "lint", "types"]
+			"description": "Required status check contexts on the default branch."
 		},
 		"codeowners": {
 			"type": "string",
@@ -95,213 +96,208 @@
 			"description": "Required CODEOWNERS path, e.g. .github/CODEOWNERS. Omit to skip the presence check."
 		},
 		"defaultBranch": {
+			"default": "stable",
 			"type": "string",
 			"minLength": 1,
-			"description": "Default branch name.",
-			"default": "stable"
+			"description": "Default branch name."
 		},
 		"environments": {
+			"default": ["beta", "stable"],
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
 			},
-			"description": "Deployment environments that must exist (created by fix when missing).",
-			"default": ["beta", "stable"]
+			"description": "Deployment environments that must exist (created by fix when missing)."
 		},
 		"features": {
+			"default": {},
 			"type": "object",
 			"properties": {
 				"discussions": {
-					"type": "boolean",
-					"default": false
+					"default": false,
+					"type": "boolean"
 				},
 				"issueTemplates": {
+					"default": true,
 					"type": "boolean",
-					"description": "Require .github/ISSUE_TEMPLATE content.",
-					"default": true
+					"description": "Require .github/ISSUE_TEMPLATE content."
 				},
 				"issues": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"projects": {
-					"type": "boolean",
-					"default": false
+					"default": false,
+					"type": "boolean"
 				},
 				"wiki": {
-					"type": "boolean",
-					"default": false
+					"default": false,
+					"type": "boolean"
 				}
 			},
-			"required": [],
-			"description": "Repo feature toggles.",
-			"default": {}
+			"description": "Repo feature toggles."
 		},
 		"merge": {
+			"default": {},
 			"type": "object",
 			"properties": {
 				"autoMerge": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"deleteHeadBranches": {
+					"default": true,
 					"type": "boolean",
-					"description": "Automatically delete head branches.",
-					"default": true
+					"description": "Automatically delete head branches."
 				},
 				"mergeCommit": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"mergeMessage": {
-					"enum": ["blank", "pr-body", "pr-title"],
+					"default": "pr-body",
 					"type": "string",
-					"default": "pr-body"
+					"enum": ["blank", "pr-body", "pr-title"]
 				},
 				"mergeTitle": {
-					"enum": ["merge-message", "pr-title"],
+					"default": "pr-title",
 					"type": "string",
-					"default": "pr-title"
+					"enum": ["merge-message", "pr-title"]
 				},
 				"rebaseMerge": {
-					"type": "boolean",
-					"default": false
+					"default": false,
+					"type": "boolean"
 				},
 				"squashMerge": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"squashMessage": {
-					"enum": ["blank", "commit-messages", "pr-body"],
+					"default": "pr-body",
 					"type": "string",
-					"default": "pr-body"
+					"enum": ["blank", "commit-messages", "pr-body"]
 				},
 				"squashTitle": {
-					"enum": ["commit-title", "pr-title"],
+					"default": "pr-title",
 					"type": "string",
-					"default": "pr-title"
+					"enum": ["commit-title", "pr-title"]
 				}
 			},
-			"required": [],
-			"description": "Merge methods, commit message defaults, and PR automation.",
-			"default": {}
+			"description": "Merge methods, commit message defaults, and PR automation."
 		},
 		"releasesImmutable": {
+			"default": true,
 			"type": "boolean",
-			"description": "Disallow modifying release assets and tags.",
-			"default": true
+			"description": "Disallow modifying release assets and tags."
 		},
 		"reviews": {
+			"default": {},
 			"type": "object",
 			"properties": {
 				"dismissStale": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"requireCodeOwner": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"requireConversationResolution": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"requireSignedCommits": {
-					"type": "boolean",
-					"default": false
+					"default": false,
+					"type": "boolean"
 				},
 				"requiredApprovals": {
+					"default": 1,
 					"type": "integer",
 					"minimum": 0,
-					"default": 1
+					"maximum": 9007199254740991
 				},
 				"restrictPushes": {
+					"default": true,
 					"type": "boolean",
-					"description": "Limit pushes to users explicitly granted read or higher access.",
-					"default": true
+					"description": "Limit pushes to users explicitly granted read or higher access."
 				}
 			},
-			"required": [],
-			"description": "Default-branch code review and push restrictions.",
-			"default": {}
+			"description": "Default-branch code review and push restrictions."
 		},
 		"rulesets": {
+			"default": [],
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
 			},
-			"description": "Ruleset names that must exist and be active. Fix is manual (author JSON in the UI).",
-			"default": []
+			"description": "Ruleset names that must exist and be active. Fix is manual (author JSON in the UI)."
 		},
 		"secrets": {
+			"default": [],
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
 			},
-			"description": "Required Actions secret names (presence only; values are write-only).",
-			"default": []
+			"description": "Required Actions secret names (presence only; values are write-only)."
 		},
 		"security": {
+			"default": {},
 			"type": "object",
 			"properties": {
 				"copilotAutofix": {
+					"default": false,
 					"type": "boolean",
-					"description": "Copilot Autofix. Check-only: no public API, verify in the UI.",
-					"default": false
+					"description": "Copilot Autofix. Check-only: no public API, verify in the UI."
 				},
 				"dependabot": {
+					"default": true,
 					"type": "boolean",
-					"description": "Dependabot security updates.",
-					"default": true
+					"description": "Dependabot security updates."
 				},
 				"dependencyAutoSubmit": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"dependencyGraph": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"privateVulnerabilityReporting": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"pushProtection": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				},
 				"secretProtection": {
-					"type": "boolean",
-					"default": true
+					"default": true,
+					"type": "boolean"
 				}
 			},
-			"required": [],
-			"description": "Advanced Security toggles.",
-			"default": {}
+			"description": "Advanced Security toggles."
 		},
 		"signoffRequired": {
+			"default": false,
 			"type": "boolean",
-			"description": "Require contributors to sign off on web-based commits.",
-			"default": false
+			"description": "Require contributors to sign off on web-based commits."
 		},
 		"socialPreview": {
+			"default": true,
 			"type": "boolean",
-			"description": "Custom social preview image is set. Check-only: no public API, upload in Settings.",
-			"default": true
+			"description": "Custom social preview image is set. Check-only: no public API, upload in Settings."
 		},
 		"variables": {
+			"default": [],
 			"type": "array",
 			"items": {
 				"type": "string",
 				"minLength": 1
 			},
-			"description": "Required Actions variable names (presence only).",
-			"default": []
+			"description": "Required Actions variable names (presence only)."
 		}
-	},
-	"required": [],
-	"$schema": "https://json-schema.org/draft/2020-12/schema"
+	}
 }

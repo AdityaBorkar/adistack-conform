@@ -2,7 +2,7 @@
 
 ## Stack
 
-Bun-only TypeScript CLI (package `@adistack/conform`, bin `adistack-conform` compiled to `.output/`) + Commander + @clack/prompts + Valibot + oxlint/oxfmt + tsrs + knip. No CI, no root README (`www/README.md` is the user docs).
+Bun-only TypeScript CLI (package `@adistack/conform`, bin `adistack-conform` compiled to `.output/`) + Commander + @clack/prompts + Zod (with `z.compile()`) + oxlint/oxfmt + tsrs + knip. No CI, no root README (`www/README.md` is the user docs).
 
 CLI runtime behavior (flags, exit codes, project/machine/github rules) lives in `skills/adistack-conform/SKILL.md` and `www/*.md` — read those before touching `check`/`fix` logic, and update them when flags, results, or `conform.json` semantics change. Use `GLOSSARY.md` terms (golden/source/target, fixable/manual, drift).
 
@@ -28,7 +28,7 @@ bun run verify           # format && check:lint && check:types && test && build
 ## Layout
 
 - `src/index.ts` — Commander entrypoint (`check`, `fix`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`, `src/stack/` (`index`/`check`/`deps`/`machine`/`github`/`registry`/`remote`), `src/utils/`, `src/schemas/`.
-- `src/schemas/*` is the Valibot source of truth (`import * as v from "valibot"`); `configuration_schema/*.json` is generated output.
+- `src/schemas/*` is the Zod source of truth (`import * as z from "zod"`, finals wrapped in `z.compile()`); `configuration_schema/*.json` is generated output.
 - `.output/` is gitignored build output.
 - This repo dogfoods itself: `conform.json` (`cli-app` project blueprint + `main` nix blueprint) tracks `AdityaBorkar/tech-stack@main`.
 - The tech-stack reference checkout lives at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read blueprints/registry directly instead of guessing.

@@ -16,7 +16,7 @@ Your whole setup in one file. Most repos need fewer than ten lines:
 }
 ```
 
-Validate against `./configuration_schema/conform.json` (generated from Valibot schemas — never hand-edit it, regen with `bun run gen:json-schema`).
+Validate against `./configuration_schema/conform.json` (generated from Zod schemas — never hand-edit it, regen with `bun run gen:json-schema`).
 
 ## `source` <Badge variant="error">required</Badge>
 
@@ -66,5 +66,5 @@ The golden is the preset file referenced by the blueprint `manifest.json` `githu
 
 - Without `--config`, `check` / `fix` walk up from your cwd to find `conform.json`; a missing file exits 2.
 - With `--config <path>`, any path is accepted. The path may use `~` (`untildify`) and resolves against your cwd.
-- Invalid JSON or schema violations print a `valibot` summary and exit 2.
+- Invalid JSON or schema violations print a `zod` summary and exit 2.
 - `--project-only` / `--machine-only` / `--github-only` filter at run time; omitting the other scopes from `conform.json` has the same effect permanently.

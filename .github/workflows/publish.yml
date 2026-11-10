@@ -1,0 +1,44 @@
+name: publish
+
+on:
+  push:
+    branches:
+      - stable
+
+permissions: {}
+
+concurrency:
+  group: publish-stable
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: bun install
+      # No-ops when there is nothing to version; opens/updates the
+      # version PR (CHANGELOG.md + package.json bump) otherwise.
+      - uses: changesets/action/version@v2
+        with:
+          commit-message: "chore: version packages"
+      # No-ops unless the version PR just merged; then publishes to
+      # npm and creates the GitHub release from CHANGELOG/version.
+      - id: publish
+        uses: changesets/action/publish@v2
+        with:
+          create-github-releases: true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

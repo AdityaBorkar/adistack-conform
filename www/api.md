@@ -39,13 +39,13 @@ Prints `{ configs, ok, passed, failed, skipped, total, results }`. Gate on `ok` 
 
 </Callout>
 
-## Schemas (Valibot source of truth)
+## Schemas (Zod source of truth)
 
-`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `github.ts`, `common.ts`, `import * as v from "valibot"`) generates `configuration_schema/*.json` via `bun run gen:json-schema` (also run by `bun run build`).
+`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `github.ts`, `import * as z from "zod"`, finals wrapped in `z.compile()`) generates `configuration_schema/*.json` via `bun run gen:json-schema` (also run by `bun run build`).
 
 <Callout type="warning" title="Hands off the generated files">
 
-Never hand-edit the generated files. Change the Valibot source and regen.
+Never hand-edit the generated files. Change the Zod source and regen.
 
 </Callout>
 

@@ -1,79 +1,58 @@
-import * as v from "valibot";
+import * as z from "zod";
 
-const TechStackSourceSchema = v.object({
-	ref: v.optional(
-		v.pipe(v.string(), v.minLength(1), v.description("Git branch, tag, or commit.")),
-		"main",
-	),
-	repo: v.pipe(
-		v.string(),
-		v.regex(/^[^/\s]+\/[^/\s]+$/u),
-		v.description(
+const TechStackSourceSchema = z.object({
+	ref: z.string().min(1).describe("Git branch, tag, or commit.").default("main"),
+	repo: z
+		.string()
+		.regex(/^[^/\s]+\/[^/\s]+$/u)
+		.describe(
 			"GitHub owner/repo holding blueprints and presets (project) or nix flakes (machine).",
 		),
-	),
-	type: v.pipe(v.literal("github"), v.description("Tech-stack source; only github is supported.")),
+	type: z.literal("github").describe("Tech-stack source; only github is supported."),
 });
 
-export const ConformMachineSectionSchema = v.object({
-	blueprint: v.pipe(
-		v.string(),
-		v.minLength(1),
-		v.description(
+const ConformMachineSectionSchema = z.object({
+	blueprint: z
+		.string()
+		.min(1)
+		.describe(
 			"Machine blueprint from the tech-stack registry (entry name or directory, e.g. main).",
 		),
-	),
-	configuration: v.optional(
-		v.pipe(
-			v.string(),
-			v.minLength(1),
-			v.description(
-				"homeConfigurations attribute to switch to, e.g. adityab. Defaults to home-manager auto-select ($USER).",
-			),
-		),
-	),
+	configuration: z
+		.string()
+		.min(1)
+		.describe(
+			"homeConfigurations attribute to switch to, e.g. adityab. Defaults to home-manager auto-select ($USER).",
+		)
+		.optional(),
 });
 
-export const ConformGithubSectionSchema = v.object({
-	blueprint: v.pipe(
-		v.string(),
-		v.minLength(1),
-		v.description(
-			"GitHub settings blueprint name, e.g. cli-app (reads the manifest github preset).",
-		),
-	),
-	repo: v.optional(
-		v.pipe(
-			v.string(),
-			v.regex(/^[^/\s]+\/[^/\s]+$/u),
-			v.description(
-				"GitHub owner/repo to check. Defaults to $GITHUB_REPOSITORY, then the git origin remote.",
-			),
-		),
-	),
+const ConformGithubSectionSchema = z.object({
+	blueprint: z
+		.string()
+		.min(1)
+		.describe("GitHub settings blueprint name, e.g. cli-app (reads the manifest github preset)."),
+	repo: z
+		.string()
+		.regex(/^[^/\s]+\/[^/\s]+$/u)
+		.describe(
+			"GitHub owner/repo to check. Defaults to $GITHUB_REPOSITORY, then the git origin remote.",
+		)
+		.optional(),
 });
-export const ConformProjectSectionSchema = v.object({
-	blueprint: v.pipe(
-		v.string(),
-		v.minLength(1),
-		v.description("Project blueprint name, e.g. cli-app."),
-	),
+const ConformProjectSectionSchema = z.object({
+	blueprint: z.string().min(1).describe("Project blueprint name, e.g. cli-app."),
 });
 
-export const ConformSchema = v.object({
-	$schema: v.optional(
-		v.pipe(
-			v.string(),
-			v.description("JSON Schema reference, e.g. ./configuration_schema/conform.json."),
-		),
-	),
-	github: v.optional(
-		v.pipe(ConformGithubSectionSchema, v.description("GitHub repo settings desired state.")),
-	),
-	machine: v.optional(v.pipe(ConformMachineSectionSchema, v.description("Machine desired state."))),
-	project: v.optional(v.pipe(ConformProjectSectionSchema, v.description("Project desired state."))),
-	source: v.pipe(
-		TechStackSourceSchema,
-		v.description("Tech-stack repo holding blueprints and nix flakes."),
-	),
-});
+export const ConformSchema = z.compile(
+	z.object({
+		$schema: z
+			.string()
+			.describe("JSON Schema reference, e.g. ./configuration_schema/conform.json.")
+			.optional(),
+		github: ConformGithubSectionSchema.describe("GitHub repo settings desired state.").optional(),
+		machine: ConformMachineSectionSchema.describe("Machine desired state.").optional(),
+		project: ConformProjectSectionSchema.describe("Project desired state.").optional(),
+		source: TechStackSourceSchema.describe("Tech-stack repo holding blueprints and nix flakes."),
+	}),
+);
