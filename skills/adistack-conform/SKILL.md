@@ -33,6 +33,7 @@ Run from the directory that owns `conform.json` (project targets are cwd-relativ
 ```bash
 adistack-conform check [--json] [--verbose] [--project-only | --machine-only | --github-only]
 adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine-only | --github-only]
+adistack-conform validate
 # from source: bun ./src/index.ts check
 ```
 
@@ -41,6 +42,7 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine
 - `--json` prints a machine-readable summary (`{ configs, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically. `--verbose` also shows passing checks (default: failures only).
 - `fix` flow: reports unfixable items with hints, shows a diff preview (unless `--no-diff`, diffs over ~200KB skipped), prompts with space-to-toggle multiselect (each option shows the fix command), applies `overwrite-file` fixes first then commands/API fixes, then re-checks only the selected IDs. `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on config error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes.
 - `fix` needs a TTY unless `--all` is passed, and non-TTY `--all` refuses command/API fixes (re-run in a terminal). In agents/non-TTY runs use `fix --dry-run` (dry-run never writes and never prompts). Prefer `fix --dry-run` before `fix --all` so the diff is reviewed first.
+- `validate` checks the tech-stack `registry.json` plus the `manifest.json` of every configured project/github blueprint (machine blueprints check the registry entry only). Prints one `✓`/`✗` line per file with the error detail, exits 0 when all valid, 1 when any invalid, 2 on config error.
 - Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits. GitHub-scope checks/fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit (then the scope skips, still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); the target repo defaults to `$GITHUB_REPOSITORY`, then the cwd git origin remote (override with `github.repo`).
 
 ## What each scope checks

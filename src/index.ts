@@ -17,9 +17,11 @@ import { recheckProjectSelected, runProjectChecks } from "#/stack/index.js";
 import { recheckMachineSelected, runMachineChecks } from "#/stack/machine.js";
 import type { RegistryDocument } from "#/stack/registry.js";
 import { fetchRegistry, repoKey } from "#/stack/remote.js";
+import { collectValidateTargets, validateTargets } from "#/stack/validate.js";
 import { defaultHome, errorMessage } from "#/utils/fs.js";
 import {
 	formatDuration,
+	okMark,
 	outroAllPassed,
 	printDryRun,
 	printJsonSummary,
@@ -363,6 +365,25 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 	return 0;
 }
 
+async function runValidateCommand(cmd: Command): Promise<number> {
+	const configs = await loadConfigsFromCommand(cmd);
+	const results = await validateTargets(collectValidateTargets(configs));
+	for (const result of results) {
+		if (result.ok) {
+			console.log(`${okMark(true)} ${result.file}`);
+		} else {
+			console.log(`${okMark(false)} ${result.file}\n    ${result.error ?? "invalid"}`);
+		}
+	}
+	const invalid = results.filter((item) => !item.ok).length;
+	if (invalid === 0) {
+		console.log(`\nAll ${results.length} tech-stack file(s) valid.`);
+		return 0;
+	}
+	console.log(`\nValidate: ${results.length - invalid} valid, ${invalid} invalid.`);
+	return 1;
+}
+
 const program = new Command();
 program
 	.description(
@@ -402,6 +423,17 @@ program
 	.action(async (cmdOptions: FixCmdOptions, cmd: Command) => {
 		try {
 			process.exit(await runFixCommand(cmd, cmdOptions));
+		} catch (error) {
+			failWith(error);
+		}
+	});
+
+program
+	.command("validate")
+	.description("Validate the tech-stack registry.json and blueprint manifest.json files.")
+	.action(async (_cmdOptions: Record<string, never>, cmd: Command) => {
+		try {
+			process.exit(await runValidateCommand(cmd));
 		} catch (error) {
 			failWith(error);
 		}

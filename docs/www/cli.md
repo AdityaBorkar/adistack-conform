@@ -89,6 +89,18 @@ Only the selected IDs are re-checked. The run ends with `Fixed X/Y. N still fail
 
 Exit codes: <Badge variant="success">0 nothing remains failing</Badge> <Badge variant="warning">1 drift remains / cancelled / dry-run found drift</Badge> <Badge variant="error">2 config error</Badge> — including no-TTY use without `--all`, and non-TTY `--all` with command/API fixes (`Re-run in a terminal …`).
 
+## `validate`
+
+Check the tech-stack source itself, not your files:
+
+```bash
+adistack-conform validate
+```
+
+Validates `registry.json` plus the `manifest.json` of every configured project/`github` blueprint (machine blueprints check the registry entry only) at the pinned `source.repo@ref`. Prints one `✓`/`✗` line per file with the error detail.
+
+Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 config error</Badge>.
+
 <Callout type="tip" title="Agents and CI">
 
 Prefer `fix --dry-run` to review, then `fix --all` to apply. Keep `GITHUB_TOKEN` set for private tech-stack repos or rate limits — the github scope works unauthenticated on public repos until 401/403/rate-limit (then it skips), and needs admin scope for fixes.
