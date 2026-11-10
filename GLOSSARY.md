@@ -1,6 +1,6 @@
 # Conformance Checking
 
-The domain of declaring desired project and machine state in `conform.json` and checking reality against tech-stack blueprints.
+The domain of declaring desired project, machine, and GitHub state in `conform.json` and checking reality against tech-stack blueprints.
 
 ## Language
 
@@ -41,7 +41,7 @@ The repo-relative path of a golden inside the tech-stack repo. (`CheckResult.sou
 _Avoid_: preset path, golden path
 
 **Target**:
-The manifest-declared enforcement destination (cwd-relative path for project files, flake URL for machine, `owner/repo (repo settings)` for GitHub); the CLI resolves `~`/absolute project paths before reading.
+The manifest-declared enforcement target (cwd-relative path for project files, flake URL for machine, `owner/repo (repo settings)` for GitHub); the CLI resolves `~`/absolute project paths before reading.
 _Avoid_: destination, output
 
 **Scope**:

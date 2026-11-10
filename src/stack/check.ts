@@ -344,12 +344,12 @@ function templateResult(
 	args: SemanticArgs & { goldenRest: Record<string, unknown>; localRest: Record<string, unknown> },
 ): CheckResult {
 	const { base, golden } = args;
-	const mismatched: string[] = [];
-	collectTemplateIssues(args.goldenRest, args.localRest, "", mismatched);
-	if (mismatched.length > 0) {
+	const differing: string[] = [];
+	collectTemplateIssues(args.goldenRest, args.localRest, "", differing);
+	if (differing.length > 0) {
 		return failManual(
 			base,
-			`fields differ from the template: ${mismatched.join(", ")}`,
+			`fields differ from the template: ${differing.join(", ")}`,
 			"template with per-project values (no <...> placeholders)",
 			`Reconcile ${args.targetPath} with the ${args.fileName} blueprint (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
 		);

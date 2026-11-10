@@ -2,11 +2,11 @@ import type * as z from "zod";
 
 import type { CheckBase, CheckResult, GithubApiFix, GithubApiStep } from "#/checks.js";
 import { failFixable, failManual, pass, skipped } from "#/checks.js";
-import type { GithubRunSpec } from "#/config.js";
-import { GithubSchema } from "#/schemas/github-manifest";
+import type { GithubRunState } from "#/config.js";
+import { GithubSchema } from "#/schemas/github-settings.js";
 import type { RegistryDocument } from "#/stack/registry.js";
-import { findGithubEntry, manifestRel } from "#/stack/registry.js";
-import { fetchGithubConfig } from "#/stack/remote.js";
+import { findGithubEntry, blueprintRel } from "#/stack/registry.js";
+import { fetchGithubSettings } from "#/stack/remote.js";
 import { errorMessage } from "#/utils/fs.js";
 import { FETCH_TIMEOUT_MS, apiHeaders, githubToken } from "#/utils/net.js";
 
@@ -234,7 +234,7 @@ type GithubSettingsResult =
 	| { rel: string }
 	| Record<string, never>;
 
-async function fetchGithubSettings(
+async function resolveGithubSettings(
 	id: string,
 	ref: string,
 	blueprint: string,
@@ -244,9 +244,9 @@ async function fetchGithubSettings(
 	if (entry === undefined) {
 		return {};
 	}
-	const rel = manifestRel(entry.path);
+	const rel = blueprintRel(entry.path);
 	try {
-		const { golden } = await fetchGithubConfig(id, ref, blueprint, registry);
+		const { golden } = await fetchGithubSettings(id, ref, blueprint, registry);
 		return { golden, rel };
 	} catch (error) {
 		if (errorMessage(error).includes("HTTP 404") || errorMessage(error).includes("not found")) {
@@ -1324,21 +1324,21 @@ function checkUiOnly(blueprint: string, golden: GithubSettings, target: string):
 }
 
 export async function runGithubChecks(
-	spec: GithubRunSpec,
+	state: GithubRunState,
 	registry: RegistryDocument,
 ): Promise<CheckResult[]> {
-	const settings = await fetchGithubSettings(spec.id, spec.ref, spec.blueprint, registry);
-	const repo = resolveTargetRepo(spec.repo);
+	const settings = await resolveGithubSettings(state.id, state.ref, state.blueprint, registry);
+	const repo = resolveTargetRepo(state.repo);
 	const target = `${repo} (repo settings)`;
 	if (!("golden" in settings)) {
-		const base = baseFor(spec.blueprint, "settings", target);
+		const base = baseFor(state.blueprint, "settings", target);
 		if (!("rel" in settings)) {
 			return [
 				failManual(
 					base,
 					"<settings reference missing>",
-					`registry github_configs entry for "${spec.blueprint}"`,
-					`Add "${spec.blueprint}" to registry.json github_configs (e.g. "./github-configs/<name>.json", see configuration_schema/github.json), then re-run check.`,
+					`registry github_configs entry for "${state.blueprint}"`,
+					`Add "${state.blueprint}" to registry.json github_configs (e.g. "./github-configs/<name>.json", see configuration_schema/github.json), then re-run check.`,
 				),
 			];
 		}
@@ -1354,7 +1354,7 @@ export async function runGithubChecks(
 	const { golden } = settings;
 	try {
 		const read = await readProtection(repo, golden.defaultBranch);
-		const prChecks = checkPrChecks(spec.blueprint, repo, golden, read, target);
+		const prChecks = checkPrChecks(state.blueprint, repo, golden, read, target);
 		const [
 			general,
 			releases,
@@ -1370,19 +1370,19 @@ export async function runGithubChecks(
 			security,
 			secrets,
 		] = await Promise.all([
-			checkGeneral(spec.blueprint, repo, golden, target),
-			checkReleases(spec.blueprint, repo, golden, target),
-			checkCodeowners(spec.blueprint, repo, golden, target),
-			checkIssueTemplates(spec.blueprint, repo, golden, target),
-			checkReviews(spec.blueprint, repo, golden, read, target),
-			checkRulesets(spec.blueprint, repo, golden, target),
-			checkActionsPermissions(spec.blueprint, repo, golden, target),
-			checkActionsWorkflow(spec.blueprint, repo, golden, target),
-			checkActionsRetention(spec.blueprint, repo, golden, target),
-			checkActionsOidc(spec.blueprint, repo, golden, target),
-			checkEnvironments(spec.blueprint, repo, golden, target),
-			checkSecurity(spec.blueprint, repo, golden, target),
-			checkSecrets(spec.blueprint, repo, golden, target),
+			checkGeneral(state.blueprint, repo, golden, target),
+			checkReleases(state.blueprint, repo, golden, target),
+			checkCodeowners(state.blueprint, repo, golden, target),
+			checkIssueTemplates(state.blueprint, repo, golden, target),
+			checkReviews(state.blueprint, repo, golden, read, target),
+			checkRulesets(state.blueprint, repo, golden, target),
+			checkActionsPermissions(state.blueprint, repo, golden, target),
+			checkActionsWorkflow(state.blueprint, repo, golden, target),
+			checkActionsRetention(state.blueprint, repo, golden, target),
+			checkActionsOidc(state.blueprint, repo, golden, target),
+			checkEnvironments(state.blueprint, repo, golden, target),
+			checkSecurity(state.blueprint, repo, golden, target),
+			checkSecrets(state.blueprint, repo, golden, target),
 		]);
 		return [
 			general,
@@ -1399,13 +1399,13 @@ export async function runGithubChecks(
 			environments,
 			...security,
 			secrets,
-			...checkUiOnly(spec.blueprint, golden, target),
+			...checkUiOnly(state.blueprint, golden, target),
 		];
 	} catch (error) {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
 			return [
 				skipped(
-					baseFor(spec.blueprint, "auth", target),
+					baseFor(state.blueprint, "auth", target),
 					"cannot read repo settings",
 					"set GITHUB_TOKEN to verify (private repo or rate limit)",
 				),
@@ -1416,15 +1416,15 @@ export async function runGithubChecks(
 }
 
 export function recheckGithubSelected(
-	spec: GithubRunSpec,
+	state: GithubRunState,
 	registry: RegistryDocument,
 	selectedIds: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	if (selectedIds.size === 0) {
 		return Promise.resolve([]);
 	}
-	if (![...selectedIds].some((id) => id.startsWith(`github:${spec.blueprint}:`))) {
+	if (![...selectedIds].some((id) => id.startsWith(`github:${state.blueprint}:`))) {
 		return Promise.resolve([]);
 	}
-	return runGithubChecks(spec, registry);
+	return runGithubChecks(state, registry);
 }

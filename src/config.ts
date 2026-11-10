@@ -33,20 +33,20 @@ export interface LoadedDesiredState {
 	source: ConformSource;
 }
 
-export interface ProjectRunSpec {
+export interface ProjectRunState {
 	blueprint: string;
 	id: string;
 	ref: string;
 }
 
-export interface MachineRunSpec {
+export interface MachineRunState {
 	blueprint: string;
 	configuration?: string;
 	id: string;
 	ref: string;
 }
 
-export interface GithubRunSpec {
+export interface GithubRunState {
 	blueprint: string;
 	id: string;
 	ref: string;
@@ -74,7 +74,7 @@ function toLoadedDesiredState(path: string, parsed: unknown): LoadedDesiredState
 	};
 }
 
-const CONFIG_FILENAME = "conform.json";
+const DESIRED_STATE_FILENAME = "conform.json";
 
 export async function loadDesiredState(desiredStatePath: string): Promise<LoadedDesiredState> {
 	const path = resolveDesiredStatePath(desiredStatePath);
@@ -85,28 +85,28 @@ export async function loadDesiredState(desiredStatePath: string): Promise<Loaded
 export async function discoverDesiredStates(): Promise<LoadedDesiredState[]> {
 	let dir = process.cwd();
 	while (true) {
-		const path = join(dir, CONFIG_FILENAME);
+		const path = join(dir, DESIRED_STATE_FILENAME);
 		if (await Bun.file(path).exists()) {
 			return [await loadDesiredState(path)];
 		}
 		const parent = dirname(dir);
 		if (parent === dir) {
 			throw new Error(
-				`No desired state found from ${process.cwd()} up (looked for ${CONFIG_FILENAME}).`,
+				`No desired state found from ${process.cwd()} up (looked for ${DESIRED_STATE_FILENAME}).`,
 			);
 		}
 		dir = parent;
 	}
 }
 
-export function projectSpecOf(loaded: LoadedDesiredState): ProjectRunSpec | undefined {
+export function projectStateOf(loaded: LoadedDesiredState): ProjectRunState | undefined {
 	if (loaded.project === undefined) {
 		return undefined;
 	}
 	return { blueprint: loaded.project.blueprint, id: loaded.source.id, ref: loaded.source.ref };
 }
 
-export function machineSpecOf(loaded: LoadedDesiredState): MachineRunSpec | undefined {
+export function machineStateOf(loaded: LoadedDesiredState): MachineRunState | undefined {
 	if (loaded.machine === undefined) {
 		return undefined;
 	}
@@ -118,7 +118,7 @@ export function machineSpecOf(loaded: LoadedDesiredState): MachineRunSpec | unde
 	};
 }
 
-export function githubSpecOf(loaded: LoadedDesiredState): GithubRunSpec | undefined {
+export function githubStateOf(loaded: LoadedDesiredState): GithubRunState | undefined {
 	if (loaded.github === undefined) {
 		return undefined;
 	}

@@ -21,10 +21,10 @@ adistack-conform check [--json] [--verbose] [--project-only | --machine-only | -
 | Flag                                                  | Meaning                                                  |
 | ----------------------------------------------------- | -------------------------------------------------------- |
 | `--json`                                              | Print a machine-readable summary instead of human lines. |
-| `--verbose`                                           | Show passing checks too (default: failures only).        |
+| `--verbose`                                           | Show passing results too (default: failures only).       |
 | `--project-only` / `--machine-only` / `--github-only` | Run one scope. Passing two is an error.                  |
 
-Output lists only failures plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | error`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
+Output lists only failures plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | manual`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
 
 Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>. Drift includes unknown blueprints and scoped-run fetch failures (reported as `<scope>:internal-error` with no `source`); top-level registry fetch failures outside the scoped run exit 2. Desired-state errors are a missing file, invalid JSON/schema, or passing two scope flags. An unresolvable GitHub target repo (no `github.repo`, no `$GITHUB_REPOSITORY`, no git origin) is drift (`github:internal-error`, exit 1), not a desired-state error.
 

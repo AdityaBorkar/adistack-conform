@@ -1,7 +1,7 @@
 import type { CheckBase, CheckResult } from "#/checks.js";
 import { failFixable, failManual, pass } from "#/checks.js";
-import type { MachineRunSpec } from "#/config.js";
-import { findMachineEntry, machineNotFoundError, manifestDirRel } from "#/stack/registry.js";
+import type { MachineRunState } from "#/config.js";
+import { findMachineEntry, machineNotFoundError, blueprintDirRel } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
 import { encodePathSegments } from "#/utils/net.js";
@@ -26,12 +26,12 @@ function encodeDir(dirRel: string): string {
 // Let nix fetch the flake itself instead of materializing the whole
 // tech-stack repo locally: one registry fetch resolves the flake
 // subdirectory, then nix uses its own store (no custom download/cache).
-function flakeUrl(spec: MachineRunSpec, dirRel: string): string {
-	const base = `git+https://github.com/${spec.id}?ref=${encodeURIComponent(spec.ref)}&dir=${encodeDir(dirRel)}`;
-	if (spec.configuration === undefined || spec.configuration === "") {
+function flakeUrl(state: MachineRunState, dirRel: string): string {
+	const base = `git+https://github.com/${state.id}?ref=${encodeURIComponent(state.ref)}&dir=${encodeDir(dirRel)}`;
+	if (state.configuration === undefined || state.configuration === "") {
 		return base;
 	}
-	return `${base}#${encodeURIComponent(spec.configuration)}`;
+	return `${base}#${encodeURIComponent(state.configuration)}`;
 }
 
 function tail(text: string): string {
@@ -121,30 +121,30 @@ async function runCapture(
 }
 
 export async function runMachineChecks(
-	spec: MachineRunSpec,
+	state: MachineRunState,
 	registry: RegistryDocument,
 ): Promise<CheckResult[]> {
-	const entry = findMachineEntry(spec.blueprint, registry);
+	const entry = findMachineEntry(state.blueprint, registry);
 	if (entry === undefined) {
-		throw machineNotFoundError(spec.blueprint, registry);
+		throw machineNotFoundError(state.blueprint, registry);
 	}
-	const dirRel = manifestDirRel(entry.path);
+	const dirRel = blueprintDirRel(entry.path);
 	if (dirRel === "") {
-		throw new Error(`Machine blueprint "${spec.blueprint}" has an empty path in the registry.`);
+		throw new Error(`Machine blueprint "${state.blueprint}" has an empty path in the registry.`);
 	}
-	const flake = flakeUrl(spec, dirRel);
+	const flake = flakeUrl(state, dirRel);
 	const base: CheckBase = {
-		id: nixCheckId(spec.blueprint),
+		id: nixCheckId(state.blueprint),
 		kind: "nix",
 		scope: "machine",
-		source: `tech-stack:${spec.blueprint}`,
+		source: `tech-stack:${state.blueprint}`,
 		target: flake,
 	};
 	const expected = "home-manager switch --dry-run --impure clean";
-	const check = switchInvocation(flake, true);
+	const dryRun = switchInvocation(flake, true);
 	let output: { code: number; stderr: string; stdout: string };
 	try {
-		output = await runCapture(check.command, check.args, SWITCH_TIMEOUT_MS);
+		output = await runCapture(dryRun.command, dryRun.args, SWITCH_TIMEOUT_MS);
 	} catch (error) {
 		return [
 			failManual(base, "<unavailable>", expected, `Cannot run drift check: ${errorMessage(error)}`),
@@ -155,29 +155,29 @@ export async function runMachineChecks(
 	}
 	const detail = tail(`${output.stdout}\n${output.stderr}`.trim());
 	if (NON_DRIFT_PATTERN.test(detail) || BUILD_FAILED_PATTERN.test(detail)) {
-		return [failManual(base, detail, expected, notDriftHint(detail, check.label))];
+		return [failManual(base, detail, expected, notDriftHint(detail, dryRun.label))];
 	}
-	const apply = switchInvocation(flake, false);
+	const fixRun = switchInvocation(flake, false);
 	const result = failFixable(base, detail === "" ? "<drift detected>" : detail, expected, {
-		args: apply.args,
-		command: apply.command,
+		args: fixRun.args,
+		command: fixRun.command,
 		kind: "run-command",
-		label: apply.label,
+		label: fixRun.label,
 	});
-	result.hint = `Apply with \`fix\` or run manually: ${apply.label}`;
+	result.hint = `Apply with \`fix\` or run manually: ${fixRun.label}`;
 	return [result];
 }
 
 export function recheckMachineSelected(
-	spec: MachineRunSpec,
+	state: MachineRunState,
 	registry: RegistryDocument,
 	selectedIds: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	if (selectedIds.size === 0) {
 		return Promise.resolve([]);
 	}
-	if (!selectedIds.has(nixCheckId(spec.blueprint))) {
+	if (!selectedIds.has(nixCheckId(state.blueprint))) {
 		return Promise.resolve([]);
 	}
-	return runMachineChecks(spec, registry);
+	return runMachineChecks(state, registry);
 }

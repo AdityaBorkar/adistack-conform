@@ -111,7 +111,7 @@ export function describeFix(result: CheckResult): string {
 
 export async function applyFix(result: CheckResult): Promise<void> {
 	if (!result.fix) {
-		throw new Error(`Check ${result.id} is not fixable.`);
+		throw new Error(`Result ${result.id} is not fixable.`);
 	}
 	if (result.fix.kind === "github-api") {
 		const { applyGithubApiFix } = await import("#/stack/github");

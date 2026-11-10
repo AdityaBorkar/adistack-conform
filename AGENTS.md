@@ -34,7 +34,7 @@ bun run verify              # format && check:lint && check:types && test — fu
 
 ## Layout
 
-- `src/index.ts` — Commander entrypoint (`check`, `fix`, `validate`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`; `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`/`validate`); `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`); `src/schemas/` (`conform`/`registry`/`project-manifest`/`github-manifest` — Zod source of truth).
+- `src/index.ts` — Commander entrypoint (`check`, `fix`, `validate`); `src/config.ts`, `src/checks.ts`, `src/diff.ts`, `src/fix.ts`; `src/stack/` (`index`/`check`/`machine`/`github`/`registry`/`remote`/`validate`); `src/utils/` (`concurrency`/`fs`/`net`/`output`/`schema`); `src/schemas/` (`conform`/`registry`/`project-manifest`/`github-settings` — Zod source of truth).
 - `.output/` is gitignored build output.
 - This repo dogfoods itself: `conform.json` tracks `AdityaBorkar/tech-stack@<ref>` — read it for the current scopes, don't assume. Reference blueprints/registry live at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read `registry.json`/blueprint files directly instead of guessing.
 

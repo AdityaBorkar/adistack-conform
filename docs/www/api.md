@@ -29,7 +29,7 @@ Prints `{ desiredStates, ok, passed, failed, skipped, total, results }` (`--json
 	"fix": { "kind": "overwrite-file", "filePath": "<abs>", "newContent": "…" },
 	// or: "fix": { "kind": "run-command", "command": "…", "args": ["…"], "label": "…" },
 	// or: "fix": { "kind": "github-api", …multi-step REST calls… },
-	"hint": "on manual failures; fixable machine/github results may carry both fix and hint",
+	"hint": "on manual results; fixable machine/github results may carry both fix and hint",
 	// "source" is omitted on <scope>:internal-error (target is the scope name)
 }
 ```

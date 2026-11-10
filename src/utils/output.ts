@@ -62,7 +62,7 @@ function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefin
 	if (items.length === 0) {
 		return undefined;
 	}
-	// The machine scope is always a single nix check, so report its state in
+	// The machine scope is always a single nix result, so report its state in
 	// words instead of a meaningless "1 passed".
 	if (scope === "machine") {
 		const failed = items.filter((item) => !item.ok);
@@ -71,7 +71,7 @@ function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefin
 		}
 		return failed.some((item) => isFixable(item))
 			? `${okMark(false)} machine: drift (fixable)`
-			: `${okMark(false)} machine: error (see above)`;
+			: `${okMark(false)} machine: manual (see above)`;
 	}
 	const { failed, fixable } = partitionResults(items);
 	const skipped = items.filter((item) => item.skipped === true).length;
@@ -99,7 +99,7 @@ export function printResults(
 		const elapsedMs = timings?.[scope];
 		summaries.push(elapsedMs === undefined ? summary : `${summary} (${formatDuration(elapsedMs)})`);
 	}
-	lines.push("", ...(summaries.length > 0 ? summaries : ["No checks ran."]));
+	lines.push("", ...(summaries.length > 0 ? summaries : ["No results."]));
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 

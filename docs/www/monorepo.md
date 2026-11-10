@@ -12,7 +12,7 @@ for d in packages/*; do (cd "$d" && adistack-conform check); done
 # (note: targets still resolve against your shell cwd, so prefer cd + default discovery)
 ```
 
-Registries are fetched once per unique `repo@ref` within a single run and shared by every spec in that run, so repeated scopes with the same source cost one `registry.json` fetch.
+Registries are fetched once per unique `repo@ref` within a single run and shared by every desired state in that run, so repeated scopes with the same source cost one `registry.json` fetch.
 
 ## Patterns
 

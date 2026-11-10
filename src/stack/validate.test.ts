@@ -48,8 +48,8 @@ describe("validateTargets", () => {
 				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchManifest: () =>
 					Promise.resolve({
+						blueprintRel: "projects/cli-app.json",
 						files: [],
-						manifestRel: "projects/cli-app.json",
 						structure: [],
 					}),
 				fetchRegistry: () => Promise.resolve(registry),
@@ -62,7 +62,7 @@ describe("validateTargets", () => {
 		expect(results.every((item) => item.ok)).toBe(true);
 	});
 
-	test("reports registry plus github config results in order", async () => {
+	test("reports registry plus github settings results in order", async () => {
 		const results = await validateTargets(
 			collectValidateTargets([loaded({ github: { blueprint: "npm-package" } })]),
 			{

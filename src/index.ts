@@ -7,9 +7,9 @@ import type { LoadedDesiredState } from "#/config.js";
 import {
 	discoverDesiredStates,
 	loadDesiredState,
-	githubSpecOf,
-	machineSpecOf,
-	projectSpecOf,
+	githubStateOf,
+	machineStateOf,
+	projectStateOf,
 } from "#/config.js";
 import { applySelected, isInteractive, resolveSelection } from "#/fix.js";
 import { recheckGithubSelected, runGithubChecks } from "#/stack/github.js";
@@ -101,7 +101,7 @@ async function timed<T>(task: Promise<T>): Promise<{ elapsedMs: number; value: T
 	return { elapsedMs: performance.now() - start, value };
 }
 
-// One registry fetch per unique repo@ref, shared by every spec in the run,
+// One registry fetch per unique repo@ref, shared by every desired state in the run,
 // scoped to a single command: no hidden state, no stale entries.
 async function fetchRegistries(
 	desiredStates: readonly LoadedDesiredState[],
@@ -110,28 +110,28 @@ async function fetchRegistries(
 	const wanted = new Map<string, { id: string; ref: string }>();
 	for (const loaded of desiredStates) {
 		if (only === undefined || only === "project") {
-			const spec = projectSpecOf(loaded);
-			if (spec !== undefined) {
-				wanted.set(repoKey(spec.id, spec.ref), { id: spec.id, ref: spec.ref });
+			const state = projectStateOf(loaded);
+			if (state !== undefined) {
+				wanted.set(repoKey(state.id, state.ref), { id: state.id, ref: state.ref });
 			}
 		}
 		if (only === undefined || only === "machine") {
-			const spec = machineSpecOf(loaded);
-			if (spec !== undefined) {
-				wanted.set(repoKey(spec.id, spec.ref), { id: spec.id, ref: spec.ref });
+			const state = machineStateOf(loaded);
+			if (state !== undefined) {
+				wanted.set(repoKey(state.id, state.ref), { id: state.id, ref: state.ref });
 			}
 		}
 		if (only === undefined || only === "github") {
-			const spec = githubSpecOf(loaded);
-			if (spec !== undefined) {
-				wanted.set(repoKey(spec.id, spec.ref), { id: spec.id, ref: spec.ref });
+			const state = githubStateOf(loaded);
+			if (state !== undefined) {
+				wanted.set(repoKey(state.id, state.ref), { id: state.id, ref: state.ref });
 			}
 		}
 	}
 	const entries = await Promise.all(
-		[...wanted].map(async ([key, spec]): Promise<[string, RegistryDocument]> => [
+		[...wanted].map(async ([key, state]): Promise<[string, RegistryDocument]> => [
 			key,
-			await fetchRegistry(spec.id, spec.ref),
+			await fetchRegistry(state.id, state.ref),
 		]),
 	);
 	return new Map(entries);
@@ -154,13 +154,13 @@ async function runAllChecks(args: {
 	const githubTasks: Promise<CheckResult[]>[] = [];
 	for (const loaded of args.desiredStates) {
 		if (args.only === undefined || args.only === "project") {
-			const spec = projectSpecOf(loaded);
-			if (spec !== undefined) {
-				const registry = requireRegistry(args.registries, spec.id, spec.ref);
+			const state = projectStateOf(loaded);
+			if (state !== undefined) {
+				const registry = requireRegistry(args.registries, state.id, state.ref);
 				projectTasks.push(
 					toSafeResults(
 						runProjectChecks(
-							spec,
+							state,
 							{ baseDir: args.cwd, home: args.home, scope: "project" },
 							registry,
 						),
@@ -170,17 +170,17 @@ async function runAllChecks(args: {
 			}
 		}
 		if (args.only === undefined || args.only === "machine") {
-			const spec = machineSpecOf(loaded);
-			if (spec !== undefined) {
-				const registry = requireRegistry(args.registries, spec.id, spec.ref);
-				machineTasks.push(toSafeResults(runMachineChecks(spec, registry), "machine"));
+			const state = machineStateOf(loaded);
+			if (state !== undefined) {
+				const registry = requireRegistry(args.registries, state.id, state.ref);
+				machineTasks.push(toSafeResults(runMachineChecks(state, registry), "machine"));
 			}
 		}
 		if (args.only === undefined || args.only === "github") {
-			const spec = githubSpecOf(loaded);
-			if (spec !== undefined) {
-				const registry = requireRegistry(args.registries, spec.id, spec.ref);
-				githubTasks.push(toSafeResults(runGithubChecks(spec, registry), "github"));
+			const state = githubStateOf(loaded);
+			if (state !== undefined) {
+				const registry = requireRegistry(args.registries, state.id, state.ref);
+				githubTasks.push(toSafeResults(runGithubChecks(state, registry), "github"));
 			}
 		}
 	}
@@ -243,7 +243,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 
 	if (fixable.length === 0) {
 		console.log(
-			`\n${failed.length} check(s) failing (0 fixable) in ${formatDuration(performance.now() - start)}.`,
+			`\n${failed.length} result(s) failing (0 fixable) in ${formatDuration(performance.now() - start)}.`,
 		);
 		return 1;
 	}
@@ -292,17 +292,17 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 			desiredStates.map(async (loaded) => {
 				const reruns: CheckResult[][] = [];
 				if (only === undefined || only === "project") {
-					const spec = projectSpecOf(loaded);
-					if (spec !== undefined) {
+					const state = projectStateOf(loaded);
+					if (state !== undefined) {
 						const scopedIds = new Set(
-							[...selectedIds].filter((id) => id.startsWith(`project:${spec.blueprint}:`)),
+							[...selectedIds].filter((id) => id.startsWith(`project:${state.blueprint}:`)),
 						);
 						if (scopedIds.size > 0) {
 							reruns.push(
 								await recheckProjectSelected(
-									spec,
+									state,
 									{ baseDir: cwd, home, scope: "project" },
-									requireRegistry(registries, spec.id, spec.ref),
+									requireRegistry(registries, state.id, state.ref),
 									scopedIds,
 								),
 							);
@@ -310,16 +310,16 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 					}
 				}
 				if (only === undefined || only === "machine") {
-					const spec = machineSpecOf(loaded);
-					if (spec !== undefined) {
+					const state = machineStateOf(loaded);
+					if (state !== undefined) {
 						const scopedIds = new Set(
-							[...selectedIds].filter((id) => id === `nix:${spec.blueprint}`),
+							[...selectedIds].filter((id) => id === `nix:${state.blueprint}`),
 						);
 						if (scopedIds.size > 0) {
 							reruns.push(
 								await recheckMachineSelected(
-									spec,
-									requireRegistry(registries, spec.id, spec.ref),
+									state,
+									requireRegistry(registries, state.id, state.ref),
 									scopedIds,
 								),
 							);
@@ -327,16 +327,16 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 					}
 				}
 				if (only === undefined || only === "github") {
-					const spec = githubSpecOf(loaded);
-					if (spec !== undefined) {
+					const state = githubStateOf(loaded);
+					if (state !== undefined) {
 						const scopedIds = new Set(
-							[...selectedIds].filter((id) => id.startsWith(`github:${spec.blueprint}:`)),
+							[...selectedIds].filter((id) => id.startsWith(`github:${state.blueprint}:`)),
 						);
 						if (scopedIds.size > 0) {
 							reruns.push(
 								await recheckGithubSelected(
-									spec,
-									requireRegistry(registries, spec.id, spec.ref),
+									state,
+									requireRegistry(registries, state.id, state.ref),
 									scopedIds,
 								),
 							);
@@ -355,7 +355,7 @@ async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Promise<n
 	const remaining = rerunResults.filter((item) => !item.ok);
 	const elapsedMs = performance.now() - start;
 	console.log(
-		`\nFixed ${applied}/${selection.selected.length}. ${remaining.length} check(s) still failing in ${formatDuration(elapsedMs)}.`,
+		`\nFixed ${applied}/${selection.selected.length}. ${remaining.length} result(s) still failing in ${formatDuration(elapsedMs)}.`,
 	);
 	if (remaining.length > 0) {
 		printResults(rerunResults, undefined, { verbose: false });
@@ -399,7 +399,7 @@ program
 		"Check the desired state in the current directory against the current project/machine/repo.",
 	)
 	.option("--json", "Print machine-readable JSON.")
-	.option("--verbose", "Show passing checks too.")
+	.option("--verbose", "Show passing results too.")
 	.option("--project-only", "Only run project checks.")
 	.option("--machine-only", "Only run machine checks.")
 	.option("--github-only", "Only run GitHub repo checks.")

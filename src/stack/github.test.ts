@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { ConformSchema } from "#/schemas/conform.js";
-import { GithubSchema } from "#/schemas/github-manifest";
+import { GithubSchema } from "#/schemas/github-settings.js";
 import {
 	forkApprovalPolicy,
 	isPrivateVulnEnabled,

@@ -1,7 +1,7 @@
 {
 	"name": "@adistack/conform",
 	"version": "0.1.0",
-	"description": "CLI that checks project files, machine config, and GitHub repo settings against tech-stack blueprints",
+	"description": "CLI that checks project files, machine state, and GitHub repo settings against tech-stack blueprints",
 	"keywords": [
 		"check",
 		"conform"
@@ -33,7 +33,7 @@
 		"url": "git+https://github.com/AdityaBorkar/adistack-conform.git"
 	},
 	"bin": {
-		"adistack-conform": "./.output/adistack-conform"
+		"@adistack/conform": "./.output/adistack-conform"
 	},
 	"files": [
 		".output",

@@ -1,7 +1,7 @@
 import type { LoadedDesiredState } from "#/config.js";
 import { findMachineEntry } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
-import { fetchGithubConfig, fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
+import { fetchGithubSettings, fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
 import { errorMessage } from "#/utils/fs.js";
 
 export interface ValidateResult {
@@ -19,13 +19,13 @@ export interface ValidateTargets {
 }
 
 type FetchDeps = {
-	fetchGithub: typeof fetchGithubConfig;
+	fetchGithub: typeof fetchGithubSettings;
 	fetchManifest: typeof fetchProjectManifest;
 	fetchRegistry: typeof fetchRegistry;
 };
 
 const defaultDeps: FetchDeps = {
-	fetchGithub: fetchGithubConfig,
+	fetchGithub: fetchGithubSettings,
 	fetchManifest: fetchProjectManifest,
 	fetchRegistry,
 };
@@ -97,7 +97,7 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 			const file = `blueprint "${blueprint}" in ${registryFile}`;
 			try {
 				const manifest = await deps.fetchManifest(target.id, target.ref, blueprint, registry);
-				const manifestFile = `${manifest.manifestRel} (${target.id}@${target.ref})`;
+				const manifestFile = `${manifest.blueprintRel} (${target.id}@${target.ref})`;
 				return { file: manifestFile, ok: true };
 			} catch (error) {
 				return { error: errorMessage(error), file, ok: false };
@@ -108,9 +108,9 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 		target.githubs.toSorted().map(async (blueprint): Promise<ValidateResult> => {
 			const file = `github "${blueprint}" in ${registryFile}`;
 			try {
-				const config = await deps.fetchGithub(target.id, target.ref, blueprint, registry);
-				const configFile = `${config.githubRel} (${target.id}@${target.ref})`;
-				return { file: configFile, ok: true };
+				const settings = await deps.fetchGithub(target.id, target.ref, blueprint, registry);
+				const settingsFile = `${settings.githubRel} (${target.id}@${target.ref})`;
+				return { file: settingsFile, ok: true };
 			} catch (error) {
 				return { error: errorMessage(error), file, ok: false };
 			}

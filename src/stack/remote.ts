@@ -1,6 +1,6 @@
 import type * as z from "zod";
 
-import { GithubSchema } from "#/schemas/github-manifest";
+import { GithubSchema } from "#/schemas/github-settings.js";
 import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 import { parseJsonc } from "#/stack/check.js";
@@ -10,7 +10,7 @@ import {
 	findProjectEntry,
 	listGithubBlueprintNames,
 	listProjectBlueprintNames,
-	manifestRel,
+	blueprintRel,
 } from "#/stack/registry.js";
 import { errorMessage } from "#/utils/fs.js";
 import { FETCH_TIMEOUT_MS, authHeaders, encodePathSegments } from "#/utils/net.js";
@@ -82,8 +82,8 @@ export async function fetchProjectManifest(
 	blueprint: string,
 	registry: RegistryDocument,
 ): Promise<{
+	blueprintRel: string;
 	files: ManifestFile[];
-	manifestRel: string;
 	structure: ManifestFileStructure[];
 }> {
 	const entry = findProjectEntry(blueprint, registry);
@@ -92,17 +92,17 @@ export async function fetchProjectManifest(
 		const hint = names.length > 0 ? ` Available blueprints: ${names.join(", ")}.` : "";
 		throw new Error(`Blueprint "${blueprint}" not found in the tech-stack repo.${hint}`);
 	}
-	const rel = manifestRel(entry.path);
+	const rel = blueprintRel(entry.path);
 	const parsed = await fetchJson(rawUrl(id, ref, rel), `blueprint ${blueprint}`);
 	const data = parseOrThrow(ManifestSchema, `${rel} (remote)`, parsed, "blueprint");
 	return {
+		blueprintRel: rel,
 		files: data.files,
-		manifestRel: rel,
 		structure: data.file_structure,
 	};
 }
 
-export async function fetchGithubConfig(
+export async function fetchGithubSettings(
 	id: string,
 	ref: string,
 	blueprint: string,
@@ -117,7 +117,7 @@ export async function fetchGithubConfig(
 		const hint = names.length > 0 ? ` Available blueprints: ${names.join(", ")}.` : "";
 		throw new Error(`GitHub blueprint "${blueprint}" not found in the tech-stack repo.${hint}`);
 	}
-	const rel = manifestRel(entry.path);
+	const rel = blueprintRel(entry.path);
 	const parsed = await fetchJsonc(rawUrl(id, ref, rel), `github settings ${blueprint}`);
 	const golden = parseOrThrow(GithubSchema, `${rel} (remote)`, parsed, "github settings");
 	return { githubRel: rel, golden };

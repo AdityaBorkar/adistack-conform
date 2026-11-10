@@ -5,8 +5,8 @@ import {
 	findGithubEntry,
 	findMachineEntry,
 	findProjectEntry,
-	manifestDirRel,
-	manifestRel,
+	blueprintDirRel,
+	blueprintRel,
 	resolveSourceRel,
 } from "#/stack/registry.js";
 
@@ -49,17 +49,17 @@ describe("findGithubEntry", () => {
 	});
 });
 
-describe("manifestRel and manifestDirRel", () => {
+describe("blueprintRel and blueprintDirRel", () => {
 	test("file entries fetch the file itself", () => {
-		expect(manifestRel("./projects/cli-app.json")).toBe("projects/cli-app.json");
+		expect(blueprintRel("./projects/cli-app.json")).toBe("projects/cli-app.json");
 	});
 
 	test("directory entries are rejected", () => {
-		expect(() => manifestRel("./projects/legacy/")).toThrow("no longer supported");
+		expect(() => blueprintRel("./projects/legacy/")).toThrow("no longer supported");
 	});
 
 	test("machine directories pass through", () => {
-		expect(manifestDirRel("./machines/main/")).toBe("machines/main");
+		expect(blueprintDirRel("./machines/main/")).toBe("machines/main");
 	});
 
 	test("repo-relative sources pass through", () => {

@@ -23,11 +23,11 @@ Schema: `./configuration_schema/project-manifest.json` (generated, draft 2020-12
 
 `source` is the golden file's repo-relative path, used for `raw.githubusercontent.com` fetches (e.g. `projects/files/<group>/<variant>`; a leading `/` is stripped). Paths starting with `./` or `../` are rejected — sources must be repo-relative.
 
-Only the goldens you need are fetched, deduplicated by repo-relative path, 16-way parallel. A missing golden is a manual failure (`<blueprint file missing>` with the repo-relative path).
+Only the goldens you need are fetched, deduplicated by repo-relative path, 16-way parallel. A missing golden is a manual result (`<blueprint file missing>` with the repo-relative path).
 
 ## Where targets land
 
-`target` is the manifest-declared enforcement destination, resolved against your cwd. Leading `~` expands against `$HOME`; absolute paths pass through.
+`target` is the manifest-declared enforcement target, resolved against your cwd. Leading `~` expands against `$HOME`; absolute paths pass through.
 
 ## How each file is judged
 
@@ -39,7 +39,7 @@ Missing → fixable `overwrite-file`. Mismatch → fixable `overwrite-file`. Unr
 
 <Accordion title="Compare rules — semantic, JSONC-aware">
 
-Per `files[]` entry: `ignore[]` keys are excluded from the compare and your local values are preserved by `fix` (the linter-`overrides` case). A golden is a template only when it parses as a JSON object (JSONC-tolerant) and holds `<...>` placeholders: each slot accepts any per-project value (non-empty, no `<...>` placeholders, matching the surrounding text) while every other field must match — extra local fields and array items are allowed, placeholder keys fuzzy-match per-project names. Failures are manual. A missing template target is manual (copy the golden and adapt per-project fields). Templates never pass on byte equality — a verbatim copy fails manual until every golden `<...>` placeholder (e.g. `package.json` `<package-name>`) is replaced. `<...>` in non-JSON goldens (HTML, TS generics) never counts as a template.
+Per `files[]` entry: `ignore[]` keys are excluded from the compare and your local values are preserved by `fix` (the linter-`overrides` case). A golden is a template only when it parses as a JSON object (JSONC-tolerant) and holds `<...>` placeholders: each slot accepts any per-project value (non-empty, no `<...>` placeholders, matching the surrounding text) while every other field must match — extra local fields and array items are allowed, placeholder keys fuzzy-match per-project names. Drift without a fix is manual. A missing template target is manual (copy the golden and adapt per-project fields). Templates never pass on byte equality — a verbatim copy fails manual until every golden `<...>` placeholder (e.g. `package.json` `<package-name>`) is replaced. `<...>` in non-JSON goldens (HTML, TS generics) never counts as a template.
 
 </Accordion>
 

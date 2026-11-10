@@ -4,4 +4,4 @@
 
 ## Consequences
 
-Copy the entry name instead of retyping it. Blueprint `path` must point at the file for projects (`manifestRel` rejects directories) and the flake directory for machines (`manifestDirRel` normalizes trailing slashes). Strict `source` rules fail fast instead of fetching outside the repo.
+Copy the entry name instead of retyping it. Blueprint `path` must point at the file for projects (`blueprintRel` rejects directories) and the flake directory for machines (`blueprintDirRel` normalizes trailing slashes). Strict `source` rules fail fast instead of fetching outside the repo.

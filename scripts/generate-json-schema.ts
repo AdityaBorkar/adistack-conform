@@ -4,7 +4,7 @@ import { join } from "node:path";
 import * as z from "zod";
 
 import { ConformSchema } from "#/schemas/conform.js";
-import { GithubSchema } from "#/schemas/github-manifest";
+import { GithubSchema } from "#/schemas/github-settings.js";
 import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 

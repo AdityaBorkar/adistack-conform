@@ -1,5 +1,5 @@
 import { failManual, type CheckResult, type CheckScope } from "#/checks.js";
-import type { ProjectRunSpec } from "#/config.js";
+import type { ProjectRunState } from "#/config.js";
 import { checkFileStructureEntry, checkProjectFileWithGolden } from "#/stack/check.js";
 import type {
 	ManifestCompare,
@@ -127,21 +127,21 @@ function checkNeeded(
 }
 
 async function runWithManifest(
-	spec: ProjectRunSpec,
+	state: ProjectRunState,
 	options: TechStackRunOptions,
 	registry: RegistryDocument,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	const { files, structure } = await fetchProjectManifest(
-		spec.id,
-		spec.ref,
-		spec.blueprint,
+		state.id,
+		state.ref,
+		state.blueprint,
 		registry,
 	);
-	const needed = collectNeeded(spec.blueprint, files, options, onlyIds);
-	const goldens = await fetchGoldens(spec.id, spec.ref, needed);
+	const needed = collectNeeded(state.blueprint, files, options, onlyIds);
+	const goldens = await fetchGoldens(state.id, state.ref, needed);
 	const enforced = await checkNeeded(needed, goldens, options.scope);
-	const structured = await checkFileStructure(spec.blueprint, files, structure, options, onlyIds);
+	const structured = await checkFileStructure(state.blueprint, files, structure, options, onlyIds);
 	return [...enforced, ...structured];
 }
 
@@ -175,15 +175,15 @@ function checkFileStructure(
 }
 
 export function runProjectChecks(
-	spec: ProjectRunSpec,
+	state: ProjectRunState,
 	options: TechStackRunOptions,
 	registry: RegistryDocument,
 ): Promise<CheckResult[]> {
-	return runWithManifest(spec, options, registry);
+	return runWithManifest(state, options, registry);
 }
 
 export function recheckProjectSelected(
-	spec: ProjectRunSpec,
+	state: ProjectRunState,
 	options: TechStackRunOptions,
 	registry: RegistryDocument,
 	selectedIds: ReadonlySet<string>,
@@ -191,5 +191,5 @@ export function recheckProjectSelected(
 	if (selectedIds.size === 0) {
 		return Promise.resolve([]);
 	}
-	return runWithManifest(spec, options, registry, selectedIds);
+	return runWithManifest(state, options, registry, selectedIds);
 }

@@ -154,12 +154,12 @@ export function resolveSourceRel(source: string): string {
 	return source.replace(/^\.\//u, "").replace(/^\/+/u, "");
 }
 
-export function manifestDirRel(entryPath: string): string {
+export function blueprintDirRel(entryPath: string): string {
 	return normalizeEntryPath(entryPath);
 }
 
-// Repo-relative location of the project blueprint file itself.
-export function manifestRel(entryPath: string): string {
+// Repo-relative location of a blueprint file itself (project manifest or GitHub settings).
+export function blueprintRel(entryPath: string): string {
 	const normalized = normalizeEntryPath(entryPath);
 	if (!normalized.endsWith(".json")) {
 		throw new Error(
