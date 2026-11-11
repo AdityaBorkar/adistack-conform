@@ -1,9 +1,22 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { applySelected } from "#/commands/fix/apply.js";
 import type { CheckResult } from "#/utils/result.js";
+
+const originalLog = console.log;
+const originalError = console.error;
+
+beforeEach(() => {
+	console.log = () => {};
+	console.error = () => {};
+});
+
+afterEach(() => {
+	console.log = originalLog;
+	console.error = originalError;
+});
 
 function overwrite(id: string, filePath: string, newContent: string): CheckResult {
 	return {

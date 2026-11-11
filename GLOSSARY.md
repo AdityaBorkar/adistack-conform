@@ -32,13 +32,13 @@ _Avoid_: required docs, required dirs
 
 ### Enforcement
 
-**Golden**:
+**Upstream**:
 The desired file content fetched from the tech-stack repo that a target is compared against.
-_Avoid_: preset file, expected content
+_Avoid_: golden, preset file, expected content
 
 **Source**:
-The repo-relative path of a golden inside the tech-stack repo. (`CheckResult.source` is separately `tech-stack:<blueprint>`; `ConformSource.source` is the provider `"github"`.)
-_Avoid_: preset path, golden path
+The repo-relative path of an upstream inside the tech-stack repo. (`CheckResult.source` is separately `tech-stack:<blueprint>`; `ConformSource.source` is the provider `"github"`.)
+_Avoid_: preset path, upstream path
 
 **Target**:
 The manifest-declared enforcement target (cwd-relative path for project files, flake URL for machine, `owner/repo (repo settings)` for GitHub); the CLI resolves `~`/absolute project paths before reading.
@@ -71,11 +71,11 @@ A drifted result with no machine remedy, carrying a hint for a human to act on i
 _Avoid_: unfixable, unactionable
 
 **Skipped**:
-A result that passes without enforcement: GitHub items with no public API (UI-only settings), 401/403 auth failures, or goldens that do not require the check (including 404 OIDC).
+A result that passes without enforcement: GitHub items with no public API (UI-only settings), 401/403 auth failures, or upstreams that do not require the check (including 404 OIDC).
 _Avoid_: ignored, passed
 
 **Template**:
-A JSON-object manifest entry whose golden holds `<...>` placeholder slots; each placeholder slot accepts any per-project value (non-empty, never placeholders), extra local fields and array items are allowed, every other field must match the golden — a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields). Non-JSON goldens are never templates.
+A JSON-object manifest entry whose upstream holds `<...>` placeholder slots; each placeholder slot accepts any per-project value (non-empty, never placeholders), extra local fields and array items are allowed, every other field must match the upstream — a verbatim copy fails until placeholders are replaced, and a missing target is manual (copy and adapt per-project fields). Non-JSON upstreams are never templates.
 _Avoid_: parameterized file
 
 **Internal**:
