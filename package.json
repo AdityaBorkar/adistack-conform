@@ -57,17 +57,17 @@
 		"provenance": true
 	},
 	"scripts": {
-		"build": "bun ./scripts/build.ts",
+		"build": "bun scripts/build.ts",
 		"check:conform": "bun dev check",
 		"check:knip": "knip",
 		"check:lint": "oxlint",
 		"check:types": "tsrs",
 		"clean": "bun rimraf --glob \"**/{node_modules,output,bun.lockb}\"",
-		"dev": "bun ./src/index.ts",
+		"dev": "bun src/index.ts",
 		"format": "oxfmt",
 		"prepare": "husky",
 		"test": "bun test",
-		"verify": "bun format && bun check:lint && bun check:types && bun test && bun check:knip && bun check:conform"
+		"verify": "bun scripts/verify.ts"
 	},
 	"dependencies": {
 		"@clack/prompts": "1.8.1",

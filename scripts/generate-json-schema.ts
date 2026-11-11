@@ -1,3 +1,4 @@
+import { write } from "bun";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -24,7 +25,7 @@ export async function generateJsonSchema() {
 		Object.entries(TARGETS).map(async ([file, schema]) => {
 			const outPath = join(OUTPUT_DIR, file);
 			const jsonSchema = z.toJSONSchema(schema, { io: "input", target: "draft-2020-12" });
-			await Bun.write(outPath, `${JSON.stringify(jsonSchema, null, "\t")}\n`);
+			await write(outPath, `${JSON.stringify(jsonSchema, null, "\t")}\n`);
 			console.log(`Wrote ${outPath}`);
 		}),
 	);
