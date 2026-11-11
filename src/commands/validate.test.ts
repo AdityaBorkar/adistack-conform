@@ -69,7 +69,7 @@ describe("validateTargets", () => {
 				fetchGithub: () =>
 					Promise.resolve({
 						githubRel: "github-configs/npm-package.json",
-						golden: {} as never,
+						upstream: {} as never,
 					}),
 				fetchManifest: () => Promise.reject(new Error("must not be called")),
 				fetchRegistry: () => Promise.resolve(registry),

@@ -25,7 +25,7 @@ function securityStatus(entry: unknown): string {
 export async function checkSecurity(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 	repoInfo: () => Promise<Record<string, unknown>>,
 ): Promise<CheckResult[]> {
@@ -49,8 +49,8 @@ export async function checkSecurity(
 			patch[key] = { status: want ? "enabled" : "disabled" };
 		}
 	};
-	compareSecurity("secret_scanning", golden.security.secretProtection);
-	compareSecurity("secret_scanning_push_protection", golden.security.pushProtection);
+	compareSecurity("secret_scanning", upstream.security.secretProtection);
+	compareSecurity("secret_scanning_push_protection", upstream.security.pushProtection);
 	const steps: GithubApiStep[] = [];
 	if (Object.keys(patch).length > 0) {
 		steps.push({
@@ -64,12 +64,12 @@ export async function checkSecurity(
 			allowStatuses: [404],
 		})) as { enabled?: unknown } | undefined;
 		const enabled = isPrivateVulnEnabled(vuln);
-		if (enabled !== golden.security.privateVulnerabilityReporting) {
+		if (enabled !== upstream.security.privateVulnerabilityReporting) {
 			diffs.push(
-				`private_vulnerability_reporting: ${String(enabled)} → ${String(golden.security.privateVulnerabilityReporting)}`,
+				`private_vulnerability_reporting: ${String(enabled)} → ${String(upstream.security.privateVulnerabilityReporting)}`,
 			);
 			steps.push({
-				method: golden.security.privateVulnerabilityReporting ? "PUT" : "DELETE",
+				method: upstream.security.privateVulnerabilityReporting ? "PUT" : "DELETE",
 				path: repoPath(repo, "/private-vulnerability-reporting"),
 			});
 		}
@@ -92,10 +92,10 @@ export async function checkSecurity(
 		})) as { enabled?: unknown; paused?: unknown } | undefined;
 		const enabled =
 			dependabot !== undefined && dependabot["enabled"] === true && dependabot["paused"] !== true;
-		if (enabled !== golden.security.dependabot) {
-			diffs.push(`dependabot: ${String(enabled)} → ${String(golden.security.dependabot)}`);
+		if (enabled !== upstream.security.dependabot) {
+			diffs.push(`dependabot: ${String(enabled)} → ${String(upstream.security.dependabot)}`);
 			steps.push({
-				method: golden.security.dependabot ? "PUT" : "DELETE",
+				method: upstream.security.dependabot ? "PUT" : "DELETE",
 				path: repoPath(repo, "/automated-security-fixes"),
 			});
 		}
@@ -115,12 +115,12 @@ export async function checkSecurity(
 	try {
 		// PUT /vulnerability-alerts enables dependency alerts and the dependency graph together.
 		const graphOn = await apiEnabled(repoPath(repo, "/vulnerability-alerts"));
-		if (graphOn !== golden.security.dependencyGraph) {
+		if (graphOn !== upstream.security.dependencyGraph) {
 			diffs.push(
-				`dependency_graph: ${String(graphOn)} → ${String(golden.security.dependencyGraph)}`,
+				`dependency_graph: ${String(graphOn)} → ${String(upstream.security.dependencyGraph)}`,
 			);
 			steps.push({
-				method: golden.security.dependencyGraph ? "PUT" : "DELETE",
+				method: upstream.security.dependencyGraph ? "PUT" : "DELETE",
 				path: repoPath(repo, "/vulnerability-alerts"),
 			});
 		}
@@ -158,11 +158,11 @@ export async function checkSecurity(
 export async function checkSecrets(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "secrets", target);
-	if (golden.secrets.length === 0 && golden.variables.length === 0) {
+	if (upstream.secrets.length === 0 && upstream.variables.length === 0) {
 		return skipped(base, "no secrets/variables required", "list names to enforce presence");
 	}
 	let haveSecrets: string[] = [];
@@ -180,8 +180,8 @@ export async function checkSecrets(
 		}
 		throw error;
 	}
-	const missingSecrets = golden.secrets.filter((name) => !haveSecrets.includes(name));
-	const missingVariables = golden.variables.filter((name) => !haveVariables.includes(name));
+	const missingSecrets = upstream.secrets.filter((name) => !haveSecrets.includes(name));
+	const missingVariables = upstream.variables.filter((name) => !haveVariables.includes(name));
 	if (missingSecrets.length === 0 && missingVariables.length === 0) {
 		return pass(base, "secrets/variables present", "secrets/variables match");
 	}

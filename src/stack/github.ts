@@ -75,7 +75,7 @@ function resolveTargetRepo(configured: string | undefined): string {
 }
 
 type GithubSettingsResult =
-	| { golden: GithubSettings; rel: string }
+	| { rel: string; upstream: GithubSettings }
 	| { rel: string }
 	| Record<string, never>;
 
@@ -91,8 +91,8 @@ async function resolveGithubSettings(
 	}
 	const rel = blueprintRel(entry.path);
 	try {
-		const { golden } = await fetchGithubSettings(id, ref, blueprint, registry);
-		return { golden, rel };
+		const { upstream } = await fetchGithubSettings(id, ref, blueprint, registry);
+		return { rel, upstream };
 	} catch (error) {
 		if (errorMessage(error).includes("HTTP 404") || errorMessage(error).includes("not found")) {
 			return { rel };
@@ -101,9 +101,9 @@ async function resolveGithubSettings(
 	}
 }
 
-function checkUiOnly(blueprint: string, golden: GithubSettings, target: string): CheckResult[] {
+function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string): CheckResult[] {
 	const results: CheckResult[] = [];
-	if (golden.socialPreview) {
+	if (upstream.socialPreview) {
 		results.push(
 			skipped(
 				baseFor(blueprint, "social-preview", target),
@@ -115,11 +115,11 @@ function checkUiOnly(blueprint: string, golden: GithubSettings, target: string):
 	results.push(
 		skipped(
 			baseFor(blueprint, "agent-suggestions", target),
-			`agent suggestions unverifiable via API (want ${golden.agentSuggestions})`,
+			`agent suggestions unverifiable via API (want ${upstream.agentSuggestions})`,
 			"verify Agent suggestions for issues in repo Settings",
 		),
 	);
-	const archive = golden.archiveSettings;
+	const archive = upstream.archiveSettings;
 	const archiveWant = [
 		`lfs-in-archives: ${String(archive.includeLfsInArchives)}`,
 		`commit-comments: ${String(archive.commitComments)}`,
@@ -135,10 +135,10 @@ function checkUiOnly(blueprint: string, golden: GithubSettings, target: string):
 		),
 		skipped(
 			baseFor(blueprint, "copilot-autofix", target),
-			`Copilot Autofix toggle unverifiable via API (want ${golden.security.copilotAutofix ? "on" : "off"})`,
-			`verify Copilot Autofix is ${golden.security.copilotAutofix ? "on" : "off"} in Settings → Code security`,
+			`Copilot Autofix toggle unverifiable via API (want ${upstream.security.copilotAutofix ? "on" : "off"})`,
+			`verify Copilot Autofix is ${upstream.security.copilotAutofix ? "on" : "off"} in Settings → Code security`,
 		),
-		...(golden.security.dependencyAutoSubmit
+		...(upstream.security.dependencyAutoSubmit
 			? [
 					skipped(
 						baseFor(blueprint, "dependency-auto-submit", target),
@@ -158,7 +158,7 @@ export async function runGithubChecks(
 	const settings = await resolveGithubSettings(state.id, state.ref, state.blueprint, registry);
 	const repo = resolveTargetRepo(state.repo);
 	const target = `${repo} (repo settings)`;
-	if (!("golden" in settings)) {
+	if (!("upstream" in settings)) {
 		const base = baseFor(state.blueprint, "settings", target);
 		if (!("rel" in settings)) {
 			return [
@@ -179,10 +179,10 @@ export async function runGithubChecks(
 			),
 		];
 	}
-	const { golden } = settings;
+	const { upstream } = settings;
 	try {
-		const read = await readProtection(repo, golden.defaultBranch);
-		const prChecks = checkPrChecks(state.blueprint, repo, golden, read, target);
+		const read = await readProtection(repo, upstream.defaultBranch);
+		const prChecks = checkPrChecks(state.blueprint, repo, upstream, read, target);
 		// One GET /repos/{repo} shared by checkGeneral and checkSecurity.
 		let repoInfo: Promise<Record<string, unknown>> | undefined;
 		const getRepoInfo = (): Promise<Record<string, unknown>> => {
@@ -190,19 +190,19 @@ export async function runGithubChecks(
 			return repoInfo;
 		};
 		const checks: Array<() => Promise<CheckResult | CheckResult[]>> = [
-			() => checkGeneral(state.blueprint, repo, golden, target, getRepoInfo),
-			() => checkReleases(state.blueprint, repo, golden, target),
-			() => checkCodeowners(state.blueprint, repo, golden, target),
-			() => checkIssueTemplates(state.blueprint, repo, golden, target),
-			() => checkReviews(state.blueprint, repo, golden, read, target),
-			() => checkRulesets(state.blueprint, repo, golden, target),
-			() => checkActionsPermissions(state.blueprint, repo, golden, target),
-			() => checkActionsWorkflow(state.blueprint, repo, golden, target),
-			() => checkActionsRetention(state.blueprint, repo, golden, target),
-			() => checkActionsOidc(state.blueprint, repo, golden, target),
-			() => checkEnvironments(state.blueprint, repo, golden, target),
-			() => checkSecurity(state.blueprint, repo, golden, target, getRepoInfo),
-			() => checkSecrets(state.blueprint, repo, golden, target),
+			() => checkGeneral(state.blueprint, repo, upstream, target, getRepoInfo),
+			() => checkReleases(state.blueprint, repo, upstream, target),
+			() => checkCodeowners(state.blueprint, repo, upstream, target),
+			() => checkIssueTemplates(state.blueprint, repo, upstream, target),
+			() => checkReviews(state.blueprint, repo, upstream, read, target),
+			() => checkRulesets(state.blueprint, repo, upstream, target),
+			() => checkActionsPermissions(state.blueprint, repo, upstream, target),
+			() => checkActionsWorkflow(state.blueprint, repo, upstream, target),
+			() => checkActionsRetention(state.blueprint, repo, upstream, target),
+			() => checkActionsOidc(state.blueprint, repo, upstream, target),
+			() => checkEnvironments(state.blueprint, repo, upstream, target),
+			() => checkSecurity(state.blueprint, repo, upstream, target, getRepoInfo),
+			() => checkSecrets(state.blueprint, repo, upstream, target),
 		];
 		const settled = await mapWithConcurrency(checks, 6, (run) => run());
 		const [
@@ -249,7 +249,7 @@ export async function runGithubChecks(
 			environments,
 			...security,
 			secrets,
-			...checkUiOnly(state.blueprint, golden, target),
+			...checkUiOnly(state.blueprint, upstream, target),
 		];
 	} catch (error) {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {

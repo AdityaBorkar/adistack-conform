@@ -23,7 +23,7 @@ Prints `{ desiredStates, ok, passed, failed, skipped, total, results }` (`--json
 	"scope": "project", // "project" | "machine" | "github"
 	"source": "tech-stack:cli-app",
 	"target": "bunfig.toml",
-	"expected": "<golden>",
+	"expected": "<upstream>",
 	"actual": "<local content | <missing> | <unreadable> | …>",
 	"skipped": false, // true when skipped (counts as ok)
 	"fix": { "kind": "overwrite-file", "filePath": "<abs>", "newContent": "…" },
@@ -66,4 +66,4 @@ bun run verify           # format && check:lint && check:types && test (gate bef
 bun run build            # regen schemas via gen:json-schema + compile --minify --bytecode to .output/adistack-conform
 ```
 
-Conventions: path alias `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` for type-only, tabs + width 100, always `bun run <script>`. The `home-manager` / `nix` fallback, 30s fetch timeout, 10-minute switch timeout, and 16-way golden parallelism are fixed, not configurable.
+Conventions: path alias `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` for type-only, tabs + width 100, always `bun run <script>`. The `home-manager` / `nix` fallback, 30s fetch timeout, 10-minute switch timeout, and 16-way upstream parallelism are fixed, not configurable.

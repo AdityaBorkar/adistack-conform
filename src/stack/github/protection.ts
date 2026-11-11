@@ -138,16 +138,16 @@ export function protectionPutBody(
 	};
 }
 
-export function protectionInput(golden: GithubSettings): ProtectionInput {
+export function protectionInput(upstream: GithubSettings): ProtectionInput {
 	return {
-		branch: golden.defaultBranch,
-		checks: golden.checks,
-		dismissStale: golden.reviews.dismissStale,
-		requireApprovals: golden.reviews.requiredApprovals,
-		requireCodeOwner: golden.reviews.requireCodeOwner,
-		requireConversationResolution: golden.reviews.requireConversationResolution,
-		requireSignedCommits: golden.reviews.requireSignedCommits,
-		restrictPushes: golden.reviews.restrictPushes,
+		branch: upstream.defaultBranch,
+		checks: upstream.checks,
+		dismissStale: upstream.reviews.dismissStale,
+		requireApprovals: upstream.reviews.requiredApprovals,
+		requireCodeOwner: upstream.reviews.requireCodeOwner,
+		requireConversationResolution: upstream.reviews.requireConversationResolution,
+		requireSignedCommits: upstream.reviews.requireSignedCommits,
+		restrictPushes: upstream.reviews.restrictPushes,
 	};
 }
 
@@ -161,7 +161,7 @@ function checkNames(contexts: unknown): string[] {
 export function checkPrChecks(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	read: ProtectionRead,
 	target: string,
 ): CheckResult {
@@ -169,9 +169,9 @@ export function checkPrChecks(
 	if (read.missingBranch) {
 		return failManual(
 			base,
-			`<branch ${golden.defaultBranch} missing>`,
-			`required checks: ${golden.checks.join(", ")}`,
-			`Push branch ${golden.defaultBranch} first, then re-run check.`,
+			`<branch ${upstream.defaultBranch} missing>`,
+			`required checks: ${upstream.checks.join(", ")}`,
+			`Push branch ${upstream.defaultBranch} first, then re-run check.`,
 		);
 	}
 	const current = checkNames(
@@ -179,13 +179,16 @@ export function checkPrChecks(
 			"checks"
 		],
 	).toSorted();
-	const want = [...golden.checks].toSorted();
+	const want = [...upstream.checks].toSorted();
 	if (JSON.stringify(current) === JSON.stringify(want)) {
 		return pass(base, `required checks: ${want.join(", ") || "<none>"}`, "required checks match");
 	}
 	// Enabling push restrictions from scratch needs a user/team allowlist the
 	// boolean schema cannot express; the API rejects empty teams/users.
-	if (golden.reviews.restrictPushes && !isRestrictionsEnabled(read.protection?.["restrictions"])) {
+	if (
+		upstream.reviews.restrictPushes &&
+		!isRestrictionsEnabled(read.protection?.["restrictions"])
+	) {
 		return failManual(
 			base,
 			`required checks: ${current.join(", ") || "<none>"}`,
@@ -193,15 +196,15 @@ export function checkPrChecks(
 			"Add a push allowlist (users/teams) in Settings → Branches, then re-run check.",
 		);
 	}
-	const input = protectionInput(golden);
+	const input = protectionInput(upstream);
 	const fix: GithubApiFix = {
 		kind: "github-api",
-		label: `github PUT ${repo} branch protection (${golden.defaultBranch})`,
+		label: `github PUT ${repo} branch protection (${upstream.defaultBranch})`,
 		steps: [
 			{
 				body: protectionPutBody(read.protection, input),
 				method: "PUT",
-				path: repoPath(repo, `/branches/${encodeURIComponent(golden.defaultBranch)}/protection`),
+				path: repoPath(repo, `/branches/${encodeURIComponent(upstream.defaultBranch)}/protection`),
 			},
 		],
 	};
@@ -216,7 +219,7 @@ export function checkPrChecks(
 export async function checkReviews(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	read: ProtectionRead,
 	target: string,
 ): Promise<CheckResult> {
@@ -224,29 +227,29 @@ export async function checkReviews(
 	if (read.missingBranch) {
 		return failManual(
 			base,
-			`<branch ${golden.defaultBranch} missing>`,
+			`<branch ${upstream.defaultBranch} missing>`,
 			"code reviews enforced",
-			`Push branch ${golden.defaultBranch} first, then re-run check.`,
+			`Push branch ${upstream.defaultBranch} first, then re-run check.`,
 		);
 	}
 	const reviews =
 		(read.protection?.["required_pull_request_reviews"] as Record<string, unknown>) ?? {};
 	const diffs: string[] = [];
 	const expect: Array<[string, unknown, unknown]> = [
-		["approvals", reviews["required_approving_review_count"], golden.reviews.requiredApprovals],
-		["dismiss_stale", reviews["dismiss_stale_reviews"], golden.reviews.dismissStale],
-		["code_owner", reviews["require_code_owner_reviews"], golden.reviews.requireCodeOwner],
+		["approvals", reviews["required_approving_review_count"], upstream.reviews.requiredApprovals],
+		["dismiss_stale", reviews["dismiss_stale_reviews"], upstream.reviews.dismissStale],
+		["code_owner", reviews["require_code_owner_reviews"], upstream.reviews.requireCodeOwner],
 		[
 			"conversation_resolution",
 			(
 				read.protection?.["required_conversation_resolution"] as Record<string, unknown> | undefined
 			)?.["enabled"],
-			golden.reviews.requireConversationResolution,
+			upstream.reviews.requireConversationResolution,
 		],
 		[
 			"restrict_pushes",
 			isRestrictionsEnabled(read.protection?.["restrictions"]),
-			golden.reviews.restrictPushes,
+			upstream.reviews.restrictPushes,
 		],
 	];
 	for (const [label, have, want] of expect) {
@@ -259,7 +262,7 @@ export async function checkReviews(
 		const signatures = await apiJson(
 			repoPath(
 				repo,
-				`/branches/${encodeURIComponent(golden.defaultBranch)}/protection/required_signatures`,
+				`/branches/${encodeURIComponent(upstream.defaultBranch)}/protection/required_signatures`,
 			),
 			{ allowStatuses: [404] },
 		);
@@ -271,9 +274,9 @@ export async function checkReviews(
 			throw error;
 		}
 	}
-	if (signaturesEnabled !== golden.reviews.requireSignedCommits) {
+	if (signaturesEnabled !== upstream.reviews.requireSignedCommits) {
 		diffs.push(
-			`signed_commits: ${String(signaturesEnabled)} → ${String(golden.reviews.requireSignedCommits)}`,
+			`signed_commits: ${String(signaturesEnabled)} → ${String(upstream.reviews.requireSignedCommits)}`,
 		);
 	}
 	if (diffs.length === 0) {
@@ -282,7 +285,7 @@ export async function checkReviews(
 	// Enabling push restrictions from scratch needs a user/team allowlist the
 	// boolean schema cannot express; the API rejects empty teams/users.
 	if (
-		golden.reviews.restrictPushes &&
+		upstream.reviews.restrictPushes &&
 		!isRestrictionsEnabled(read.protection?.["restrictions"]) &&
 		diffs.some((entry) => entry.startsWith("restrict_pushes"))
 	) {
@@ -293,26 +296,26 @@ export async function checkReviews(
 			"Add a push allowlist (users/teams) in Settings → Branches, then re-run check.",
 		);
 	}
-	const input = protectionInput(golden);
+	const input = protectionInput(upstream);
 	const steps: GithubApiStep[] = [
 		{
 			body: protectionPutBody(read.protection, input),
 			method: "PUT",
-			path: repoPath(repo, `/branches/${encodeURIComponent(golden.defaultBranch)}/protection`),
+			path: repoPath(repo, `/branches/${encodeURIComponent(upstream.defaultBranch)}/protection`),
 		},
 	];
-	if (signaturesEnabled !== golden.reviews.requireSignedCommits) {
+	if (signaturesEnabled !== upstream.reviews.requireSignedCommits) {
 		steps.push({
-			method: golden.reviews.requireSignedCommits ? "POST" : "DELETE",
+			method: upstream.reviews.requireSignedCommits ? "POST" : "DELETE",
 			path: repoPath(
 				repo,
-				`/branches/${encodeURIComponent(golden.defaultBranch)}/protection/required_signatures`,
+				`/branches/${encodeURIComponent(upstream.defaultBranch)}/protection/required_signatures`,
 			),
 		});
 	}
 	const fix: GithubApiFix = {
 		kind: "github-api",
-		label: `github PUT ${repo} branch protection (${golden.defaultBranch})`,
+		label: `github PUT ${repo} branch protection (${upstream.defaultBranch})`,
 		steps,
 	};
 	return failFixable(base, diffSummary(diffs), "code reviews match", fix);

@@ -11,7 +11,7 @@ export function forkApprovalPolicy(approvalForExternal: boolean): string {
 export async function checkActionsPermissions(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-permissions", target);
@@ -33,8 +33,8 @@ export async function checkActionsPermissions(
 		}
 	};
 	compare("enabled", true);
-	compare("allowed_actions", golden.actions.allowed);
-	compare("sha_pinning_required", golden.actions.shaPinningRequired);
+	compare("allowed_actions", upstream.actions.allowed);
+	compare("sha_pinning_required", upstream.actions.shaPinningRequired);
 	if (diffs.length === 0) {
 		return pass(base, "actions permissions match", "actions permissions match");
 	}
@@ -49,7 +49,7 @@ export async function checkActionsPermissions(
 export async function checkActionsWorkflow(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-workflow", target);
@@ -73,9 +73,9 @@ export async function checkActionsWorkflow(
 			body[key] = want;
 		}
 	};
-	compare("default_workflow_permissions", golden.actions.defaultWorkflowPermissions);
-	compare("can_approve_pull_request_reviews", golden.actions.allowApprovePRs);
-	const wantFork = forkApprovalPolicy(golden.actions.approvalForExternal);
+	compare("default_workflow_permissions", upstream.actions.defaultWorkflowPermissions);
+	compare("can_approve_pull_request_reviews", upstream.actions.allowApprovePRs);
+	const wantFork = forkApprovalPolicy(upstream.actions.approvalForExternal);
 	let forkDiff = "";
 	let forkUnknown = false;
 	try {
@@ -89,7 +89,7 @@ export async function checkActionsWorkflow(
 			forkUnknown = true;
 		} else {
 			const have = String(fork["approval_policy"] ?? fork["policy"] ?? "unknown");
-			const forkOk = golden.actions.approvalForExternal
+			const forkOk = upstream.actions.approvalForExternal
 				? have === wantFork
 				: have === "first_time_contributors" || have === "first_time_contributors_new_to_github";
 			if (!forkOk) {
@@ -148,7 +148,7 @@ export async function checkActionsWorkflow(
 export async function checkActionsRetention(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-retention", target);
@@ -163,15 +163,15 @@ export async function checkActionsRetention(
 		}
 		throw error;
 	}
-	if (Object.is(actual.days, golden.actions.retentionDays)) {
+	if (Object.is(actual.days, upstream.actions.retentionDays)) {
 		return pass(base, `retention ${String(actual.days)}d`, "retention matches");
 	}
 	const fix: GithubApiFix = {
 		kind: "github-api",
-		label: `github PUT ${repo} retention ${golden.actions.retentionDays}d`,
+		label: `github PUT ${repo} retention ${upstream.actions.retentionDays}d`,
 		steps: [
 			{
-				body: { days: golden.actions.retentionDays },
+				body: { days: upstream.actions.retentionDays },
 				method: "PUT",
 				path: repoPath(repo, "/actions/permissions/artifact-and-log-retention"),
 			},
@@ -180,7 +180,7 @@ export async function checkActionsRetention(
 	return failFixable(
 		base,
 		`retention ${String(actual.days)}d`,
-		`retention ${golden.actions.retentionDays}d`,
+		`retention ${upstream.actions.retentionDays}d`,
 		fix,
 	);
 }
@@ -188,11 +188,11 @@ export async function checkActionsRetention(
 export async function checkActionsOidc(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-oidc", target);
-	if (!golden.actions.oidcImmutableSubject) {
+	if (!upstream.actions.oidcImmutableSubject) {
 		return skipped(base, "immutable OIDC subject not required", "verify in Settings → Actions");
 	}
 	// Check-only: the customization endpoint has no documented immutable-subject mapping.
@@ -220,11 +220,11 @@ export async function checkActionsOidc(
 export async function checkEnvironments(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "environments", target);
-	if (golden.environments.length === 0) {
+	if (upstream.environments.length === 0) {
 		return skipped(base, "no environments required", "list environments to enforce presence");
 	}
 	let names: string[];
@@ -239,7 +239,7 @@ export async function checkEnvironments(
 		}
 		throw error;
 	}
-	const missing = golden.environments.filter((name) => !names.includes(name));
+	const missing = upstream.environments.filter((name) => !names.includes(name));
 	if (missing.length === 0) {
 		return pass(base, `environments: ${names.join(", ")}`, "environments match");
 	}
@@ -254,7 +254,7 @@ export async function checkEnvironments(
 	return failFixable(
 		base,
 		`missing: ${missing.join(", ")}`,
-		`environments: ${golden.environments.join(", ")}`,
+		`environments: ${upstream.environments.join(", ")}`,
 		fix,
 	);
 }

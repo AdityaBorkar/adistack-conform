@@ -60,7 +60,7 @@ Machines are entirely nix-managed. See [blueprints](./blueprints.md) for matchin
 | `blueprint` | yes      | —                                                    | `github_configs` key whose settings file is checked (e.g. `npm-package`). |
 | `repo`      | no       | `$GITHUB_REPOSITORY`, then the cwd git origin remote | `owner/repo` whose settings are checked.                                  |
 
-The golden is the settings file listed in `registry.json` `github_configs` (e.g. `github-configs/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit, then the scope skips (still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted. When no repo can be resolved (no `github.repo`, no `$GITHUB_REPOSITORY`, no git origin), the scope reports `github:internal-error` drift (exit 1).
+The upstream is the settings file listed in `registry.json` `github_configs` (e.g. `github-configs/<name>.json`, validated by `configuration_schema/github.json`). Checks and fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit, then the scope skips (still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); `GITHUB_REPOSITORY` selects the target repo in CI when `repo` is omitted. When no repo can be resolved (no `github.repo`, no `$GITHUB_REPOSITORY`, no git origin), the scope reports `github:internal-error` drift (exit 1).
 
 ## Loading rules
 

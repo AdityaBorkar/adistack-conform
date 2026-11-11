@@ -4,7 +4,7 @@
 
 Bun-only TypeScript CLI (`@adistack/conform`, bin compiled to `.output/`) + Commander + @clack/prompts + Zod v4 (`import * as z from "zod"`, finals wrapped in `z.compile()`). Lint oxlint, format oxfmt, typecheck tsrs (not tsc), unused-code knip.
 
-CLI runtime behavior (flags, exit codes, scopes, fix flow) lives in `skills/adistack-conform/SKILL.md` — read it before touching `check`/`fix` logic, and update it when flags, results, or `conform.json` semantics change. User docs live in `docs/www/*.md` (root `README.md` is an empty stub). Use `GLOSSARY.md` terms (golden/source/target, fixable/manual, drift).
+CLI runtime behavior (flags, exit codes, scopes, fix flow) lives in `skills/adistack-conform/SKILL.md` — read it before touching `check`/`fix` logic, and update it when flags, results, or `conform.json` semantics change. User docs live in `docs/www/*.md` (root `README.md` is an empty stub). Use `GLOSSARY.md` terms (upstream/source/target, fixable/manual, drift).
 
 ## Commands
 
