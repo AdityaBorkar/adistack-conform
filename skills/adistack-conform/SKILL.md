@@ -11,7 +11,7 @@ Bun-only TypeScript CLI that checks the current directory (project files) and th
 
 ```jsonc
 {
-	"$schema": "./configuration_schema/conform.json",
+	"$schema": "./config/conform.json",
 	"machine": { "blueprint": "main", "configuration": "adityab" },
 	"project": { "blueprint": "cli-app" },
 	"github": { "blueprint": "npm-package" },
@@ -83,5 +83,5 @@ bun run verify           # format && check:lint && check:types && test (gate bef
 ```
 
 - `src/index.ts` is Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`apply`), `validate`), `src/utils/config.ts`, `src/utils/` (`run`/`result`/`diff`/`jsonc` plus generic helpers), `src/stack/` (`project`/`project-compare`/`machine`/`github`/`github-api`/`registry`/`remote`), `src/schemas/` (`github.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
-- `configuration_schema/*.json` is generated — never hand-edit (regen via `bun run gen:json-schema` / `build`). Compiled binary lands in `.output/`.
+- `config/*.json` is generated — never hand-edit (regen via `bun run gen:json-schema` / `build`). Compiled binary lands in `.output/`.
 - Conventions: `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` where type-only, tabs + width 100, no `npm`/`npx` (always `bun run <script>`). Reference blueprints live at `~/repo/tech-stack` — read `registry.json`/blueprint files directly instead of guessing.

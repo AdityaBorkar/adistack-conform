@@ -167,7 +167,7 @@ export async function runGithubChecks(
 					base,
 					"<settings reference missing>",
 					`registry github_configs entry for "${state.blueprint}"`,
-					`Add "${state.blueprint}" to registry.json github_configs (e.g. "./github-configs/<name>.json", see configuration_schema/github.json), then re-run check.`,
+					`Add "${state.blueprint}" to registry.json github_configs (e.g. "./github-configs/<name>.json", see config/github-manifest.json), then re-run check.`,
 				),
 			];
 		}

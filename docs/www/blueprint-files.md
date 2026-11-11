@@ -17,7 +17,7 @@ A project blueprint is a JSON file (e.g. `projects/cli-app.json`) with `@name`/`
 }
 ```
 
-Schema: `./configuration_schema/project-manifest.json` (generated, draft 2020-12).
+Schema: `./config/project-manifest.json` (generated, draft 2020-12).
 
 ## Where goldens come from
 

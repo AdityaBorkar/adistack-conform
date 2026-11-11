@@ -39,8 +39,9 @@
 		".output",
 		"src",
 		"package.json",
-		"configuration_schema",
+		"config",
 		"README.md",
+		"CHANGELOG.md",
 		"skills",
 		"docs/www"
 	],

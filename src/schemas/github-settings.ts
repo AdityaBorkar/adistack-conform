@@ -5,7 +5,7 @@ export const GithubSchema = z.compile(
 		.object({
 			$schema: z
 				.string()
-				.describe("JSON Schema reference, e.g. ./configuration_schema/github.json.")
+				.describe("JSON Schema reference, e.g. ./config/github-manifest.json.")
 				.optional(),
 			actions: z
 				.object({

@@ -8,7 +8,7 @@ Your whole setup in one file. Most repos need fewer than ten lines:
 
 ```jsonc
 {
-	"$schema": "./configuration_schema/conform.json",
+	"$schema": "./config/conform.json",
 	"machine": { "blueprint": "main", "configuration": "adityab" },
 	"project": { "blueprint": "cli-app" },
 	"github": { "blueprint": "npm-package" },
@@ -16,7 +16,7 @@ Your whole setup in one file. Most repos need fewer than ten lines:
 }
 ```
 
-Validate against `./configuration_schema/conform.json` (generated from Zod schemas — never hand-edit it, regen with `bun run gen:json-schema`).
+Validate against `./config/conform.json` (generated from Zod schemas — never hand-edit it, regen with `bun run gen:json-schema`).
 
 ## `source` <Badge variant="error">required</Badge>
 
