@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { ConformSchema } from "#/schemas/conform.js";
+import { ConformSchema } from "#/schemas/config.js";
 import { GithubSchema } from "#/schemas/github-settings.js";
 import { forkApprovalPolicy, isPrivateVulnEnabled, protectionPutBody } from "#/stack/github.js";
 import { checkSecrets, checkSecurity } from "#/stack/github/security.js";
@@ -27,7 +27,7 @@ describe("github IaC mappings", () => {
 	});
 
 	test("missing security status reads as disabled", async () => {
-		const golden = GithubSchema.parse({});
+		const upstream = GithubSchema.parse({});
 		const notFound = {
 			headers: { get: () => null },
 			ok: false,
@@ -37,7 +37,7 @@ describe("github IaC mappings", () => {
 		const originalFetch = globalThis.fetch;
 		globalThis.fetch = (() => Promise.resolve(notFound)) as unknown as typeof fetch;
 		try {
-			const results = await checkSecurity("npm-package", "o/r", golden, "o/r", () =>
+			const results = await checkSecurity("npm-package", "o/r", upstream, "o/r", () =>
 				Promise.resolve({}),
 			);
 			expect(results[0]?.actual).toContain("secret_scanning: disabled → enabled");

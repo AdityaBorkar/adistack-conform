@@ -5,13 +5,13 @@ description: Check and fix project/machine drift against tech-stack blueprints w
 
 # adistack-conform
 
-Bun-only TypeScript CLI that checks the current directory (project files) and the current machine (nix home-manager flake) against golden blueprints in a tech-stack repo. Desired state lives in `conform.json`.
+Bun-only TypeScript CLI that checks the current directory (project files) and the current machine (nix home-manager flake) against upstream blueprints in a tech-stack repo. Desired state lives in `conform.json`.
 
 ## Desired state (`conform.json`)
 
 ```jsonc
 {
-	"$schema": "./configuration_schema/conform.json",
+	"$schema": "./config/conform.json",
 	"machine": { "blueprint": "main", "configuration": "adityab" },
 	"project": { "blueprint": "cli-app" },
 	"github": { "blueprint": "npm-package" },
@@ -49,9 +49,9 @@ adistack-conform validate
 
 Project (one result per blueprint `files[]`, id `project:<blueprint>:<name>`):
 
-- Fetch order per unique `repo@ref`: `registry.json` once, then each desired state's blueprint file (project manifests, github settings files), then only needed golden files (deduplicated, 16-way parallel, no local cache). `source` is repo-relative (e.g. `projects/files/<group>/<file>`); leading `/` is stripped, `./` and `../` prefixes are rejected.
+- Fetch order per unique `repo@ref`: `registry.json` once, then each desired state's blueprint file (project manifests, github settings files), then only needed upstream files (deduplicated, 16-way parallel, no local cache). `source` is repo-relative (e.g. `projects/files/<group>/<file>`); leading `/` is stripped, `./` and `../` prefixes are rejected.
 - Project `target` is resolved against the cwd (`~` expands, absolute passes through). Missing target fails fixable (overwrite-file fix). Unreadable target (e.g. `/etc/...` without sudo) fails manual with a hint.
-- Per-entry `compare` rules (declared in the manifest, never hardcoded): `ignore[]` keys are excluded from the compare with local values preserved by `fix` (e.g. linter `overrides`). A golden is a template only when it parses as a JSON object (JSONC-tolerant) and holds `<...>` placeholders: each slot accepts any per-project value (non-empty, no `<...>` placeholders, matching the surrounding text) while every other field must match — extra local fields and array items allowed, placeholder keys fuzzy-match. Drift without a fix is manual. A missing template target is manual (copy the golden and adapt per-project fields). Templates never pass on byte equality — a verbatim copy fails manual until every golden `<...>` placeholder is replaced with per-project values. `<...>` in non-JSON goldens never counts.
+- Per-entry `compare` rules (declared in the manifest, never hardcoded): `ignore[]` keys are excluded from the compare with local values preserved by `fix` (e.g. linter `overrides`). An upstream is a template only when it parses as a JSON object (JSONC-tolerant) and holds `<...>` placeholders: each slot accepts any per-project value (non-empty, no `<...>` placeholders, matching the surrounding text) while every other field must match — extra local fields and array items allowed, placeholder keys fuzzy-match. Drift without a fix is manual. A missing template target is manual (copy the upstream and adapt per-project fields). Templates never pass on byte equality — a verbatim copy fails manual until every upstream `<...>` placeholder is replaced with per-project values. `<...>` in non-JSON upstreams never counts.
 - Existence-only entries from blueprint `file_structure[]` (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`) must exist; missing files get a generate hint, missing dirs a `mkdir -p` hint (manual). Overlapping `file_structure[]`/`files[]` names are dropped with no result (file check owns it).
 
 Machine (single result, id `nix:<blueprint>`):
@@ -62,7 +62,7 @@ Machine (single result, id `nix:<blueprint>`):
 
 GitHub (fixed check list, id `github:<blueprint>:<name>`, kind `github`):
 
-- Golden is the settings file listed in `registry.json` `github_configs` (e.g. `github-configs/<name>.json`); the CLI compares it against live repo settings via the GitHub REST API (needs `GITHUB_TOKEN`). Covers general/repo settings, immutable releases, CODEOWNERS, issue templates, required PR checks, code reviews/push restrictions, rulesets presence, Actions permissions/workflow (incl. fork PR approval)/retention/OIDC, environments, Advanced Security (incl. dependency graph via vulnerability alerts), and secrets/variables presence. `actions-oidc` always skips; OIDC 404 and goldens that do not require a check skip too.
+- Upstream is the settings file listed in `registry.json` `github_configs` (e.g. `github-configs/<name>.json`); the CLI compares it against live repo settings via the GitHub REST API (needs `GITHUB_TOKEN`). Covers general/repo settings, immutable releases, CODEOWNERS, issue templates, required PR checks, code reviews/push restrictions, rulesets presence, Actions permissions/workflow (incl. fork PR approval)/retention/OIDC, environments, Advanced Security (incl. dependency graph via vulnerability alerts), and secrets/variables presence. `actions-oidc` always skips; OIDC 404 and upstreams that do not require a check skip too.
 - Fixes are kind `github-api` (multi-step REST calls, needs admin-scoped `GITHUB_TOKEN`).
 - Skipped with a UI hint (still exit 0): items with no public API — social preview, archive toggles, Copilot Autofix, dependency auto-submit, agent suggestions, OIDC-only checks. Whole-scope or per-check 401/403 auth failures also skip. Follow the hint in the GitHub web UI. `internal-error` results carry no `source` (`target` is the scope name).
 
@@ -83,5 +83,5 @@ bun run verify           # format && check:lint && check:types && test (gate bef
 ```
 
 - `src/index.ts` is Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`apply`), `validate`), `src/utils/config.ts`, `src/utils/` (`run`/`result`/`diff`/`jsonc` plus generic helpers), `src/stack/` (`project`/`project-compare`/`machine`/`github`/`github-api`/`registry`/`remote`), `src/schemas/` (`github.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
-- `configuration_schema/*.json` is generated — never hand-edit (regen via `bun run gen:json-schema` / `build`). Compiled binary lands in `.output/`.
+- `config/*.json` is generated — never hand-edit (regen via `bun run gen:json-schema` / `build`). Compiled binary lands in `.output/`.
 - Conventions: `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` where type-only, tabs + width 100, no `npm`/`npx` (always `bun run <script>`). Reference blueprints live at `~/repo/tech-stack` — read `registry.json`/blueprint files directly instead of guessing.

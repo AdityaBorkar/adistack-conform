@@ -1,5 +1,5 @@
 {
-	"$schema": "./configuration_schema/conform.json",
+	"$schema": "./config/schema.json",
 	"project": {
 		"blueprint": "cli-app"
 	},

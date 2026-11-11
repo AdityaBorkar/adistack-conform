@@ -55,10 +55,7 @@ const ConformProjectSectionSchema = z
 export const ConformSchema = z.compile(
 	z
 		.object({
-			$schema: z
-				.string()
-				.describe("JSON Schema reference, e.g. ./configuration_schema/conform.json.")
-				.optional(),
+			$schema: z.string().describe("JSON Schema reference, e.g. ./config/conform.json.").optional(),
 			github: ConformGithubSectionSchema.describe("GitHub repo settings desired state.").optional(),
 			machine: ConformMachineSectionSchema.describe("Machine desired state.").optional(),
 			project: ConformProjectSectionSchema.describe("Project desired state.").optional(),

@@ -47,7 +47,7 @@ function compareField(
 export async function checkGeneral(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 	repoInfo: () => Promise<Record<string, unknown>>,
 ): Promise<CheckResult> {
@@ -62,59 +62,77 @@ export async function checkGeneral(
 		throw error;
 	}
 	const state: GeneralState = { actual: {}, body: {}, diffs: [], target };
-	compareField(state, actual, "default_branch", golden.defaultBranch, "default_branch");
-	compareField(state, actual, "has_issues", golden.features.issues, "has_issues");
-	compareField(state, actual, "has_wiki", golden.features.wiki, "has_wiki");
-	compareField(state, actual, "has_projects", golden.features.projects, "has_projects");
-	compareField(state, actual, "allow_merge_commit", golden.merge.mergeCommit, "allow_merge_commit");
-	compareField(state, actual, "allow_squash_merge", golden.merge.squashMerge, "allow_squash_merge");
-	compareField(state, actual, "allow_rebase_merge", golden.merge.rebaseMerge, "allow_rebase_merge");
-	compareField(state, actual, "allow_auto_merge", golden.merge.autoMerge, "allow_auto_merge");
+	compareField(state, actual, "default_branch", upstream.defaultBranch, "default_branch");
+	compareField(state, actual, "has_issues", upstream.features.issues, "has_issues");
+	compareField(state, actual, "has_wiki", upstream.features.wiki, "has_wiki");
+	compareField(state, actual, "has_projects", upstream.features.projects, "has_projects");
+	compareField(
+		state,
+		actual,
+		"allow_merge_commit",
+		upstream.merge.mergeCommit,
+		"allow_merge_commit",
+	);
+	compareField(
+		state,
+		actual,
+		"allow_squash_merge",
+		upstream.merge.squashMerge,
+		"allow_squash_merge",
+	);
+	compareField(
+		state,
+		actual,
+		"allow_rebase_merge",
+		upstream.merge.rebaseMerge,
+		"allow_rebase_merge",
+	);
+	compareField(state, actual, "allow_auto_merge", upstream.merge.autoMerge, "allow_auto_merge");
 	compareField(
 		state,
 		actual,
 		"delete_branch_on_merge",
-		golden.merge.deleteHeadBranches,
+		upstream.merge.deleteHeadBranches,
 		"delete_branch_on_merge",
 	);
 	compareField(
 		state,
 		actual,
 		"merge_commit_title",
-		MERGE_TITLE_TO_API[golden.merge.mergeTitle],
+		MERGE_TITLE_TO_API[upstream.merge.mergeTitle],
 		"merge_commit_title",
 	);
 	compareField(
 		state,
 		actual,
 		"merge_commit_message",
-		MERGE_MESSAGE_TO_API[golden.merge.mergeMessage],
+		MERGE_MESSAGE_TO_API[upstream.merge.mergeMessage],
 		"merge_commit_message",
 	);
 	compareField(
 		state,
 		actual,
 		"squash_merge_commit_title",
-		SQUASH_TITLE_TO_API[golden.merge.squashTitle],
+		SQUASH_TITLE_TO_API[upstream.merge.squashTitle],
 		"squash_merge_commit_title",
 	);
 	compareField(
 		state,
 		actual,
 		"squash_merge_commit_message",
-		SQUASH_MESSAGE_TO_API[golden.merge.squashMessage],
+		SQUASH_MESSAGE_TO_API[upstream.merge.squashMessage],
 		"squash_merge_commit_message",
 	);
 	compareField(
 		state,
 		actual,
 		"web_commit_signoff_required",
-		golden.signoffRequired,
+		upstream.signoffRequired,
 		"web_commit_signoff_required",
 	);
 	let discussionsNote = "";
-	if (!Object.is(actual["has_discussions"], golden.features.discussions)) {
-		discussionsNote = `has_discussions: ${String(actual["has_discussions"])} → ${String(golden.features.discussions)} (set in Settings → General → Features)`;
+	if (!Object.is(actual["has_discussions"], upstream.features.discussions)) {
+		discussionsNote = `has_discussions: ${String(actual["has_discussions"])} → ${String(upstream.features.discussions)} (set in Settings → General → Features)`;
 	}
 	if (state.diffs.length === 0 && discussionsNote === "") {
 		return pass(base, "repo settings match", "repo settings match");
@@ -148,7 +166,7 @@ export async function checkGeneral(
 export async function checkReleases(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "releases", target);
@@ -162,15 +180,15 @@ export async function checkReleases(
 		}
 		throw error;
 	}
-	if (enabled === golden.releasesImmutable) {
+	if (enabled === upstream.releasesImmutable) {
 		return pass(base, `immutable releases ${enabled ? "on" : "off"}`, "immutable releases match");
 	}
 	const fix: GithubApiFix = {
 		kind: "github-api",
-		label: `github ${golden.releasesImmutable ? "PUT" : "DELETE"} ${repo} immutable-releases`,
+		label: `github ${upstream.releasesImmutable ? "PUT" : "DELETE"} ${repo} immutable-releases`,
 		steps: [
 			{
-				method: golden.releasesImmutable ? "PUT" : "DELETE",
+				method: upstream.releasesImmutable ? "PUT" : "DELETE",
 				path: repoPath(repo, "/immutable-releases"),
 			},
 		],
@@ -178,7 +196,7 @@ export async function checkReleases(
 	return failFixable(
 		base,
 		`immutable releases ${enabled ? "on" : "off"}`,
-		`immutable releases ${golden.releasesImmutable ? "on" : "off"}`,
+		`immutable releases ${upstream.releasesImmutable ? "on" : "off"}`,
 		fix,
 	);
 }
@@ -191,17 +209,17 @@ async function contentExists(repo: string, path: string): Promise<boolean> {
 export async function checkCodeowners(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "codeowners", target);
-	if (golden.codeowners === undefined) {
+	if (upstream.codeowners === undefined) {
 		return skipped(base, "no codeowners configured", "set codeowners to enforce presence");
 	}
 	const candidates =
-		golden.codeowners === ".github/CODEOWNERS"
+		upstream.codeowners === ".github/CODEOWNERS"
 			? [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"]
-			: [golden.codeowners];
+			: [upstream.codeowners];
 	let found: Array<{ exists: boolean; path: string }>;
 	try {
 		found = await Promise.all(
@@ -220,19 +238,19 @@ export async function checkCodeowners(
 	return failManual(
 		base,
 		"<missing>",
-		`${golden.codeowners} exists`,
-		`Create ${golden.codeowners} with per-team reviewers, then re-run check.`,
+		`${upstream.codeowners} exists`,
+		`Create ${upstream.codeowners} with per-team reviewers, then re-run check.`,
 	);
 }
 
 export async function checkIssueTemplates(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "issue-templates", target);
-	if (!golden.features.issueTemplates) {
+	if (!upstream.features.issueTemplates) {
 		return skipped(base, "issue templates not required", "set features.issueTemplates to enforce");
 	}
 	const candidates = [
@@ -269,11 +287,11 @@ export async function checkIssueTemplates(
 export async function checkRulesets(
 	blueprint: string,
 	repo: string,
-	golden: GithubSettings,
+	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "rulesets", target);
-	if (golden.rulesets.length === 0) {
+	if (upstream.rulesets.length === 0) {
 		return skipped(base, "no rulesets required", "list rulesets to enforce presence");
 	}
 	let current: Array<{ enforcement?: unknown; name?: unknown }>;
@@ -290,14 +308,14 @@ export async function checkRulesets(
 	const active = new Set(
 		current.filter((entry) => entry.enforcement === "active").map((entry) => String(entry.name)),
 	);
-	const missing = golden.rulesets.filter((name) => !active.has(name));
+	const missing = upstream.rulesets.filter((name) => !active.has(name));
 	if (missing.length === 0) {
-		return pass(base, `active: ${golden.rulesets.join(", ")}`, "rulesets match");
+		return pass(base, `active: ${upstream.rulesets.join(", ")}`, "rulesets match");
 	}
 	return failManual(
 		base,
 		`missing or inactive: ${missing.join(", ")}`,
-		`active: ${golden.rulesets.join(", ")}`,
+		`active: ${upstream.rulesets.join(", ")}`,
 		`Create/activate ruleset(s) ${missing.join(", ")} in Settings → Rules, then re-run check.`,
 	);
 }

@@ -15,7 +15,7 @@ A tech-stack repo is just a directory of blueprints plus one index. That index i
 }
 ```
 
-Schema: `./configuration_schema/registry.json` (generated, draft 2020-12).
+Schema: `./config/registry.json` (generated, draft 2020-12).
 
 ## How a name finds its blueprint
 

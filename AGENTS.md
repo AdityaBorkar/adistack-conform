@@ -4,7 +4,7 @@
 
 Bun-only TypeScript CLI (`@adistack/conform`, bin compiled to `.output/`) + Commander + @clack/prompts + Zod v4 (`import * as z from "zod"`, finals wrapped in `z.compile()`). Lint oxlint, format oxfmt, typecheck tsrs (not tsc), unused-code knip.
 
-CLI runtime behavior (flags, exit codes, scopes, fix flow) lives in `skills/adistack-conform/SKILL.md` — read it before touching `check`/`fix` logic, and update it when flags, results, or `conform.json` semantics change. User docs live in `docs/www/*.md` (root `README.md` is an empty stub). Use `GLOSSARY.md` terms (golden/source/target, fixable/manual, drift).
+CLI runtime behavior (flags, exit codes, scopes, fix flow) lives in `skills/adistack-conform/SKILL.md` — read it before touching `check`/`fix` logic, and update it when flags, results, or `conform.json` semantics change. User docs live in `docs/www/*.md` (root `README.md` is an empty stub). Use `GLOSSARY.md` terms (upstream/source/target, fixable/manual, drift).
 
 ## Commands
 
@@ -22,14 +22,14 @@ bun run verify              # format && check:lint && check:types && test — fu
 ```
 
 - Run scripts with `bun run <script>` (repo shorthand `bun <script>` also appears in `package.json`), never `npm`/`npx` (`bunfig.toml` sets `shell = "bun"`). `bunfig.toml` also pins `ignore-scripts=true`, `exact=true`, `minimumReleaseAge=3d`.
-- `verify` order matters: `format` first since it rewrites. CI (`pr.yml`) runs `bun run verify` on PRs to `stable`.
+- `verify` order matters: `format` first since it rewrites. CI (`pr.yml`) runs `bun run verify` on PRs to `main`.
 - Never hand-edit `configuration_schema/*.json` — generated from `src/schemas/*` by `scripts/generate-json-schema.ts` (via `build` or `gen:json-schema`).
 - Pre-commit runs `bun fmt --staged` (Bun's builtin formatter, not oxfmt). Commits must pass commitlint with types restricted to `chore docs feat fix refactor release revert test` (no `ci:`, `style:`, etc.).
 
 ## Release
 
-- Release branch is `stable` (changesets `baseBranch: stable`). PRs target `stable`, not `main`.
-- Every PR needs a `.changeset/*.md` entry or merging releases nothing (`changeset --empty` for no-release changes). Merging to `stable` opens/updates the `changeset-release/` version PR, whose merge publishes to npm (`publish.yml`).
+- Release branch is `main` (changesets `baseBranch: main`). PRs target `main`, not `stable`.
+- Every PR needs a `.changeset/*.md` entry or merging releases nothing (`changeset --empty` for no-release changes). Merging to `main` opens/updates the `changeset-release/` version PR, whose merge publishes to npm (`publish.yml`).
 - `/conform.json`, `/package.json`, `/bun.lock` need owner review (`CODEOWNERS`).
 
 ## Layout

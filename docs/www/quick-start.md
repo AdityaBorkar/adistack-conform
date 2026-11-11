@@ -50,7 +50,7 @@ bun run build
 
 ```jsonc
 {
-	"$schema": "./configuration_schema/conform.json",
+	"$schema": "./config/conform.json",
 	"project": { "blueprint": "cli-app" },
 	"source": { "type": "github", "repo": "AdityaBorkar/tech-stack", "ref": "main" },
 }

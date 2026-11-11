@@ -7,7 +7,7 @@ You declare the desired state in `conform.json`. The CLI compares it against rea
 ```jsonc
 // conform.json
 {
-	"$schema": "./configuration_schema/conform.json",
+	"$schema": "./config/conform.json",
 	"project": { "blueprint": "cli-app" },
 	"source": { "type": "github", "repo": "AdityaBorkar/tech-stack", "ref": "main" },
 }

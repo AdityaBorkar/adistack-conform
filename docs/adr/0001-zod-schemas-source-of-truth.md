@@ -1,6 +1,6 @@
 # Zod schemas are the source of truth for configuration
 
-`src/schemas/` declares `conform.json`, registry, and manifest shapes in Zod (`import * as z from "zod"`, finals wrapped in `z.compile()`), and `configuration_schema/*.json` is regenerated from them via `bun run gen:json-schema` (also run by `bun run build`), so validation, editor schemas, and runtime parsing can never diverge. (Migrated from Valibot; numbered 0001 for history.)
+`src/schemas/` declares `conform.json`, registry, and manifest shapes in Zod (`import * as z from "zod"`, finals wrapped in `z.compile()`), and `config/*.json` is regenerated from them via `bun run gen:json-schema` (also run by `bun run build`), so validation, editor schemas, and runtime parsing can never diverge. (Migrated from Valibot; numbered 0001 for history.)
 
 ## Consequences
 

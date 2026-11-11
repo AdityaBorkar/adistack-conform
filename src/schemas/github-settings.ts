@@ -5,8 +5,10 @@ export const GithubSchema = z.compile(
 		.object({
 			$schema: z
 				.string()
-				.describe("JSON Schema reference, e.g. ./configuration_schema/github.json.")
+				.describe("JSON Schema reference, e.g. ./config/github-manifest.json.")
 				.optional(),
+			"@description": z.string().describe("Human-readable blueprint description.").optional(),
+			"@name": z.string().min(1).describe("Human-readable blueprint name.").optional(),
 			actions: z
 				.object({
 					allowApprovePRs: z

@@ -6,14 +6,14 @@ import { parseJsonc, stripJsonc } from "#/utils/jsonc.js";
 import type { CheckBase, CheckResult, CheckScope } from "#/utils/result.js";
 import { failFixable, failManual, pass } from "#/utils/result.js";
 
-// Template slots in goldens (e.g. package.json `<package-name>`). A golden
+// Template slots in upstreams (e.g. package.json `<package-name>`). An upstream
 // that parses as a JSON object and holds `<...>` placeholders is a template:
 // every slot accepts any per-project value, all other fields must match.
 const PLACEHOLDER = /<[^<>\r\n]+>/u;
 const PLACEHOLDER_ALL = /<[^<>\r\n]+>/gu;
 
-function goldenPlaceholders(golden: string): string[] {
-	return [...new Set(golden.match(PLACEHOLDER_ALL) ?? [])];
+function upstreamPlaceholders(upstream: string): string[] {
+	return [...new Set(upstream.match(PLACEHOLDER_ALL) ?? [])];
 }
 
 function baseFor(
@@ -35,23 +35,23 @@ const EMPTY_COMPARE: ManifestCompare = {
 	ignore: [],
 };
 
-// Placeholders in non-JSON goldens (HTML comments, TS generics) never count:
-// only a golden that parses as JSON and holds `<...>` slots is a template.
-function goldenHasPlaceholders(golden: string): boolean {
+// Placeholders in non-JSON upstreams (HTML comments, TS generics) never count:
+// only an upstream that parses as JSON and holds `<...>` slots is a template.
+function upstreamHasPlaceholders(upstream: string): boolean {
 	let parsed: unknown;
 	try {
-		parsed = parseJsonc(golden);
+		parsed = parseJsonc(upstream);
 	} catch {
 		return false;
 	}
 	if (!isRecord(parsed) && !Array.isArray(parsed)) {
 		return false;
 	}
-	return PLACEHOLDER.test(stripJsonc(golden));
+	return PLACEHOLDER.test(stripJsonc(upstream));
 }
 
-function isTemplateGolden(golden: string): boolean {
-	return goldenHasPlaceholders(golden);
+function isTemplateUpstream(upstream: string): boolean {
+	return upstreamHasPlaceholders(upstream);
 }
 
 function hasCompareRules(compare: ManifestCompare): boolean {
@@ -86,16 +86,16 @@ function omitKeys(
 	return out;
 }
 
-function detectIndent(golden: string): string {
-	if (golden.includes("\t")) {
+function detectIndent(upstream: string): string {
+	if (upstream.includes("\t")) {
 		return "\t";
 	}
-	const match = /^( +)/mu.exec(golden);
+	const match = /^( +)/mu.exec(upstream);
 	return match?.[1] ?? "\t";
 }
 
-function serializeJson(value: unknown, golden: string): string {
-	return `${JSON.stringify(value, null, detectIndent(golden))}\n`;
+function serializeJson(value: unknown, upstream: string): string {
+	return `${JSON.stringify(value, null, detectIndent(upstream))}\n`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -126,33 +126,36 @@ interface SemanticArgs {
 	base: CheckBase;
 	compare: ManifestCompare;
 	fileName: string;
-	golden: string;
+	upstream: string;
 	localText: string;
 	targetPath: string;
 }
 
 function overlayResult(
-	args: SemanticArgs & { goldenRest: Record<string, unknown>; localRest: Record<string, unknown> },
+	args: SemanticArgs & {
+		upstreamRest: Record<string, unknown>;
+		localRest: Record<string, unknown>;
+	},
 ): CheckResult | undefined {
-	const goldenKept = omitKeys(args.goldenRest, args.compare.ignore);
+	const upstreamKept = omitKeys(args.upstreamRest, args.compare.ignore);
 	const localKept = omitKeys(args.localRest, args.compare.ignore);
 	// Extra local keys are preserved by fix, so they pass here too: only
-	// golden keys must match. Otherwise fix would never converge.
-	const matches = Object.entries(goldenKept).every(
+	// upstream keys must match. Otherwise fix would never converge.
+	const matches = Object.entries(upstreamKept).every(
 		([key, value]) => Object.hasOwn(localKept, key) && deepEqual(localKept[key], value),
 	);
 	if (matches) {
 		const kept =
 			args.compare.ignore.length > 0 ? ` (local ${args.compare.ignore.join("/")} kept)` : "";
-		return pass(args.base, `matches golden${kept}`, args.golden);
+		return pass(args.base, `matches upstream${kept}`, args.upstream);
 	}
-	const merged: Record<string, unknown> = { ...args.goldenRest };
+	const merged: Record<string, unknown> = { ...args.upstreamRest };
 	for (const [key, value] of Object.entries(args.localRest)) {
 		if (!Object.hasOwn(merged, key) || args.compare.ignore.includes(key)) {
 			setOwn(merged, key, value);
 		}
 	}
-	const newContent = serializeJson(merged, args.golden);
+	const newContent = serializeJson(merged, args.upstream);
 	return failFixable(args.base, args.localText, newContent, {
 		filePath: args.targetPath,
 		kind: "overwrite-file",
@@ -160,15 +163,15 @@ function overlayResult(
 	});
 }
 
-// A golden string with `<...>` slots matches any local string holding real
+// An upstream string with `<...>` slots matches any local string holding real
 // values in those slots (each slot needs at least one char). Segment-wise
 // scan: memoized backtracking bounds the blow-up. Each
 // literal is tried at every occurrence (backtracking) so repeated suffixes
 // still match (e.g. `a<x>aa` accepts `aaaaa`).
-function templateStringMatches(golden: string, local: string): boolean {
-	const parts = golden.split(/<[^<>\r\n]+>/u);
+function templateStringMatches(upstream: string, local: string): boolean {
+	const parts = upstream.split(/<[^<>\r\n]+>/u);
 	if (parts.length === 1) {
-		return golden === local;
+		return upstream === local;
 	}
 	const first = parts[0] as string;
 	if (!local.startsWith(first)) {
@@ -231,29 +234,29 @@ function isLeftoverPlaceholder(value: string): boolean {
 	return /^<[^<>\r\n]+>$/u.test(value.trim());
 }
 
-function placeholderValueMatches(goldenValue: unknown, localValue: unknown): boolean {
-	if (typeof goldenValue === "string" && containsPlaceholderText(goldenValue)) {
+function placeholderValueMatches(upstreamValue: unknown, localValue: unknown): boolean {
+	if (typeof upstreamValue === "string" && containsPlaceholderText(upstreamValue)) {
 		return (
 			typeof localValue === "string" &&
 			localValue.trim() !== "" &&
 			!isLeftoverPlaceholder(localValue) &&
-			templateStringMatches(goldenValue, localValue)
+			templateStringMatches(upstreamValue, localValue)
 		);
 	}
-	if (isRecord(goldenValue) || Array.isArray(goldenValue)) {
+	if (isRecord(upstreamValue) || Array.isArray(upstreamValue)) {
 		const nested: string[] = [];
-		collectTemplateIssues(goldenValue, localValue, "", nested, 0);
+		collectTemplateIssues(upstreamValue, localValue, "", nested, 0);
 		return nested.length === 0;
 	}
-	return deepEqual(goldenValue, localValue);
+	return deepEqual(upstreamValue, localValue);
 }
 
 const MAX_TEMPLATE_DEPTH = 50;
 
-// Every golden field must hold in local: `<...>` slots accept any real value,
+// Every upstream field must hold in local: `<...>` slots accept any real value,
 // all other fields must match exactly. Extra local fields are allowed.
 function collectTemplateIssues(
-	goldenNode: unknown,
+	upstreamNode: unknown,
 	localNode: unknown,
 	path: string,
 	issues: string[],
@@ -263,7 +266,7 @@ function collectTemplateIssues(
 		issues.push(`${path === "" ? "value" : path} is nested too deeply to compare`);
 		return;
 	}
-	if (typeof goldenNode === "string" && containsPlaceholderText(goldenNode)) {
+	if (typeof upstreamNode === "string" && containsPlaceholderText(upstreamNode)) {
 		const label = path === "" ? "value" : path;
 		if (typeof localNode !== "string" || localNode.trim() === "") {
 			issues.push(`${label} needs a per-project value`);
@@ -273,25 +276,25 @@ function collectTemplateIssues(
 			issues.push(`${label} still holds placeholders`);
 			return;
 		}
-		if (!templateStringMatches(goldenNode, localNode)) {
+		if (!templateStringMatches(upstreamNode, localNode)) {
 			issues.push(`${label} does not match the template`);
 		}
 		return;
 	}
-	if (isRecord(goldenNode)) {
+	if (isRecord(upstreamNode)) {
 		if (!isRecord(localNode)) {
 			issues.push(`${path === "" ? "value" : path} should be an object`);
 			return;
 		}
 		const unmatched = new Set(Object.keys(localNode));
-		for (const [key, goldenValue] of Object.entries(goldenNode)) {
+		for (const [key, upstreamValue] of Object.entries(upstreamNode)) {
 			const child = path === "" ? key : `${path}.${key}`;
 			if (containsPlaceholderText(key)) {
 				const match = [...unmatched].find(
 					(candidate) =>
 						!containsPlaceholderText(candidate) &&
-						!Object.hasOwn(goldenNode, candidate) &&
-						placeholderValueMatches(goldenValue, localNode[candidate]),
+						!Object.hasOwn(upstreamNode, candidate) &&
+						placeholderValueMatches(upstreamValue, localNode[candidate]),
 				);
 				if (match === undefined) {
 					issues.push(`${child} needs a per-project value`);
@@ -305,23 +308,23 @@ function collectTemplateIssues(
 				issues.push(`${child} is missing`);
 				continue;
 			}
-			collectTemplateIssues(goldenValue, localNode[key], child, issues, depth + 1);
+			collectTemplateIssues(upstreamValue, localNode[key], child, issues, depth + 1);
 		}
 		return;
 	}
-	if (Array.isArray(goldenNode)) {
+	if (Array.isArray(upstreamNode)) {
 		const label = path === "" ? "value" : path;
 		if (!Array.isArray(localNode)) {
 			issues.push(`${label} should be an array`);
 			return;
 		}
-		if (localNode.length < goldenNode.length) {
+		if (localNode.length < upstreamNode.length) {
 			issues.push(`${label} is missing entries`);
 		}
-		const shared = Math.min(goldenNode.length, localNode.length);
+		const shared = Math.min(upstreamNode.length, localNode.length);
 		for (let index = 0; index < shared; index += 1) {
 			collectTemplateIssues(
-				goldenNode[index],
+				upstreamNode[index],
 				localNode[index],
 				`${label}[${index}]`,
 				issues,
@@ -336,23 +339,23 @@ function collectTemplateIssues(
 		}
 		return;
 	}
-	if (!deepEqual(goldenNode, localNode)) {
-		issues.push(`${path === "" ? "value" : path} differs from the golden`);
+	if (!deepEqual(upstreamNode, localNode)) {
+		issues.push(`${path === "" ? "value" : path} differs from the upstream`);
 	}
 }
 
 function semanticResult(args: SemanticArgs): CheckResult | undefined {
-	const template = isTemplateGolden(args.golden);
+	const template = isTemplateUpstream(args.upstream);
 	const needsJson = template || hasCompareRules(args.compare);
-	let goldenParsed: unknown;
+	let upstreamParsed: unknown;
 	try {
-		goldenParsed = parseJsonc(args.golden);
+		upstreamParsed = parseJsonc(args.upstream);
 	} catch {
 		if (template) {
 			return failManual(
 				args.base,
 				args.localText,
-				args.golden,
+				args.upstream,
 				`Blueprint ${args.fileName} is not valid JSON; cannot compare.`,
 			);
 		}
@@ -360,18 +363,18 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 			return failManual(
 				args.base,
 				args.localText,
-				args.golden,
-				`Cannot apply compare rules for ${args.fileName}: the golden is not a JSON object; fix the blueprint manually.`,
+				args.upstream,
+				`Cannot apply compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
 			);
 		}
 		return undefined;
 	}
-	if (!isRecord(goldenParsed) && !Array.isArray(goldenParsed)) {
+	if (!isRecord(upstreamParsed) && !Array.isArray(upstreamParsed)) {
 		if (template) {
 			return failManual(
 				args.base,
 				args.localText,
-				args.golden,
+				args.upstream,
 				`Blueprint ${args.fileName} is not an object; cannot compare.`,
 			);
 		}
@@ -379,8 +382,8 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 			return failManual(
 				args.base,
 				args.localText,
-				args.golden,
-				`Cannot apply compare rules for ${args.fileName}: the golden is not a JSON object; fix the blueprint manually.`,
+				args.upstream,
+				`Cannot apply compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
 			);
 		}
 		return undefined;
@@ -393,7 +396,7 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 			return failManual(
 				args.base,
 				"<unparsable>",
-				args.golden,
+				args.upstream,
 				`Cannot parse ${args.targetPath} as JSON; fix the syntax manually.`,
 			);
 		}
@@ -401,64 +404,64 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 	}
 	if (template) {
 		const differing: string[] = [];
-		if (isRecord(goldenParsed) && isRecord(localParsed) && hasCompareRules(args.compare)) {
+		if (isRecord(upstreamParsed) && isRecord(localParsed) && hasCompareRules(args.compare)) {
 			collectTemplateIssues(
-				omitKeys(goldenParsed, args.compare.ignore),
+				omitKeys(upstreamParsed, args.compare.ignore),
 				omitKeys(localParsed, args.compare.ignore),
 				"",
 				differing,
 				0,
 			);
 		} else {
-			collectTemplateIssues(goldenParsed, localParsed, "", differing, 0);
+			collectTemplateIssues(upstreamParsed, localParsed, "", differing, 0);
 		}
 		if (differing.length > 0) {
 			return failManual(
 				args.base,
 				`fields differ from the template: ${differing.join(", ")}`,
 				"template with per-project values (no <...> placeholders)",
-				`Reconcile ${args.targetPath} with the ${args.fileName} blueprint (keeping per-project values where the golden uses <...> placeholders), then re-run check.`,
+				`Reconcile ${args.targetPath} with the ${args.fileName} blueprint (keeping per-project values where the upstream uses <...> placeholders), then re-run check.`,
 			);
 		}
-		return pass(args.base, "matches template", args.golden);
+		return pass(args.base, "matches template", args.upstream);
 	}
-	if (!isRecord(goldenParsed) || !isRecord(localParsed)) {
+	if (!isRecord(upstreamParsed) || !isRecord(localParsed)) {
 		return failManual(
 			args.base,
 			args.localText,
-			args.golden,
+			args.upstream,
 			`Cannot apply compare rules for ${args.fileName}: both files must be JSON objects; reconcile manually.`,
 		);
 	}
-	return overlayResult({ ...args, goldenRest: goldenParsed, localRest: localParsed });
+	return overlayResult({ ...args, localRest: localParsed, upstreamRest: upstreamParsed });
 }
 
-function unreadableTarget(base: CheckBase, golden: string, targetPath: string, error: string) {
+function unreadableTarget(base: CheckBase, upstream: string, targetPath: string, error: string) {
 	return failManual(
 		base,
 		"<unreadable>",
-		golden,
+		upstream,
 		`Cannot read ${targetPath} (may need sudo): ${error}`,
 	);
 }
 
-export async function checkProjectFileWithGolden(args: {
+export async function checkProjectFileWithUpstream(args: {
 	blueprint: string;
 	compare?: ManifestCompare;
 	fileName: string;
 	fileTarget: string;
-	golden: string;
+	upstream: string;
 	scope: CheckScope;
 	sourceLabel: string;
 	targetPath: string;
 }): Promise<CheckResult> {
 	const base = baseFor(args.blueprint, args.fileName, args.fileTarget, args.scope);
 	const compare = { ...EMPTY_COMPARE, ...args.compare };
-	const template = isTemplateGolden(args.golden);
+	const template = isTemplateUpstream(args.upstream);
 	const targetRead = await readFileSafe(args.targetPath);
 	if (!targetRead.ok) {
 		if (targetRead.reason !== "missing") {
-			return unreadableTarget(base, args.golden, args.targetPath, targetRead.error);
+			return unreadableTarget(base, args.upstream, args.targetPath, targetRead.error);
 		}
 		if (template) {
 			return failManual(
@@ -468,17 +471,17 @@ export async function checkProjectFileWithGolden(args: {
 				`Copy ${args.sourceLabel} to ${args.targetPath}, adapt per-project fields, then re-run check.`,
 			);
 		}
-		return failFixable(base, "<missing>", args.golden, {
+		return failFixable(base, "<missing>", args.upstream, {
 			filePath: args.targetPath,
 			kind: "overwrite-file",
-			newContent: args.golden,
+			newContent: args.upstream,
 		});
 	}
 	// Templates never pass on byte equality: a verbatim copy still holds
 	// placeholders, so it must go through the semantic path and fail manual
-	// until every golden `<...>` slot is replaced with per-project values.
+	// until every upstream `<...>` slot is replaced with per-project values.
 	if (template) {
-		const unadapted = goldenPlaceholders(args.golden).filter((token) =>
+		const unadapted = upstreamPlaceholders(args.upstream).filter((token) =>
 			targetRead.text.includes(token),
 		);
 		if (unadapted.length > 0) {
@@ -489,39 +492,39 @@ export async function checkProjectFileWithGolden(args: {
 				`Replace ${unadapted.join(", ")} in ${args.targetPath} with per-project values (copied from ${args.sourceLabel}), then re-run check.`,
 			);
 		}
-	} else if (targetRead.text === args.golden) {
-		return pass(base, "matches golden", args.golden);
+	} else if (targetRead.text === args.upstream) {
+		return pass(base, "matches upstream", args.upstream);
 	}
 	if (template || hasCompareRules(compare)) {
 		const semantic = semanticResult({
 			base,
 			compare,
 			fileName: args.fileName,
-			golden: args.golden,
 			localText: targetRead.text,
 			targetPath: args.targetPath,
+			upstream: args.upstream,
 		});
 		if (semantic !== undefined) {
 			return semantic;
 		}
 	}
-	const trimmedGolden = args.golden.trimStart();
+	const trimmedUpstream = args.upstream.trimStart();
 	if (
-		(trimmedGolden.startsWith("{") || trimmedGolden.startsWith("[")) &&
-		goldenPlaceholders(args.golden).length === 0 &&
-		containsPlaceholderText(args.golden)
+		(trimmedUpstream.startsWith("{") || trimmedUpstream.startsWith("[")) &&
+		upstreamPlaceholders(args.upstream).length === 0 &&
+		containsPlaceholderText(args.upstream)
 	) {
 		return failManual(
 			base,
 			targetRead.text,
-			args.golden,
+			args.upstream,
 			`Blueprint ${args.fileName} is not valid JSON; cannot compare.`,
 		);
 	}
-	return failFixable(base, targetRead.text, args.golden, {
+	return failFixable(base, targetRead.text, args.upstream, {
 		filePath: args.targetPath,
 		kind: "overwrite-file",
-		newContent: args.golden,
+		newContent: args.upstream,
 	});
 }
 

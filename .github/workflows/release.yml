@@ -1,14 +1,12 @@
-name: publish
+name: release
 
 on:
   push:
     branches:
-      - stable
-
-permissions: {}
+      - main
 
 concurrency:
-  group: publish-stable
+  group: release-main
   cancel-in-progress: false
 
 jobs:
@@ -22,24 +20,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - run: bun install
-      - run: bun run build
-      # No-ops when there is nothing to version; opens/updates the
-      # version PR (CHANGELOG.md + package.json bump) otherwise.
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      # No-ops when there is nothing to version; otherwise bumps
+      # package.json and prepends the new entries to CHANGELOG.md.
       - uses: changesets/action/version@v2
         with:
           commit-message: "chore: version packages"
-      # No-ops unless the version PR just merged; then publishes to
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: bun run build
+      # No-ops unless the version step just bumped; then publishes to
       # npm and creates the GitHub release from CHANGELOG/version.
-      - id: publish
-        uses: changesets/action/publish@v2
+      - uses: changesets/action/publish@v2
         with:
           create-github-releases: true
         env:

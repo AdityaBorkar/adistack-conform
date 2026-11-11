@@ -1,6 +1,6 @@
 # Glossary-compliance renames are breaking (v1 major)
 
-Kind `preset` → `project`, `partitionResults.unfixable` / `reportUnfixable` → `manual` / `reportManual`, `--config` → `--desired-state`, `checkPresetFileWithGolden` → `checkProjectFileWithGolden`, `GithubPreset` / `fetchGithubPreset` → `GithubSettings` / `fetchGithubSettings`, and all user strings (`preset file` → `blueprint file`, `preset template` → `template`, content matches → `golden`) were renamed at once to comply with `GLOSSARY.md` Avoid rules, because the glossary is the shared language and the code was teaching three synonyms for every term.
+Kind `preset` → `project`, `partitionResults.unfixable` / `reportUnfixable` → `manual` / `reportManual`, `--config` → `--desired-state`, `checkPresetFileWithUpstream` → `checkProjectFileWithUpstream`, `GithubPreset` / `fetchGithubPreset` → `GithubSettings` / `fetchGithubSettings`, and all user strings (`preset file` → `blueprint file`, `preset template` → `template`, content matches → `upstream`) were renamed at once to comply with `GLOSSARY.md` Avoid rules, because the glossary is the shared language and the code was teaching three synonyms for every term.
 
 ## Consequences
 

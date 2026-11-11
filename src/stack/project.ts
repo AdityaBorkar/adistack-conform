@@ -1,4 +1,4 @@
-import { checkFileStructureEntry, checkProjectFileWithGolden } from "#/stack/project-compare.js";
+import { checkFileStructureEntry, checkProjectFileWithUpstream } from "#/stack/project-compare.js";
 import type {
 	ManifestCompare,
 	ManifestFile,
@@ -12,7 +12,7 @@ import type { ProjectRunState } from "#/utils/config.js";
 import { errorMessage, resolveTargetPath } from "#/utils/fs.js";
 import { failManual, skipped, type CheckResult, type CheckScope } from "#/utils/result.js";
 
-export const GOLDEN_FETCH_CONCURRENCY = 16;
+export const UPSTREAM_FETCH_CONCURRENCY = 16;
 
 export interface TechStackRunOptions {
 	baseDir: string;
@@ -54,23 +54,23 @@ function collectNeeded(
 	return needed;
 }
 
-async function fetchGoldens(
+async function fetchUpstreams(
 	id: string,
 	ref: string,
 	needed: readonly NeededFile[],
 ): Promise<Map<string, { error?: string; text?: string }>> {
-	const goldens = new Map<string, { error?: string; text?: string }>();
+	const upstreams = new Map<string, { error?: string; text?: string }>();
 	const toFetch = [...new Set(needed.map((item) => item.sourceRel))];
-	await mapWithConcurrency(toFetch, GOLDEN_FETCH_CONCURRENCY, async (rel) => {
+	await mapWithConcurrency(toFetch, UPSTREAM_FETCH_CONCURRENCY, async (rel) => {
 		try {
-			goldens.set(rel, {
+			upstreams.set(rel, {
 				text: await fetchTextOrThrow(rawUrl(id, ref, rel), `blueprint file ${rel}`),
 			});
 		} catch (error) {
-			goldens.set(rel, { error: errorMessage(error) });
+			upstreams.set(rel, { error: errorMessage(error) });
 		}
 	});
-	return goldens;
+	return upstreams;
 }
 
 function isNotFoundError(message: string): boolean {
@@ -79,13 +79,13 @@ function isNotFoundError(message: string): boolean {
 
 function checkNeeded(
 	needed: readonly NeededFile[],
-	goldens: Map<string, { error?: string; text?: string }>,
+	upstreams: Map<string, { error?: string; text?: string }>,
 	scope: CheckScope,
 ): Promise<CheckResult[]> {
 	return Promise.all(
 		needed.map((item): Promise<CheckResult> => {
-			const golden = goldens.get(item.sourceRel);
-			if (golden?.text === undefined) {
+			const upstream = upstreams.get(item.sourceRel);
+			if (upstream?.text === undefined) {
 				const base = {
 					id: `project:${item.blueprint}:${item.fileName}`,
 					kind: "project",
@@ -93,13 +93,13 @@ function checkNeeded(
 					source: `tech-stack:${item.blueprint}`,
 					target: item.fileTarget,
 				} as const;
-				if (golden?.error !== undefined && !isNotFoundError(golden.error)) {
+				if (upstream?.error !== undefined && !isNotFoundError(upstream.error)) {
 					return Promise.resolve(
 						failManual(
 							base,
 							"<blueprint fetch failed>",
 							item.sourceRel,
-							`Cannot fetch blueprint ${item.sourceRel}: ${golden.error}`,
+							`Cannot fetch blueprint ${item.sourceRel}: ${upstream.error}`,
 						),
 					);
 				}
@@ -112,15 +112,15 @@ function checkNeeded(
 					),
 				);
 			}
-			return checkProjectFileWithGolden({
+			return checkProjectFileWithUpstream({
 				blueprint: item.blueprint,
 				compare: item.compare,
 				fileName: item.fileName,
 				fileTarget: item.fileTarget,
-				golden: golden.text as string,
 				scope,
 				sourceLabel: item.sourceLabel,
 				targetPath: item.targetPath,
+				upstream: upstream.text as string,
 			});
 		}),
 	);
@@ -139,8 +139,8 @@ async function runWithManifest(
 		registry,
 	);
 	const needed = collectNeeded(state.blueprint, files, options, onlyIds);
-	const goldens = await fetchGoldens(state.id, state.ref, needed);
-	const enforced = await checkNeeded(needed, goldens, options.scope);
+	const upstreams = await fetchUpstreams(state.id, state.ref, needed);
+	const enforced = await checkNeeded(needed, upstreams, options.scope);
 	const structured = await checkFileStructure(state.blueprint, files, structure, options, onlyIds);
 	return [...enforced, ...structured];
 }

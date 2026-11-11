@@ -1,4 +1,7 @@
 {
-	"baseBranch": "stable",
-	"privatePackages": true
+	"$schema": "../node_modules/@changesets/config/schema.json",
+	"baseBranch": "main",
+	"updateInternalDependencies": "patch",
+	"commit": true,
+	"changedFilePatterns": ["src/*", "skills/*", "package.json", "!**/*.test.ts"]
 }

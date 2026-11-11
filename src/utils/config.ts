@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 
-import { ConformSchema } from "#/schemas/conform.js";
+import { ConformSchema } from "#/schemas/config.js";
 import { readJsonFile, resolveDesiredStatePath } from "#/utils/fs.js";
 import { parseOrThrow } from "#/utils/schema.js";
 

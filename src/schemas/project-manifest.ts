@@ -17,7 +17,7 @@ const ManifestFileSchema = z
 			.string()
 			.min(1)
 			.describe(
-				"Repo-relative source path of the golden file (e.g. projects/files/<group>/<file>).",
+				"Repo-relative source path of the upstream file (e.g. projects/files/<group>/<file>).",
 			),
 		target: z.string().min(1).describe("Enforcement target."),
 	})

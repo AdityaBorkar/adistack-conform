@@ -4,4 +4,4 @@ The `github` scope compares live repo settings against the settings file referen
 
 ## Consequences
 
-One result per golden key (`github:<blueprint>:<name>`, `kind: github`); items with no public API (social preview, archive toggles, Copilot Autofix, agent suggestions, OIDC-only checks) skip with a UI hint; non-TTY `fix --all` refuses `github-api`/`run-command` fixes; scope throw becomes `<scope>:internal-error` drift (exit 1).
+One result per upstream key (`github:<blueprint>:<name>`, `kind: github`); items with no public API (social preview, archive toggles, Copilot Autofix, agent suggestions, OIDC-only checks) skip with a UI hint; non-TTY `fix --all` refuses `github-api`/`run-command` fixes; scope throw becomes `<scope>:internal-error` drift (exit 1).

@@ -144,7 +144,7 @@ export async function fetchGithubSettings(
 	registry: RegistryDocument,
 ): Promise<{
 	githubRel: string;
-	golden: z.infer<typeof GithubSchema>;
+	upstream: z.infer<typeof GithubSchema>;
 }> {
 	const entry = findGithubEntry(blueprint, registry);
 	if (entry === undefined) {
@@ -154,6 +154,6 @@ export async function fetchGithubSettings(
 	}
 	const rel = blueprintRel(entry.path);
 	const parsed = await fetchJsonc(rawUrl(id, ref, rel), `github settings ${blueprint}`);
-	const golden = parseOrThrow(GithubSchema, `${rel} (remote)`, parsed, "github settings");
-	return { githubRel: rel, golden };
+	const upstream = parseOrThrow(GithubSchema, `${rel} (remote)`, parsed, "github settings");
+	return { githubRel: rel, upstream };
 }
