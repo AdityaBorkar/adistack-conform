@@ -5,8 +5,6 @@ on:
     branches:
       - stable
 
-permissions: {}
-
 concurrency:
   group: publish-stable
   cancel-in-progress: false

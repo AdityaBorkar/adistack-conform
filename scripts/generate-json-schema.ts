@@ -8,16 +8,16 @@ import { GithubSchema } from "#/schemas/github-settings.js";
 import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 
-const OUTPUT_DIR = join(import.meta.dir, "..", "configuration_schema");
-
-const TARGETS = {
-	"conform.json": ConformSchema,
-	"github.json": GithubSchema,
-	"project-manifest.json": ManifestSchema,
-	"registry.json": RegistrySchema,
-} as const;
-
 export async function generateJsonSchema() {
+	const OUTPUT_DIR = join(import.meta.dir, "..", "config");
+
+	const TARGETS = {
+		"schema.json": ConformSchema,
+		"github-manifest.json": GithubSchema,
+		"project-manifest.json": ManifestSchema,
+		"registry.json": RegistrySchema,
+	} as const;
+
 	await mkdir(OUTPUT_DIR, { recursive: true });
 
 	await Promise.all(

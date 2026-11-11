@@ -1,9 +1,13 @@
-name: pr
+name: preview
 
 on:
   pull_request:
     branches:
       - stable
+
+concurrency:
+  group: preview-stable-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   checks:

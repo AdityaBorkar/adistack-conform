@@ -2,6 +2,7 @@
 .local
 .output
 .tanstack
+config
 node_modules
 
 .env*
