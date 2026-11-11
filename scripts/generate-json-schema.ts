@@ -12,10 +12,10 @@ export async function generateJsonSchema() {
 	const OUTPUT_DIR = join(import.meta.dir, "..", "config");
 
 	const TARGETS = {
-		"schema.json": ConformSchema,
 		"github-manifest.json": GithubSchema,
 		"project-manifest.json": ManifestSchema,
 		"registry.json": RegistrySchema,
+		"schema.json": ConformSchema,
 	} as const;
 
 	await mkdir(OUTPUT_DIR, { recursive: true });
@@ -28,8 +28,4 @@ export async function generateJsonSchema() {
 			console.log(`Wrote ${outPath}`);
 		}),
 	);
-}
-
-if (import.meta.main) {
-	await generateJsonSchema();
 }

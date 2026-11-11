@@ -25,15 +25,13 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: |
             ${{ runner.os }}-bun-
-      - run: bun install
+      - run: bun install --frozen-lockfile
       # No-ops when there is nothing to version; otherwise bumps
       # package.json and prepends the new entries to CHANGELOG.md.
       - uses: changesets/action/version@v2
@@ -44,8 +42,7 @@ jobs:
       - run: bun run build
       # No-ops unless the version step just bumped; then publishes to
       # npm and creates the GitHub release from CHANGELOG/version.
-      - id: publish
-        uses: changesets/action/publish@v2
+      - uses: changesets/action/publish@v2
         with:
           create-github-releases: true
         env:

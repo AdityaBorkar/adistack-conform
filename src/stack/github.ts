@@ -30,7 +30,6 @@ import { failManual, skipped } from "#/utils/result.js";
 export { forkApprovalPolicy } from "#/stack/github/actions.js";
 export { protectionPutBody } from "#/stack/github/protection.js";
 export { isPrivateVulnEnabled } from "#/stack/github/security.js";
-export type { GithubSettings };
 
 function parseRepoSlug(text: string): string | undefined {
 	const cleaned = text
