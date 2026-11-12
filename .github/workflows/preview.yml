@@ -50,23 +50,58 @@ jobs:
               pull_number: issue_number,
               per_page: 100,
             });
-            const files = changed
-              .filter((f) => f.status !== 'removed')
-              .map((f) => f.filename)
-              .filter((f) => f.startsWith('.changeset/') && f.endsWith('.md') && f !== '.changeset/README.md');
+            const touched = changed.filter(
+              (f) =>
+                f.filename.startsWith('.changeset/') &&
+                f.filename.endsWith('.md') &&
+                f.filename !== '.changeset/README.md',
+            );
+
+            const bumpOf = (text) => text.match(/["']@adistack\/conform["']\s*:\s*(major|minor|patch)/)?.[1];
+            const bodyOf = (text) => text.replace(/^---[\s\S]*?---/, '').trim();
+            const linesOf = (patch, sign, header) =>
+              (patch ?? '')
+                .split('\n')
+                .filter((l) => l.startsWith(sign) && !l.startsWith(header))
+                .map((l) => l.slice(1))
+                .join('\n');
+            // PR-head content, only as fallback (bump/frontmatter untouched by the PR). '' on failure (e.g. forks).
+            const headOf = async (path) => {
+              try {
+                const { data } = await github.rest.repos.getContent({ ...context.repo, path, ref });
+                return Buffer.from(data.content, 'base64').toString('utf8');
+              } catch {
+                return '';
+              }
+            };
+            // Next version if only this PR's changesets released (mirrors the Version Packages PR header).
+            const nextVersion = (version, bump) => {
+              const m = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(.*)$/);
+              if (!m) return null;
+              let [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
+              if (bump === 'major') [major, minor, patch] = [major + 1, 0, 0];
+              else if (bump === 'minor') [minor, patch] = [minor + 1, 0];
+              else patch += 1;
+              return `${major}.${minor}.${patch}${m[4]}`;
+            };
 
             let body;
+            // Delta-only: added lines per file (removed lines for deletions), never full file content.
             const parsed = await Promise.all(
-              files.map(async (f) => {
-                const { data } = await github.rest.repos.getContent({ ...context.repo, path: f, ref });
-                const raw = Buffer.from(data.content, 'base64').toString('utf8');
-                const bump = raw.match(/["']@adistack\/conform["']\s*:\s*(major|minor|patch)/)?.[1];
-                const text = raw.replace(/^---[\s\S]*?---/, '').trim().split('\n').slice(0, 10).join('\n  > ');
-                return { bump, f, text };
+              touched.map(async (f) => {
+                if (f.status === 'removed') {
+                  const gone = linesOf(f.patch, '-', '--- ');
+                  return { bump: bumpOf(gone), f: f.filename, label: 'deleted', text: bodyOf(gone) };
+                }
+                const head = await headOf(f.filename);
+                const delta = linesOf(f.patch, '+', '+++ ');
+                const bump = bumpOf(delta) ?? bumpOf(head);
+                return { bump, f: f.filename, label: f.status, text: bodyOf(delta || head) };
               }),
             );
-            const releasing = parsed.filter((p) => p.bump);
-            if (releasing.length === 0) {
+            const releasing = parsed.filter((p) => p.bump && p.label !== 'deleted');
+            const deleted = parsed.filter((p) => p.label === 'deleted');
+            if (releasing.length === 0 && deleted.length === 0) {
               const { version } = JSON.parse(await readFile('package.json', 'utf8'));
               body = [
                 MARKER,
@@ -76,21 +111,46 @@ jobs:
                 '',
                 'Add a `.changeset/*.md` file.',
               ].join('\n');
-            } else {
-              const rank = { patch: 0, minor: 1, major: 2 };
-              let top = 'patch';
-              for (const { bump } of releasing) if (rank[bump] > rank[top]) top = bump;
+            } else if (releasing.length === 0) {
               body = [
                 MARKER,
                 '## Release preview',
                 '',
-                `**Change type:** \`${top.toUpperCase()}\``,
+                'Changed changesets in this PR:',
                 '',
-                '### Changelog preview (this PR only)',
+                ...deleted.map(({ f }) => `- \`${f}\` (deleted)`),
                 '',
-                ...releasing.map(({ f, bump, text }) => `- \`${f}\` (${bump})\n  > ${text}`),
+                'This PR only removes changesets — merge will not release.',
+              ].join('\n');
+            } else {
+              const rank = { patch: 0, minor: 1, major: 2 };
+              let top = 'patch';
+              for (const { bump } of releasing) if (rank[bump] > rank[top]) top = bump;
+              const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+              const next = nextVersion(version, top);
+              const group = (title, bump) => {
+                const items = releasing.filter((p) => p.bump === bump);
+                if (items.length === 0) return [];
+                return [`### ${title}`, '', ...items.map(({ text }) => `- ${text.replaceAll('\n', '\n  ')}`), ''];
+              };
+              body = [
+                MARKER,
+                '## Release preview',
                 '',
-                'Note: Only changesets changed in this PR are shown — other unreleased changesets on `main` are excluded.',
+                `**Change type:** \`${top.toUpperCase()}\`${next ? ` → \`@adistack/conform@${next}\`` : ''}`,
+                '',
+                'Changed changesets in this PR:',
+                '',
+                ...releasing.map(({ f, bump, label }) => `- \`${f}\` (${bump}, ${label})`),
+                ...deleted.map(({ f, bump }) => `- \`${f}\` (deleted${bump ? `, was ${bump}` : ''})`),
+                '',
+                '### Changelog preview',
+                '',
+                `## @adistack/conform@${next ?? version}`,
+                '',
+                ...group('Major Changes', 'major'),
+                ...group('Minor Changes', 'minor'),
+                ...group('Patch Changes', 'patch'),
               ].join('\n');
             }
 
