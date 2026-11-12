@@ -2,4 +2,17 @@
 "@adistack/conform": minor
 ---
 
-Harden check and fix against untrusted blueprints and hostile input: `GITHUB_TOKEN` is no longer forwarded on cross-origin redirects; registry/blueprint `source` paths reject `..`/empty segments; `owner/repo` and `ref` values are validated before building URLs; file fixes refuse symlink targets and non-TTY `--all` refuses writes outside the project dir; backups are versioned instead of overwritten; `compare.ignore` on non-JSON files and array-root template upstreams report manual instead of overwriting; template matching is linear-time with a depth cap; `conform.json`, registry, and settings schemas are strict with sane bounds; GitHub checks share one repo read, run at most 6-wide with retries, and report per-check auth skips; `validate` prints failures to stderr and checks machine entry paths; `fix` uses its own timeout with SIGKILL escalation and stdin detached; `--version` comes from `package.json` at build time.
+Harden `check` and `fix` against untrusted blueprints and hostile input
+
+- Never forward `GITHUB_TOKEN` on cross-origin redirects
+- Reject `..` and empty segments in registry and blueprint `source` paths
+- Validate `owner/repo` and `ref` values before building URLs
+- Refuse symlink targets in file fixes; non-TTY `--all` refuses writes outside the project directory
+- Version backup files instead of overwriting them
+- Report `manual` instead of overwriting for `compare.ignore` on non-JSON files and array-root template upstreams
+- Match templates in linear time with a depth cap
+- Use strict `conform.json`, registry, and settings schemas with sane bounds
+- Share one repo read across GitHub checks, run at most 6-wide with retries, and report per-check auth skips
+- Print `validate` failures to stderr and check machine entry paths
+- Give `fix` its own timeout with SIGKILL escalation and detached stdin
+- Read `--version` from `package.json` at build time

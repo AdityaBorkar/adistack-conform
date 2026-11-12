@@ -1,5 +1,15 @@
 ---
-"@adistack/conform": major
+"@adistack/conform": minor
 ---
 
-feat!: rename glossary-violating identifiers and strings (`kind: preset` to `project`, `unfixable` to `manual`, `--config` to `--desired-state`, `GithubPreset` to `GithubSettings`, `--json` `configs` to `desiredStates`); rewrite ADRs 0001/0003 to Zod and ignore-only compare; document `validate`, `file_structure`, template, non-TTY, and recheck semantics
+Rename glossary-violating identifiers and strings
+
+BREAKING: the following names change — update configs and scripts accordingly.
+
+- `kind: preset` → `kind: project`
+- `unfixable` result → `manual`
+- `--config` flag → `--desired-state`
+- `GithubPreset` type → `GithubSettings`
+- `--json` output `configs` key → `desiredStates`
+- Rewrite ADRs 0001 and 0003 around Zod schemas and ignore-only compare
+- Document `validate`, `file_structure`, template, non-TTY, and recheck semantics
