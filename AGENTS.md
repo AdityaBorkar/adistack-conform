@@ -18,7 +18,7 @@ bun run check:conform                # dogfood self-check (bun dev check); also 
 ```
 
 - Always `bun run <script>`, never `npm`/`npx` (`bunfig.toml` sets `shell = "bun"`, plus `ignore-scripts=true`, `exact=true`, `minimumReleaseAge=3d`).
-- CI (`preview.yml` on PRs to `main`) runs `bun run verify` plus `bun changeset status --since origin/main`.
+- CI (`preview.yml` on PRs to `main`) runs `bun run verify` and posts a release-preview comment derived from `.changeset/*.md`.
 - Never hand-edit `config/*.json` — generated from `src/schemas/*` by `scripts/generate-json-schema.ts` (runs inside `build`). There is no standalone `gen:json-schema` script.
 - Pre-commit runs `bun fmt --staged` (Bun's builtin formatter, not oxfmt). Commits must pass commitlint with types restricted to `chore docs feat fix refactor release revert test` (see `.commitlintrc.json`).
 
