@@ -2,4 +2,7 @@
 "@adistack/conform": minor
 ---
 
-feat: add `validate` command checking registry.json and blueprint manifest.json files
+Add `validate` command
+
+- Checks `registry.json` for structural errors
+- Checks blueprint `manifest.json` files for structural errors

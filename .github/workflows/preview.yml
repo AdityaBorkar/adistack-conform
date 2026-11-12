@@ -11,14 +11,13 @@ concurrency:
 
 jobs:
   checks:
+    if: github.head_ref != 'changeset-release/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - uses: actions/cache@v4
         with:
@@ -28,70 +27,141 @@ jobs:
             ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
       - run: bun run verify
-      - if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'changeset-release/')
-        run: bun changeset status --since origin/main
-      - uses: actions/github-script@v7
-        env:
-          HEAD_REF: ${{ github.head_ref }}
+
+  pr-comments:
+    if: github.head_ref != 'changeset-release/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v9
         with:
           script: |
-            const { execSync } = require('child_process');
-            const fs = require('fs');
-            const MARKER = '<!-- release-preview -->';
-            const headRef = process.env.HEAD_REF || '';
-            const isVersionPR = headRef.startsWith('changeset-release/');
-            const out = (cmd) => execSync(cmd, { encoding: 'utf8' }).trim();
-            execSync('git fetch origin main:refs/remotes/origin/main', { stdio: 'inherit' });
-            const changed = out('git diff --name-only origin/main...HEAD')
-              .split('\n').map((s) => s.trim()).filter(Boolean);
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const { readFile } = await import('node:fs/promises');
 
-            const bumpRank = { patch: 0, minor: 1, major: 2 };
+            const MARKER = '<!-- PREVIEW-RELEASE -->';
+            const issue_number = context.issue.number;
+            const ref = context.payload.pull_request.head.sha;
+            const changed = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: issue_number,
+              per_page: 100,
+            });
+            const touched = changed.filter(
+              (f) =>
+                f.filename.startsWith('.changeset/') &&
+                f.filename.endsWith('.md') &&
+                f.filename !== '.changeset/README.md',
+            );
+
+            const bumpOf = (text) => text.match(/["']@adistack\/conform["']\s*:\s*(major|minor|patch)/)?.[1];
+            const bodyOf = (text) => text.replace(/^---[\s\S]*?---/, '').trim();
+            const linesOf = (patch, sign, header) =>
+              (patch ?? '')
+                .split('\n')
+                .filter((l) => l.startsWith(sign) && !l.startsWith(header))
+                .map((l) => l.slice(1))
+                .join('\n');
+            // PR-head content, only as fallback (bump/frontmatter untouched by the PR). '' on failure (e.g. forks).
+            const headOf = async (path) => {
+              try {
+                const { data } = await github.rest.repos.getContent({ ...context.repo, path, ref });
+                return Buffer.from(data.content, 'base64').toString('utf8');
+              } catch {
+                return '';
+              }
+            };
+            // Next version if only this PR's changesets released (mirrors the Version Packages PR header).
+            const nextVersion = (version, bump) => {
+              const m = version.trim().match(/^(\d+)\.(\d+)\.(\d+)(.*)$/);
+              if (!m) return null;
+              let [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
+              if (bump === 'major') [major, minor, patch] = [major + 1, 0, 0];
+              else if (bump === 'minor') [minor, patch] = [minor + 1, 0];
+              else patch += 1;
+              return `${major}.${minor}.${patch}${m[4]}`;
+            };
 
             let body;
-            if (isVersionPR) {
-              const changelog = fs.existsSync('CHANGELOG.md')
-                ? fs.readFileSync('CHANGELOG.md', 'utf8').split('\n').slice(0, 40).join('\n')
-                : '_No CHANGELOG.md yet._';
-              body = `${MARKER}\n## Release preview (version PR)\n\n**Package version:** \`${pkg.version}\`\n\n### CHANGELOG.md (head)\n\n${changelog}`;
+            // Delta-only: added lines per file (removed lines for deletions), never full file content.
+            const parsed = await Promise.all(
+              touched.map(async (f) => {
+                if (f.status === 'removed') {
+                  const gone = linesOf(f.patch, '-', '--- ');
+                  return { bump: bumpOf(gone), f: f.filename, label: 'deleted', text: bodyOf(gone) };
+                }
+                const head = await headOf(f.filename);
+                const delta = linesOf(f.patch, '+', '+++ ');
+                const bump = bumpOf(delta) ?? bumpOf(head);
+                return { bump, f: f.filename, label: f.status, text: bodyOf(delta || head) };
+              }),
+            );
+            const releasing = parsed.filter((p) => p.bump && p.label !== 'deleted');
+            const deleted = parsed.filter((p) => p.label === 'deleted');
+            if (releasing.length === 0 && deleted.length === 0) {
+              const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+              body = [
+                MARKER,
+                '## Release preview',
+                '',
+                `**Package version:** \`${version}\` (no changesets for \`@adistack/conform\` — merge will not release).`,
+                '',
+                'Add a `.changeset/*.md` file.',
+              ].join('\n');
+            } else if (releasing.length === 0) {
+              body = [
+                MARKER,
+                '## Release preview',
+                '',
+                'Changed changesets in this PR:',
+                '',
+                ...deleted.map(({ f }) => `- \`${f}\` (deleted)`),
+                '',
+                'This PR only removes changesets — merge will not release.',
+              ].join('\n');
             } else {
-              const files = changed.filter((f) =>
-                f.startsWith('.changeset/') && f.endsWith('.md') && !f.endsWith('README.md'));
-              if (files.length === 0) {
-                body = `${MARKER}\n## Release preview\n\n**Package version:** \`${pkg.version}\` (no changesets — merge will not release).\n\nAdd a \`.changeset/*.md\` file (\`changeset --empty\` for no-release changes).`;
-              } else {
-                let top = 'patch';
-                const entries = files.map((f) => {
-                  const raw = fs.readFileSync(f, 'utf8');
-                  const m = raw.match(/["']@adistack\/conform["']\s*:\s*(major|minor|patch)/);
-                  const bump = m ? m[1] : 'patch';
-                  if (bumpRank[bump] > bumpRank[top]) top = bump;
-                  const text = raw.replace(/^---[\s\S]*?---/, '').trim().split('\n').slice(0, 10).join('\n');
-                  return `- \`${f}\` (${bump})\n  > ${text.split('\n').join('\n  > ')}`;
-                });
-                body = `${MARKER}\n## Release preview\n\n**Change type:** \`${top.toUpperCase()}\`\n\n### Changelog preview (from changesets)\n\n${entries.join('\n')}\n\nMerging runs \`changeset version\` on \`main\`, which writes this into \`CHANGELOG.md\` + \`package.json\`.`;
-              }
+              const rank = { patch: 0, minor: 1, major: 2 };
+              let top = 'patch';
+              for (const { bump } of releasing) if (rank[bump] > rank[top]) top = bump;
+              const { version } = JSON.parse(await readFile('package.json', 'utf8'));
+              const next = nextVersion(version, top);
+              const group = (title, bump) => {
+                const items = releasing.filter((p) => p.bump === bump);
+                if (items.length === 0) return [];
+                return [`### ${title}`, '', ...items.map(({ text }) => `- ${text.replaceAll('\n', '\n  ')}`), ''];
+              };
+              body = [
+                MARKER,
+                '## Release preview',
+                '',
+                `**Change type:** \`${top.toUpperCase()}\`${next ? ` → \`@adistack/conform@${next}\`` : ''}`,
+                '',
+                'Changed changesets in this PR:',
+                '',
+                ...releasing.map(({ f, bump, label }) => `- \`${f}\` (${bump}, ${label})`),
+                ...deleted.map(({ f, bump }) => `- \`${f}\` (deleted${bump ? `, was ${bump}` : ''})`),
+                '',
+                '### Changelog preview',
+                '',
+                `## @adistack/conform@${next ?? version}`,
+                '',
+                ...group('Major Changes', 'major'),
+                ...group('Minor Changes', 'minor'),
+                ...group('Patch Changes', 'patch'),
+              ].join('\n');
             }
 
             const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
+              ...context.repo,
+              issue_number,
               per_page: 100,
             });
-            const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+            const existing = comments.find((c) => c.body?.includes(MARKER) && c.user?.login === 'github-actions[bot]');
             if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
             } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
+              await github.rest.issues.createComment({ ...context.repo, issue_number, body });
             }

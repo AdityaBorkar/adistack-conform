@@ -2,4 +2,9 @@
 "@adistack/conform": minor
 ---
 
-Drop `compare.required`: any upstream holding `<...>` placeholders is now a template on its own. Placeholder slots accept any per-project value (non-empty, no placeholders, matching the surrounding text) while every other field must match the upstream. Manifests are strict: unknown `required`/`pinned`/`directories` keys are rejected instead of ignored.
+Drop `compare.required` in favour of automatic template detection
+
+- Any upstream containing `<...>` placeholders is now a template — no `required` flag needed
+- Placeholder slots accept any per-project value that is non-empty, contains no placeholders, and matches the surrounding text
+- Every other field must exactly match the upstream
+- Manifests are strict: unknown `required`, `pinned`, and `directories` keys are rejected instead of ignored
