@@ -240,7 +240,7 @@ export async function recheckSelected(args: {
 						continue;
 					}
 					const scopedIds = new Set(
-						[...args.selectedIds].filter((id) => id === `nix:${state.blueprint}`),
+						[...args.selectedIds].filter((id) => id === `machine:${state.blueprint}`),
 					);
 					if (scopedIds.size > 0) {
 						reruns.push(

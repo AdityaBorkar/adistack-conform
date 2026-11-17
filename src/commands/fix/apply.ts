@@ -1,15 +1,15 @@
-import { applyGithubApiFix } from "#/stack/github-api.js";
+import { fixGithubApiFix } from "#/stack/github-api.js";
 import { errorMessage, readFileSafe, writeFileEnsuringDir } from "#/utils/fs.js";
 import type { CheckResult } from "#/utils/result.js";
 
 export const FIX_TIMEOUT_MS = 10 * 60_000;
 
-export async function applyFix(result: CheckResult): Promise<void> {
+export async function fixResult(result: CheckResult): Promise<void> {
 	if (!result.fix) {
 		throw new Error(`Result ${result.id} is not fixable.`);
 	}
 	if (result.fix.kind === "github-api") {
-		await applyGithubApiFix(result.fix);
+		await fixGithubApiFix(result.fix);
 		return;
 	}
 	if (result.fix.kind === "overwrite-file") {
@@ -72,7 +72,7 @@ async function backupExistingFile(filePath: string): Promise<string | undefined>
 	return backupPath;
 }
 
-async function applyOnce(item: CheckResult, written: Map<string, string>): Promise<boolean> {
+async function fixOnce(item: CheckResult, written: Map<string, string>): Promise<boolean> {
 	const fix = item.fix;
 	if (fix?.kind === "overwrite-file") {
 		const prior = written.get(fix.filePath);
@@ -87,17 +87,17 @@ async function applyOnce(item: CheckResult, written: Map<string, string>): Promi
 			return false;
 		}
 		const backup = await backupExistingFile(fix.filePath);
-		await applyFix(item);
+		await fixResult(item);
 		written.set(fix.filePath, fix.newContent);
 		console.log(`✓ fixed ${item.id}${backup === undefined ? "" : ` (backup: ${backup})`}`);
 		return true;
 	}
-	await applyFix(item);
+	await fixResult(item);
 	console.log(`✓ fixed ${item.id}`);
 	return true;
 }
 
-export async function applySelected(selected: CheckResult[]): Promise<number> {
+export async function fixSelected(selected: CheckResult[]): Promise<number> {
 	const byFile = new Map<string, CheckResult[]>();
 	const others: CheckResult[] = [];
 	for (const item of selected) {
@@ -111,15 +111,15 @@ export async function applySelected(selected: CheckResult[]): Promise<number> {
 	}
 	const ordered = [...[...byFile.values()].flat(), ...others];
 	const written = new Map<string, string>();
-	let applied = 0;
+	let fixed = 0;
 	for (const item of ordered) {
 		try {
-			if (await applyOnce(item, written)) {
-				applied += 1;
+			if (await fixOnce(item, written)) {
+				fixed += 1;
 			}
 		} catch (error) {
 			console.error(`✗ not fixed ${item.id}: ${errorMessage(error)}`);
 		}
 	}
-	return applied;
+	return fixed;
 }

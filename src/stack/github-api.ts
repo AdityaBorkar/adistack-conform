@@ -164,9 +164,9 @@ export function repoPath(repo: string, rest: string): string {
 	return `/repos/${repo}${rest}`;
 }
 
-export async function applyGithubApiFix(fix: GithubApiFix): Promise<void> {
+export async function fixGithubApiFix(fix: GithubApiFix): Promise<void> {
 	if (githubToken() === undefined) {
-		throw new Error(`Cannot apply ${fix.label}: set GITHUB_TOKEN with repo/admin scope.`);
+		throw new Error(`Cannot fix ${fix.label}: set GITHUB_TOKEN with repo/admin scope.`);
 	}
 	for (const step of fix.steps) {
 		await apiJson(step.path, { body: step.body, method: step.method });

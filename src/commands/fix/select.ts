@@ -15,7 +15,7 @@ export async function promptForSelection(fixable: CheckResult[]): Promise<Prompt
 		return { kind: "no-tty" };
 	}
 	const prompts = await import("@clack/prompts");
-	prompts.intro("Select fixes to apply (space to toggle, enter to confirm).");
+	prompts.intro("Select fixes to run (space to toggle, enter to confirm).");
 	const choice = await prompts.groupMultiselect({
 		message: "Pick items to fix.",
 		options: {

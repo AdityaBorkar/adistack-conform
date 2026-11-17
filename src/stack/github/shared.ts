@@ -10,8 +10,8 @@ export function baseFor(blueprint: string, name: string, target: string): CheckB
 		id: `github:${blueprint}:${name}`,
 		kind: "github",
 		scope: "github",
-		source: `tech-stack:${blueprint}`,
 		target,
+		upstream: `tech-stack:${blueprint}`,
 	};
 }
 

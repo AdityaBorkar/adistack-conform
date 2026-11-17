@@ -37,11 +37,11 @@ export interface CheckResult {
 	ok: boolean;
 	scope: CheckScope;
 	skipped?: boolean;
-	source?: string;
 	target: string;
+	upstream?: string;
 }
 
-export type CheckBase = Pick<CheckResult, "id" | "kind" | "scope" | "source" | "target">;
+export type CheckBase = Pick<CheckResult, "id" | "kind" | "scope" | "target" | "upstream">;
 
 export function isFixable(result: CheckResult): boolean {
 	return result.fix !== undefined;
@@ -52,7 +52,7 @@ export function pass(base: CheckBase, actual: string, expected: string): CheckRe
 }
 
 export function skipped(base: CheckBase, expected: string, reason: string): CheckResult {
-	return { actual: reason, expected, ok: true, skipped: true, ...base };
+	return { actual: reason, expected, ok: false, skipped: true, ...base };
 }
 
 export function failFixable(
@@ -78,7 +78,7 @@ export function partitionResults(results: CheckResult[]): {
 	fixable: CheckResult[];
 	manual: CheckResult[];
 } {
-	const failed = results.filter((item) => !item.ok);
+	const failed = results.filter((item) => !item.ok && item.skipped !== true);
 	return {
 		failed,
 		fixable: failed.filter((item) => isFixable(item)),

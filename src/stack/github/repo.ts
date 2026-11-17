@@ -158,8 +158,8 @@ export async function checkGeneral(
 	// has_discussions has no documented PATCH field; the fix covers the rest.
 	result.hint =
 		discussionsNote === ""
-			? "Apply with `fix` (needs GITHUB_TOKEN with admin scope)."
-			: "Apply with `fix` for the rest (needs GITHUB_TOKEN with admin scope); toggle Discussions in Settings → General → Features.";
+			? "Run `fix` (needs GITHUB_TOKEN with admin scope)."
+			: "Run `fix` for the rest (needs GITHUB_TOKEN with admin scope); toggle Discussions in Settings → General → Features.";
 	return result;
 }
 

@@ -90,8 +90,8 @@ function checkNeeded(
 					id: `project:${item.blueprint}:${item.fileName}`,
 					kind: "project",
 					scope,
-					source: `tech-stack:${item.blueprint}`,
 					target: item.fileTarget,
+					upstream: `tech-stack:${item.blueprint}`,
 				} as const;
 				if (upstream?.error !== undefined && !isNotFoundError(upstream.error)) {
 					return Promise.resolve(
@@ -173,8 +173,8 @@ async function checkFileStructure(
 						id: `project:${blueprint}:${entry.name}`,
 						kind: "project",
 						scope: options.scope,
-						source: `tech-stack:${blueprint}`,
 						target: entry.target,
+						upstream: `tech-stack:${blueprint}`,
 					},
 					"duplicate file-structure target",
 					`same target as "${seenTargets.get(targetPath)}"; keeping the first entry`,

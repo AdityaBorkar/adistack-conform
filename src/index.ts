@@ -64,8 +64,8 @@ program
 
 program
 	.command("fix")
-	.description("Interactively fix drift (space to select, enter to apply).")
-	.option("--all", "Apply all fixable items without prompting.")
+	.description("Interactively fix drift (space to select, enter to confirm).")
+	.option("--all", "Fix all fixable items without prompting.")
 	.option("--dry-run", "Show what would be fixed without writing.")
 	.option("--no-diff", "Hide the diff preview.")
 	.option("--project-only", "Only fix project checks.")

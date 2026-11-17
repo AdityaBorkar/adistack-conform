@@ -2,7 +2,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 
 import type { Command } from "commander";
 
-import { applySelected } from "#/commands/fix/apply.js";
+import { fixSelected } from "#/commands/fix/apply.js";
 import { isInteractive, resolveSelection } from "#/commands/fix/select.js";
 import { errorMessage } from "#/utils/fs.js";
 import {
@@ -76,19 +76,19 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 	const selection = await resolveSelection(fixable, cmdOptions.all);
 	if (selection.kind === "no-tty") {
 		console.error(
-			`Not a TTY: re-run with --all to apply fixes non-interactively. (${formatDuration(performance.now() - start)})`,
+			`Not a TTY: re-run with --all to fix non-interactively. (${formatDuration(performance.now() - start)})`,
 		);
 		return 2;
 	}
 	if (selection.kind === "cancelled") {
 		const prompts = await import("@clack/prompts");
-		prompts.outro(`No fixes applied in ${formatDuration(performance.now() - start)}.`);
+		prompts.outro(`No fixes made in ${formatDuration(performance.now() - start)}.`);
 		return 1;
 	}
 	if (cmdOptions.diff !== false) {
 		renderFixDiffs(selection.selected);
 	}
-	const applied = await applySelected(selection.selected);
+	const fixed = await fixSelected(selection.selected);
 
 	let rerunResults: CheckResult[];
 	try {
@@ -108,10 +108,10 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 		const rerun = await runAllChecks({ cwd, desiredStates, home, only, registries });
 		rerunResults = rerun.results;
 	}
-	const remaining = rerunResults.filter((item) => !item.ok);
+	const remaining = rerunResults.filter((item) => !item.ok && item.skipped !== true);
 	const elapsedMs = performance.now() - start;
 	console.log(
-		`\nFixed ${applied}/${selection.selected.length}. ${remaining.length} result(s) still failing in ${formatDuration(elapsedMs)}.`,
+		`\nFixed ${fixed}/${selection.selected.length}. ${remaining.length} result(s) still failing in ${formatDuration(elapsedMs)}.`,
 	);
 	if (remaining.length > 0) {
 		printResults(rerunResults, undefined, { verbose: false });

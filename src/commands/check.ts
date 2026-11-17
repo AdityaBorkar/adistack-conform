@@ -25,5 +25,5 @@ export async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions)
 			{ verbose: cmdOptions.verbose === true },
 		);
 	}
-	return results.some((item) => !item.ok) ? 1 : 0;
+	return results.some((item) => !item.ok && item.skipped !== true) ? 1 : 0;
 }

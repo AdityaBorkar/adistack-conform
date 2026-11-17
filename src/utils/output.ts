@@ -27,13 +27,13 @@ function sanitize(value: string): string {
 }
 
 export function formatResult(result: CheckResult): string {
-	const source = result.source === undefined ? "" : ` (${sanitize(result.source)})`;
+	const upstream = result.upstream === undefined ? "" : ` (${sanitize(result.upstream)})`;
 	if (result.skipped === true) {
-		return `${pc.gray("○")} ${pc.bold(sanitize(result.id))}${source} skipped: ${short(sanitize(result.actual))}`;
+		return `${pc.gray("○")} ${pc.bold(sanitize(result.id))}${upstream} skipped: ${short(sanitize(result.actual))}`;
 	}
 	const tag = isFixable(result) ? ` ${pc.yellow("[fixable]")}` : "";
 	const lines = [
-		`${okMark(result.ok)} ${pc.bold(sanitize(result.id))}${tag}${source}`,
+		`${okMark(result.ok)} ${pc.bold(sanitize(result.id))}${tag}${upstream}`,
 		`    target   : ${sanitize(result.target)}`,
 	];
 	if (!result.ok) {
@@ -65,10 +65,10 @@ function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefin
 	if (items.length === 0) {
 		return undefined;
 	}
-	// The machine scope is always a single nix result, so report its state in
+	// The machine scope is always a single machine result, so report its state in
 	// words instead of a meaningless "1 passed".
 	if (scope === "machine") {
-		const failed = items.filter((item) => !item.ok);
+		const failed = items.filter((item) => !item.ok && item.skipped !== true);
 		if (failed.length === 0) {
 			return `${okMark(true)} machine: in sync`;
 		}
@@ -111,8 +111,8 @@ export function printResults(
 }
 
 export function printJsonSummary(desiredStates: string[], results: CheckResult[]): void {
-	const failed = results.filter((item) => !item.ok);
-	const skipped = results.filter((item) => item.ok && item.skipped === true);
+	const failed = results.filter((item) => !item.ok && item.skipped !== true);
+	const skipped = results.filter((item) => item.skipped === true);
 	const passed = results.filter((item) => item.ok && item.skipped !== true);
 	console.log(
 		JSON.stringify(

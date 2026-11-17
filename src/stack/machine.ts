@@ -10,8 +10,8 @@ export const SWITCH_TIMEOUT_MS = 10 * 60_000;
 const OUTPUT_TAIL_CHARS = 4000;
 const OUTPUT_TAIL_LINES = 30;
 
-function nixCheckId(blueprint: string): string {
-	return `nix:${blueprint}`;
+function machineCheckId(blueprint: string): string {
+	return `machine:${blueprint}`;
 }
 
 function encodeDir(dirRel: string): string {
@@ -143,11 +143,11 @@ export async function runMachineChecks(
 	}
 	const flake = flakeUrl(state, dirRel);
 	const base: CheckBase = {
-		id: nixCheckId(state.blueprint),
-		kind: "nix",
+		id: machineCheckId(state.blueprint),
+		kind: "machine",
 		scope: "machine",
-		source: `tech-stack:${state.blueprint}`,
 		target: flake,
+		upstream: `tech-stack:${state.blueprint}`,
 	};
 	const expected = "home-manager switch --dry-run --impure clean";
 	const dryRun = switchInvocation(flake, true);
@@ -173,7 +173,7 @@ export async function runMachineChecks(
 		kind: "run-command",
 		label: fixRun.label,
 	});
-	result.hint = `Apply with \`fix\` or run manually: ${fixRun.label}`;
+	result.hint = `Run \`fix\` or run manually: ${fixRun.label}`;
 	return [result];
 }
 
@@ -185,7 +185,7 @@ export function recheckMachineSelected(
 	if (selectedIds.size === 0) {
 		return Promise.resolve([]);
 	}
-	if (!selectedIds.has(nixCheckId(state.blueprint))) {
+	if (!selectedIds.has(machineCheckId(state.blueprint))) {
 		return Promise.resolve([]);
 	}
 	return runMachineChecks(state, registry);

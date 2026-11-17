@@ -6,8 +6,8 @@ import { parseOrThrow } from "#/utils/schema.js";
 
 export interface ConformSource {
 	id: string;
+	provider: "github";
 	ref: string;
-	source: "github";
 }
 
 export interface ConformMachine {
@@ -68,8 +68,8 @@ function toLoadedDesiredState(path: string, parsed: unknown): LoadedDesiredState
 		project: data.project,
 		source: {
 			id: data.source.repo,
+			provider: "github",
 			ref: data.source.ref,
-			source: "github",
 		},
 	};
 }

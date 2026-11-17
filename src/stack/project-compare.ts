@@ -26,8 +26,8 @@ function baseFor(
 		id: `project:${blueprint}:${fileName}`,
 		kind: "project",
 		scope,
-		source: `tech-stack:${blueprint}`,
 		target: fileTarget,
+		upstream: `tech-stack:${blueprint}`,
 	};
 }
 
@@ -364,7 +364,7 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 				args.base,
 				args.localText,
 				args.upstream,
-				`Cannot apply compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
+				`Cannot use compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
 			);
 		}
 		return undefined;
@@ -383,7 +383,7 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 				args.base,
 				args.localText,
 				args.upstream,
-				`Cannot apply compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
+				`Cannot use compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
 			);
 		}
 		return undefined;
@@ -430,7 +430,7 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 			args.base,
 			args.localText,
 			args.upstream,
-			`Cannot apply compare rules for ${args.fileName}: both files must be JSON objects; reconcile manually.`,
+			`Cannot use compare rules for ${args.fileName}: both files must be JSON objects; reconcile manually.`,
 		);
 	}
 	return overlayResult({ ...args, localRest: localParsed, upstreamRest: upstreamParsed });
@@ -539,8 +539,8 @@ export async function checkFileStructureEntry(args: {
 		id: `project:${args.blueprint}:${args.entryName}`,
 		kind: "project",
 		scope: args.scope,
-		source: `tech-stack:${args.blueprint}`,
 		target: args.entryName,
+		upstream: `tech-stack:${args.blueprint}`,
 	};
 	if (args.kind === "dir") {
 		try {

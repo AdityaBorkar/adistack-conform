@@ -8,7 +8,7 @@ function loaded(overrides: Partial<LoadedDesiredState> = {}): LoadedDesiredState
 	return {
 		dir: "/tmp",
 		path: "/tmp/conform.json",
-		source: { id: "o/r", ref: "main", source: "github" },
+		source: { id: "o/r", provider: "github", ref: "main" },
 		...overrides,
 	};
 }

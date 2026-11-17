@@ -18,19 +18,19 @@ Prints `{ desiredStates, ok, passed, failed, skipped, total, results }` (`--json
 
 ```jsonc
 {
-	"id": "project:cli-app:Bun Config", // or "nix:main" or "github:npm-package:general"
-	"kind": "project", // "project" | "nix" | "github" | "internal"
+	"id": "project:cli-app:Bun Config", // or "machine:main" or "github:npm-package:general"
+	"kind": "project", // "project" | "machine" | "github" | "internal"
 	"scope": "project", // "project" | "machine" | "github"
-	"source": "tech-stack:cli-app",
+	"upstream": "tech-stack:cli-app",
 	"target": "bunfig.toml",
 	"expected": "<upstream>",
 	"actual": "<local content | <missing> | <unreadable> | …>",
-	"skipped": false, // true when skipped (counts as ok)
+	"skipped": false, // true when skipped (ok false, excluded from drift exit)
 	"fix": { "kind": "overwrite-file", "filePath": "<abs>", "newContent": "…" },
 	// or: "fix": { "kind": "run-command", "command": "…", "args": ["…"], "label": "…" },
 	// or: "fix": { "kind": "github-api", …multi-step REST calls… },
 	"hint": "on manual results; fixable machine/github results may carry both fix and hint",
-	// "source" is omitted on <scope>:internal-error (target is the scope name)
+	// "upstream" is omitted on <scope>:internal-error (target is the scope name)
 }
 ```
 
@@ -42,7 +42,7 @@ Prints `{ desiredStates, ok, passed, failed, skipped, total, results }` (`--json
 
 ## Schemas (Zod source of truth)
 
-`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `github.ts`, `import * as z from "zod"`, finals wrapped in `z.compile()`) generates `config/*.json` via `bun run gen:json-schema` (also run by `bun run build`).
+`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `github.ts`, `import * as z from "zod"`, finals wrapped in `z.compile()`) generates `config/*.json` via `scripts/generate-json-schema.ts` (also run by `bun run build`).
 
 <Callout type="warning" title="Hands off the generated files">
 
