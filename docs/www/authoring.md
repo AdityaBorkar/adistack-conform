@@ -24,11 +24,9 @@ A tech-stack repo is data-only: `registry.json` + blueprint files + payload file
 
 </Folder>
 
-<Folder name="machines/main">
+<Folder name="machines">
 
-<File name="flake.nix" />
-
-<File name="home.nix" />
+<File name="{name}.json" />
 
 <Folder name="files">
 
@@ -44,11 +42,11 @@ A tech-stack repo is data-only: `registry.json` + blueprint files + payload file
 registry.json
 projects/<name>.json            # blueprint, e.g. projects/cli-app.json
 projects/files/<group>/<file>   # payload files copied into generated projects
-machines/main/{flake.nix,home.nix,…}
-machines/main/files/            # dotfile payloads (sops templates read from here)
+machines/<name>.json             # blueprint, e.g. machines/main.json
+machines/files/                 # dotfile payloads (sops templates read from here)
 ```
 
-Reference the blueprints in `registry.json` (`machines` + `projects` + `github_configs` maps: projects/github settings as key/path pairs, machines as key/entry pairs). Project blueprint `files[]` use `source` repo-relative (e.g. `projects/files/<group>/<file>`, leading `/` stripped, `./`/`../` rejected) and `target` as the enforcement target (cwd-relative, `~` expands, absolute passes through) in generated projects. A `files[]` entry may declare `compare` (`ignore[]`) for semantic compare/fix rules — upstreams are templates only when they parse as JSON objects (JSONC-tolerant) holding `<...>` placeholder slots with per-project values (e.g. `package.json` `<package-name>`); a verbatim copy fails the result until every placeholder is replaced, and non-JSON `<...>` never counts. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`); overlapping `files[]` names are dropped in favor of the file check.
+Reference the blueprints in `registry.json` (`machines` + `projects` + `github_configs` maps as key/path pairs). Project blueprint `files[]` use `source` repo-relative (e.g. `projects/files/<group>/<file>`, leading `/` stripped, `./`/`../` rejected) and `target` as the enforcement target (cwd-relative, `~` expands, absolute passes through) in generated projects. A `files[]` entry may declare `compare` (`ignore[]`) for semantic compare/fix rules — upstreams are templates only when they parse as JSON objects (JSONC-tolerant) holding `<...>` placeholder slots with per-project values (e.g. `package.json` `<package-name>`); a verbatim copy fails the result until every placeholder is replaced, and non-JSON `<...>` never counts. Top-level `file_structure[]` lists existence-only entries (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`); overlapping `files[]` names are dropped in favor of the file check.
 
 ## Rules
 
@@ -59,8 +57,7 @@ Reference the blueprints in `registry.json` (`machines` + `projects` + `github_c
 </Callout>
 
 - `$schema` fields point at `https://stack.adityab.tech/conform/<VERSION>/schemas/<registry|project-manifest>.json`.
-- Machine edits: new dotfiles go under `machines/main/files/` + an entry in `home.nix` (`home.file`), except the six sops-templated files (AWS credentials, `gh/hosts.yml`, `.npmrc`, eas `user-settings.json`, opencode `opencode.json`, `.wakatime.cfg`) which are rendered by `sops.templates` and must not be added to `home.file`. Templates use `@@NAME@@` placeholders; real values live only in sops-encrypted `secrets.yaml`.
-- The machine flake reads `GIT_NAME` / `GIT_EMAIL` via `getEnv` and throws without them — evaluation needs `--impure` plus those env vars, and `homeConfigurations` defaults to `$USER` when `machine.configuration` is omitted.
+- Machine manifests (`machines/<name>.json`) declare `packages` (pacman/bun) plus `files[]` (`name` + `source` + `target`, optional `mode` and `secrets`). New dotfiles go under `machines/files/` + a `files[]` entry; entries with `secrets` render as templates from `source` with `@@NAME@@` placeholders whose real values live only in sops-encrypted `secrets.yaml`.
 
 ## Versioning and rollout
 
@@ -68,6 +65,6 @@ Consumers pin `source.ref` (branch, tag, or commit). Publish a tag for breaking 
 
 <Callout type="tip" title="After rollout">
 
-Verify generated-project order after rollout: `bun format && bun check:lint && bun check:types && bun test`.
+Confirm generated-project order after rollout: `bun format && bun check:lint && bun check:types && bun test`.
 
 </Callout>

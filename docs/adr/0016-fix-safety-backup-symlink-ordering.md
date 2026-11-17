@@ -4,4 +4,4 @@ Fix writes a `.conform.bak` safety copy next to each target before overwriting (
 
 ## Consequences
 
-Lost targets are recoverable from the adjacent backup; symlinked paths and conflicting blueprints fail loudly instead of corrupting. Review with `fix --dry-run` first; re-run in a terminal for risky or outside-dir fixes.
+Lost targets are recoverable from the adjacent backup; symlinked paths and conflicting blueprints fail loudly instead of corrupting. Review with `fix --dry-run` first; run again in a terminal for risky or outside-dir fixes.

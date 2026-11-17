@@ -29,7 +29,7 @@ bun run check:conform                # dogfood self-check (bun dev check); NOT p
 
 ## Layout
 
-- `src/index.ts` — Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`apply`), `validate`); `src/utils/config.ts` + generic helpers (`run`/`result`/`diff`/`jsonc`/`concurrency`/`fs`/`net`/`output`/`schema`); `src/stack/` scope implementations (`project`/`project-compare`/`machine`/`github`+`github-api`/`registry`/`remote`, `github/` holds per-area checks); `src/schemas/` (`config`/`registry`/`project-manifest`/`github-settings` — Zod source of truth).
+- `src/index.ts` — Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`run`), `switch`, `validate`); `src/utils/config.ts` + generic helpers (`run`/`result`/`diff`/`jsonc`/`concurrency`/`fs`/`net`/`output`/`schema`); `src/stack/` scope implementations (`project`/`project-compare`/`machine`/`machine-files`/`machine-packages`/`managers`/`github`+`github-api`/`registry`/`remote`, `github/` holds per-area checks); `src/schemas/` (`config`/`registry`/`project-manifest`/`machine-manifest`/`github-settings` — Zod source of truth).
 - `.output/` and `config/` are gitignored build output (config regen on every build).
 - This repo dogfoods itself: `conform.json` pins `AdityaBorkar/tech-stack@<ref>` — read it for the current scopes, don't assume. Reference blueprints/registry live at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read `registry.json`/blueprint files directly instead of guessing.
 

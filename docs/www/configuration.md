@@ -9,7 +9,7 @@ Your whole setup in one file. Most repos need fewer than ten lines:
 ```jsonc
 {
 	"$schema": "./config/conform.json",
-	"machine": { "blueprint": "main", "configuration": "adityab" },
+	"machine": { "blueprint": "main" },
 	"project": { "blueprint": "cli-app" },
 	"github": { "blueprint": "npm-package" },
 	"source": { "type": "github", "repo": "AdityaBorkar/tech-stack", "ref": "main" },
@@ -25,12 +25,12 @@ Where your blueprints live.
 | Field  | Required | Default  | Meaning                                                                   |
 | ------ | -------- | -------- | ------------------------------------------------------------------------- |
 | `type` | yes      | —        | Always `"github"`. Only github is supported.                              |
-| `repo` | yes      | —        | `owner/repo` holding project blueprints and machine nix flakes.           |
+| `repo` | yes      | —        | `owner/repo` holding project and machine blueprints.                      |
 | `ref`  | no       | `"main"` | Branch, tag, or commit to download. Pin a tag/commit for reproducibility. |
 
 <Callout type="tip" title="Pin your ref">
 
-Refs containing `/` work — plain path segments in `raw.githubusercontent.com` URLs, `encodeURIComponent`-escaped in flake URLs. `main` moves; a tag does not. Pin a tag once you like what you see.
+Refs containing `/` work as plain path segments in `raw.githubusercontent.com` URLs. `main` moves; a tag does not. Pin a tag once you like what you see.
 
 </Callout>
 
@@ -46,12 +46,11 @@ Project targets resolve against your cwd, so run from the directory that owns `c
 
 ## `machine` <Badge variant="muted">optional</Badge>
 
-| Field           | Meaning                                                                                                                                  |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `blueprint`     | Machine blueprint matching a `registry.json` `machines` key — by key, display `name`, `path`, or flake directory basename (e.g. `main`). |
-| `configuration` | Optional `homeConfigurations` attribute to switch to (e.g. `adityab`). Omit it and `home-manager` auto-selects from `$USER`.             |
+| Field       | Meaning                                                                                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `blueprint` | Machine blueprint matching a `registry.json` `machines` key — by key, `path`, or path basename without `.json` (e.g. `main`). |
 
-Machines are entirely nix-managed. See [blueprints](./blueprints.md) for matching details and flake-dir resolution.
+Machine state is declared by the manifest file (packages plus `files[]`); there is no per-machine attribute to select. See [blueprints](./blueprints.md) for matching details.
 
 ## `github` <Badge variant="muted">optional</Badge>
 

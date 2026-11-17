@@ -42,7 +42,7 @@ Prints `{ desiredStates, ok, passed, failed, skipped, total, results }` (`--json
 
 ## Schemas (Zod source of truth)
 
-`src/schemas/` (`conform.ts`, `manifest.ts`, `registry.ts`, `github.ts`, `import * as z from "zod"`, finals wrapped in `z.compile()`) generates `config/*.json` via `scripts/generate-json-schema.ts` (also run by `bun run build`).
+`src/schemas/` (`config.ts`, `project-manifest.ts`, `machine-manifest.ts`, `registry.ts`, `github-settings.ts`, `import * as z from "zod"`, finals wrapped in `z.compile()`) generates `config/*.json` via `scripts/generate-json-schema.ts` (also run by `bun run build`).
 
 <Callout type="warning" title="Hands off the generated files">
 
@@ -66,4 +66,4 @@ bun run verify           # format && check:lint && check:types && test (gate bef
 bun run build            # regen schemas via gen:json-schema + compile --minify --bytecode to .output/adistack-conform
 ```
 
-Conventions: path alias `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` for type-only, tabs + width 100, always `bun run <script>`. The `home-manager` / `nix` fallback, 30s fetch timeout, 10-minute switch timeout, and 16-way upstream parallelism are fixed, not configurable.
+Conventions: path alias `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` for type-only, tabs + width 100, always `bun run <script>`. The 30s fetch timeout, 10-minute fix timeout, and 16-way upstream parallelism are fixed, not configurable.

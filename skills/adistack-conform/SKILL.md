@@ -5,14 +5,14 @@ description: Check and fix project/machine drift against tech-stack blueprints w
 
 # adistack-conform
 
-Bun-only TypeScript CLI that checks the current directory (project files) and the current machine (nix home-manager flake) against upstream blueprints in a tech-stack repo. Desired state lives in `conform.json`.
+Bun-only TypeScript CLI that checks the current directory (project files) and the current machine (JSON manifest state) against upstream blueprints in a tech-stack repo. Desired state lives in `conform.json`.
 
 ## Desired state (`conform.json`)
 
 ```jsonc
 {
 	"$schema": "./config/conform.json",
-	"machine": { "blueprint": "main", "configuration": "adityab" },
+	"machine": { "blueprint": "main" },
 	"project": { "blueprint": "cli-app" },
 	"github": { "blueprint": "npm-package" },
 	"source": { "type": "github", "repo": "AdityaBorkar/tech-stack", "ref": "main" },
@@ -23,7 +23,7 @@ Bun-only TypeScript CLI that checks the current directory (project files) and th
 - `github` is `{ "blueprint": "<name>", "repo"?: "owner/repo" }`. `repo` defaults to `$GITHUB_REPOSITORY`, then the git origin remote of the cwd.
 - `source.type` is always `"github"`. `source.repo` is `owner/repo`. `source.ref` defaults to `main` (branch, tag, or commit; pin for reproducibility).
 - `project.blueprint` matches a tech-stack root `registry.json` `projects` key by key, `path`, or path basename without `.json` (e.g. `cli-app` matches `./projects/cli-app.json`).
-- `machine.blueprint` matches a `registry.json` `machines` key the same way (by key, display `name`, `path`, or flake directory basename, e.g. `main`). `machine.configuration` is the optional `homeConfigurations` attribute; omit it for home-manager `$USER` auto-select.
+- `machine.blueprint` matches a `registry.json` `machines` key the same way (by key, `path`, or path basename without `.json`, e.g. `main`).
 - Desired-state discovery: without `--desired-state`, the CLI walks up from the cwd to find `conform.json`. `--desired-state <path>` accepts any path. Project targets resolve against the cwd; leading `~` expands against `$HOME`, absolute paths pass through.
 
 ## Commands
@@ -33,32 +33,36 @@ Run from the directory that owns `conform.json` (project targets are cwd-relativ
 ```bash
 adistack-conform check [--json] [--verbose] [--project-only | --machine-only | --github-only]
 adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine-only | --github-only]
+adistack-conform switch [--dry-run]
 adistack-conform validate
 # from source: bun ./src/index.ts check
 ```
 
 - `check` exits 0 (in sync, skips are not drift), 1 (drift), 2 (desired-state error).
 - `--project-only` + `--machine-only` + `--github-only` are mutually exclusive (passing two is an error).
-- `--json` prints a machine-readable summary (`{ desiredStates, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically. `--json` ignores `--verbose` (JSON always carries every result). `--verbose` also shows passing results (default: failures only).
+- `--json` prints a machine-readable summary (`{ desiredStates, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically. `--json` ignores `--verbose` (JSON always carries every result). `--verbose` also shows passing results (default: failing results only).
 - `fix` flow: reports manual items with hints (fixable machine/github results may carry both `fix` and `hint`), shows a diff preview (unless `--no-diff`, diffs over ~200KB skipped; at most 20 diffs shown), prompts with space-to-toggle multiselect (each option shows the fix command), fixes `overwrite-file` first (each writes a `.conform.bak` backup next to the target, numbered `.conform.bak.N` when one already exists; writes through symlinks are refused) then commands/API fixes, then re-checks only the selected IDs (full re-check fallback on error). `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on desired-state error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes or file fixes outside the project dir.
-- `fix` needs a TTY unless `--all` is passed, and non-TTY `--all` refuses command/API fixes and file fixes outside the project dir (re-run in a terminal). In agents/non-TTY runs use `fix --dry-run` (dry-run never writes and never prompts). Prefer `fix --dry-run` before `fix --all` so the diff is reviewed first.
-- `validate` checks the tech-stack `registry.json` plus the blueprint file (e.g. `projects/cli-app.json`) of every configured project blueprint and the settings file (e.g. `github-configs/npm-package.json`) of every configured github blueprint (machine blueprints check the registry entry only, including path sanity). Prints one `✓` line per valid file/entry to stdout and `✗` lines with the error detail to stderr, exits 0 when all valid, 1 when any invalid, 2 on desired-state error or nothing configured. The global `--desired-state` flag applies.
+- `fix` needs a TTY unless `--all` is passed, and non-TTY `--all` refuses command/API fixes and file fixes outside the project dir (run again in a terminal). In agents/non-TTY runs use `fix --dry-run` (dry-run never writes and never prompts). Prefer `fix --dry-run` before `fix --all` so the diff is reviewed first.
+- `validate` checks the tech-stack `registry.json` plus the blueprint file (e.g. `projects/cli-app.json`) of every configured project blueprint, the settings file (e.g. `github-configs/npm-package.json`) of every configured github blueprint, and the machine manifest (e.g. `machines/main.json`) of every configured machine blueprint including fetchability of every `files[]` source. Prints one `✓` line per valid file/entry to stdout and `✗` lines with the error detail to stderr, exits 0 when all valid, 1 when any invalid, 2 on desired-state error or nothing configured. The global `--desired-state` flag applies.
 - Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits. GitHub-scope checks/fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit (then the scope skips, still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); the target repo defaults to `$GITHUB_REPOSITORY`, then the cwd git origin remote (override with `github.repo`). Unresolvable repo (none of the three) is `github:internal-error` drift (exit 1).
 
 ## What each scope checks
 
 Project (one result per blueprint `files[]`, id `project:<blueprint>:<name>`):
 
-- Fetch order per unique `repo@ref`: `registry.json` once, then each desired state's blueprint file (project manifests, github settings files), then only needed upstream files (deduplicated, 16-way parallel, no local cache). `source` is repo-relative (e.g. `projects/files/<group>/<file>`); leading `/` is stripped, `./` and `../` prefixes are rejected.
+- Fetch order per unique `repo@ref`: `registry.json` once, then each desired state's blueprint file (project manifests, machine manifests, github settings files), then only needed upstream files (deduplicated, 16-way parallel, no local cache). `source` is repo-relative (e.g. `projects/files/<group>/<file>`); leading `/` is stripped, `./` and `../` prefixes are rejected.
 - Project `target` is resolved against the cwd (`~` expands, absolute passes through). Missing target fails fixable (overwrite-file fix). Unreadable target (e.g. `/etc/...` without sudo) fails manual with a hint.
 - Per-entry `compare` rules (declared in the manifest, never hardcoded): `ignore[]` keys are excluded from the compare with local values preserved by `fix` (e.g. linter `overrides`). An upstream is a template only when it parses as a JSON object (JSONC-tolerant) and holds `<...>` placeholders: each slot accepts any per-project value (non-empty, no `<...>` placeholders, matching the surrounding text) while every other field must match — extra local fields and array items allowed, placeholder keys fuzzy-match. Drift without a fix is manual. A missing template target is manual (copy the upstream and adapt per-project fields). Templates never pass on byte equality — a verbatim copy fails manual until every upstream `<...>` placeholder is replaced with per-project values. `<...>` in non-JSON upstreams never counts.
 - Existence-only entries from blueprint `file_structure[]` (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`) must exist; missing files get a generate hint, missing dirs a `mkdir -p` hint (manual). Overlapping `file_structure[]`/`files[]` names are dropped with no result (file check owns it).
 
-Machine (single result, id `machine:<blueprint>`):
+Machine (one result per declared item, id `machine:<blueprint>:<section>:<name>`):
 
-- Resolves the flake dir from `registry.json` `machines` entry `path` and runs `home-manager switch --flake git+https://github.com/<owner>/<repo>?ref=<ref>&dir=<path>#<configuration> --dry-run --impure` (via `home-manager` binary, else `nix run home-manager -- …`). Nix fetches the flake itself; the CLI downloads nothing.
-- Exit 0 means in sync. Real drift is fixable; `fix` re-runs the same switch without `--dry-run` with inherited stdio.
-- Manual (not drift): nix evaluation errors (unknown attribute → check `machine.configuration`; missing `GIT_NAME`/`GIT_EMAIL` env; build failures), missing `home-manager`/`nix` binaries, timeouts. The hint names the remedy.
+- Upstream is the machine manifest file listed in `registry.json` `machines` (e.g. `machines/main.json`); the CLI fetches it plus only needed `files/` sources (same order as project: `registry.json` → manifest → needed files). `source` is repo-relative (same rules as project); `target` resolves against `$HOME` (`~` expands, absolute passes through).
+- `conform check --machine-only` runs in `conform` mode: every declared package/file present and correct; extras pass (skipped, never drift). `switch [--dry-run]` runs in `drift` mode: extras are drift too. Conform passing while switch fires is normal — the machine holds extras the blueprint does not own.
+- Packages: one result per declared `packages.pacman`/`packages.bun` entry (`name: version|"latest"`) plus one `extra:<manager>:<name>` per undeclared install. Missing and pinned-version drift are fixable in both modes (install `name` or `name=version` / `name@version`); extra is skipped by `check` but fixable (remove) by `switch`. `allowlist` exempts distro-base names (e.g. `base`, `linux`) so a fresh Arch install does not flag its own base.
+- Files without `secrets` link: `target` must be a symlink to the fetched upstream materialized at `<target>.conform-src`. Missing target, wrong dest, or regular file/dir is fixable (`ln -sfn`; regular files move aside to `.conform.bak[.N]` first). Extra files are never drift (links own paths, not dirs).
+- Files with `secrets` render as templates from `source` plus one `sops decrypt` per run and `@@SECRET@@` substitution plus optional `mode` enforcement. Missing `sops`/age key or leftover placeholders is manual with a hint.
+- `switch` exits 0 clean, 1 drift remains / dry-run with drift, 2 desired-state error. `--dry-run` never writes; without it fixes run directly (no prompt, unlike interactive `fix`), then switch re-runs full drift and reports the still-failing count.
 
 GitHub (fixed check list, id `github:<blueprint>:<name>`, kind `github`):
 
@@ -72,7 +76,7 @@ GitHub (fixed check list, id `github:<blueprint>:<name>`, kind `github`):
 2. Run `check` (add `--json` for parsing, `--project-only`/`--machine-only`/`--github-only` to narrow). Done when every failing result (non-`ok`, non-skipped) is classified fixable vs manual.
 3. For drift, run `fix --dry-run` (plus `--no-diff` only to save tokens on huge files) to preview. Done when the would-fix list matches the fixable set.
 4. Run `fix --all` (non-TTY) or interactive `fix` (TTY). Re-check output is authoritative: done when it reports 0 still failing.
-5. Manual items are never fixed automatically: follow the `hint` (export missing env, fix `machine.configuration`, run switch by hand with sudo where noted).
+5. Manual items are never fixed automatically: follow the `hint`. For machine drift, `switch --dry-run` previews and `switch` applies (no prompt).
 
 ## Developing this repo
 
@@ -82,6 +86,6 @@ bun run dev              # bun ./src/index.ts
 bun run verify           # format + check:lint + check:types + test + check:knip + check:conform in parallel (gate before pushing)
 ```
 
-- `src/index.ts` is Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`apply`), `validate`), `src/utils/config.ts`, `src/utils/` (`run`/`result`/`diff`/`jsonc` plus generic helpers), `src/stack/` (`project`/`project-compare`/`machine`/`github`/`github-api`/`registry`/`remote`), `src/schemas/` (`github.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
+- `src/index.ts` is Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`run`), `switch`, `validate`), `src/utils/config.ts`, `src/utils/` (`run`/`result`/`diff`/`jsonc` plus generic helpers), `src/stack/` (`project`/`project-compare`/`machine`/`machine-files`/`machine-packages`/`managers`/`github`/`github-api`/`registry`/`remote`), `src/schemas/` (`github-settings.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
 - `config/*.json` is generated — never hand-edit (regen via `bun run build`). Compiled binary lands in `.output/`.
 - Conventions: `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` where type-only, tabs + width 100, no `npm`/`npx` (always `bun run <script>`). Reference blueprints live at `~/repo/tech-stack` — read `registry.json`/blueprint files directly instead of guessing.
