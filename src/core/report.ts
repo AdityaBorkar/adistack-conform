@@ -1,13 +1,8 @@
 import pc from "picocolors";
 
+import { describeFix, fixForJson, fixPreview } from "#/core/fix.js";
 import type { CheckResult, CheckScope } from "#/core/result.js";
-import {
-	describeFix,
-	desiredContent,
-	isDrift,
-	isFixable,
-	partitionResults,
-} from "#/core/result.js";
+import { isDrift, isFixable, partitionResults } from "#/core/result.js";
 import { renderDiff } from "#/utils/diff.js";
 
 export function okMark(ok: boolean): string {
@@ -116,19 +111,6 @@ export function printResults(
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
-// Fix payloads are for the fix step: a secret fix shows a marker, and link
-// bytes (a Uint8Array) are left out of the JSON.
-function forJson(result: CheckResult): CheckResult {
-	if (result.fix?.kind === "symlink") {
-		const { content: _content, ...fix } = result.fix;
-		return { ...result, fix: fix as typeof result.fix };
-	}
-	if (result.fix?.kind !== "overwrite-file" || result.fix.secret !== true) {
-		return result;
-	}
-	return { ...result, fix: { ...result.fix, newContent: "<redacted>" } };
-}
-
 export function printJsonSummary(desiredState: string, results: CheckResult[]): void {
 	const failed = results.filter((item) => isDrift(item));
 	const skipped = results.filter((item) => item.skipped === true);
@@ -140,7 +122,7 @@ export function printJsonSummary(desiredState: string, results: CheckResult[]): 
 				failed: failed.length,
 				ok: failed.length === 0,
 				passed: passed.length,
-				results: results.map((item) => forJson(item)),
+				results: results.map((item) => fixForJson(item)),
 				skipped: skipped.length,
 				total: results.length,
 			},
@@ -173,19 +155,12 @@ const MAX_DIFFS_SHOWN = 20;
 export function renderFixDiffs(fixable: CheckResult[]): void {
 	const shown = fixable.slice(0, MAX_DIFFS_SHOWN);
 	const rendered = shown.map((item) => {
-		if (item.fix?.kind === "run-command") {
-			return `\nrun ${sanitize(item.id)} (${sanitize(item.target)})\n${sanitize(item.fix.label)}`;
-		}
-		if (item.fix?.kind === "symlink") {
-			return `\nlink ${sanitize(item.id)} (${sanitize(item.target)})\n${sanitize(item.fix.label)}`;
-		}
-		if (item.fix?.kind === "github-api") {
-			return `\napi ${sanitize(item.id)} (${sanitize(item.target)})\n${item.fix.steps.map((step) => `${step.method} ${sanitize(step.path)}`).join("\n")}`;
-		}
-		if (item.fix?.kind === "overwrite-file" && item.fix.secret === true) {
-			return `\nwrite ${sanitize(item.id)} (${sanitize(item.target)})\n<diff hidden: content holds secrets>`;
-		}
-		return `\ndiff ${sanitize(item.id)} (${sanitize(item.target)})\n${renderDiff("actual", "expected", item.actual, desiredContent(item))}`;
+		const preview = fixPreview(item);
+		const body =
+			"lines" in preview
+				? preview.lines.map((line) => sanitize(line)).join("\n")
+				: renderDiff("actual", "expected", item.actual, preview.expected);
+		return `\n${preview.verb} ${sanitize(item.id)} (${sanitize(item.target)})\n${body}`;
 	});
 	if (fixable.length > shown.length) {
 		rendered.push(`\n… and ${fixable.length - shown.length} more.`);

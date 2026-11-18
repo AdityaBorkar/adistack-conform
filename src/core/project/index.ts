@@ -1,8 +1,8 @@
-import type { RunState } from "#/core/config.js";
-import { checkProjectFileWithUpstream, projectBase } from "#/core/project/compare.js";
+import type { ScopeCheck } from "#/core/config.js";
+import { checkProjectFileWithUpstream, projectBase, projectId } from "#/core/project/compare.js";
 import { checkFileStructure } from "#/core/project/structure.js";
 import { failManual, type CheckResult } from "#/core/result.js";
-import type { ManifestCompare, ManifestFile, RegistryDocument } from "#/core/upstream/registry.js";
+import type { ManifestCompare, ManifestFile } from "#/core/upstream/registry.js";
 import {
 	UPSTREAM_FETCH_CONCURRENCY,
 	fetchBlueprint,
@@ -37,7 +37,7 @@ function collectNeeded(
 ): NeededFile[] {
 	const needed: NeededFile[] = [];
 	for (const file of files) {
-		if (onlyIds !== undefined && !onlyIds.has(`project:${blueprint}:${file.name}`)) {
+		if (onlyIds !== undefined && !onlyIds.has(projectId(blueprint, file.name))) {
 			continue;
 		}
 		needed.push({
@@ -112,18 +112,15 @@ function checkNeeded(
 	);
 }
 
-// `onlyIds` narrows a re-check after fix to the selected results.
-export async function runProjectChecks(
-	state: RunState,
-	options: ProjectCheckOptions,
-	registry: RegistryDocument,
-	onlyIds?: ReadonlySet<string>,
-): Promise<CheckResult[]> {
-	const { data } = await fetchBlueprint(state, registry, "projects");
+// The only scope that narrows a re-check after fix to the selected results.
+export const runProjectChecks: ScopeCheck = async (ctx, onlyIds) => {
+	const { state } = ctx;
+	const options: ProjectCheckOptions = { baseDir: ctx.baseDir, home: ctx.home };
+	const { data } = await fetchBlueprint(state, ctx.registry, "projects");
 	const { files, file_structure: structure } = data;
 	const needed = collectNeeded(state.blueprint, files, options, onlyIds);
 	const upstreams = await fetchUpstreams(state.id, state.ref, needed);
 	const enforced = await checkNeeded(state.blueprint, needed, upstreams);
 	const structured = await checkFileStructure(state.blueprint, files, structure, options, onlyIds);
 	return [...enforced, ...structured];
-}
+};

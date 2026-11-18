@@ -1,6 +1,6 @@
-import type * as z from "zod";
-
 import type { RunState } from "#/core/config.js";
+import type { BlueprintData } from "#/core/upstream/blueprint.js";
+import { blueprintLabels, parseBlueprint } from "#/core/upstream/blueprint.js";
 import type { BlueprintKind, RegistryDocument } from "#/core/upstream/registry.js";
 import {
 	availableHint,
@@ -8,9 +8,6 @@ import {
 	blueprintRel,
 	findEntry,
 } from "#/core/upstream/registry.js";
-import { GithubSchema } from "#/schemas/github-settings.js";
-import { MachineManifestSchema } from "#/schemas/machine-manifest.js";
-import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 import { errorMessage } from "#/utils/error.js";
 import { parseJsonc } from "#/utils/jsonc.js";
@@ -132,25 +129,13 @@ export async function fetchRegistry(id: string, ref: string): Promise<RegistryDo
 	return parseOrThrow(RegistrySchema, "registry.json (remote)", parsed, "tech-stack registry");
 }
 
-const BLUEPRINTS = {
-	github_configs: { label: "GitHub blueprint", plural: "GitHub blueprints", schema: GithubSchema },
-	machines: {
-		label: "Machine blueprint",
-		plural: "machine blueprints",
-		schema: MachineManifestSchema,
-	},
-	projects: { label: "Project blueprint", plural: "project blueprints", schema: ManifestSchema },
-} as const;
-
-export type BlueprintData<K extends BlueprintKind> = z.infer<(typeof BLUEPRINTS)[K]["schema"]>;
-
 // Registry lookup, fetch and schema parse for one scope's blueprint file.
 export async function fetchBlueprint<K extends BlueprintKind>(
 	state: Pick<RunState, "blueprint" | "id" | "ref">,
 	registry: RegistryDocument,
 	kind: K,
 ): Promise<{ data: BlueprintData<K>; rel: string }> {
-	const { label, plural, schema } = BLUEPRINTS[kind];
+	const { label, plural } = blueprintLabels(kind);
 	const entry = findEntry(registry, kind, state.blueprint);
 	if (entry === undefined) {
 		const hint = availableHint(blueprintNames(registry, kind), plural);
@@ -158,6 +143,5 @@ export async function fetchBlueprint<K extends BlueprintKind>(
 	}
 	const rel = blueprintRel(entry.path);
 	const parsed = await fetchJsonc(rawUrl(state.id, state.ref, rel), `${label} ${state.blueprint}`);
-	const data = parseOrThrow(schema as z.ZodType<unknown>, `${rel} (remote)`, parsed, label);
-	return { data: data as BlueprintData<K>, rel };
+	return { data: parseBlueprint(kind, parsed, `${rel} (remote)`), rel };
 }

@@ -1,4 +1,4 @@
-import type { RunState } from "#/core/config.js";
+import type { ScopeCheck } from "#/core/config.js";
 import { checkLinks } from "#/core/machine/links.js";
 import { defaultLive } from "#/core/machine/live.js";
 import type { MachineLive } from "#/core/machine/live.js";
@@ -6,7 +6,6 @@ import { evaluatePackages, listInstalled } from "#/core/machine/packages.js";
 import { checkSecretsTemplates } from "#/core/machine/templates.js";
 import type { CheckResult } from "#/core/result.js";
 import { failManual } from "#/core/result.js";
-import type { RegistryDocument } from "#/core/upstream/registry.js";
 import { fetchBlueprint } from "#/core/upstream/remote.js";
 import type { MachineManifest } from "#/schemas/machine-manifest.js";
 import { isSecretsTemplate } from "#/schemas/machine-manifest.js";
@@ -92,17 +91,14 @@ export async function checkMachine(input: MachineCheckInput): Promise<CheckResul
 	return [...packages, ...links, ...templates];
 }
 
-export async function runMachine(
-	state: RunState,
-	registry: RegistryDocument,
-	options: { home: string; live?: MachineLive; strict: boolean },
-): Promise<CheckResult[]> {
+// Re-checks whole: listing packages and stats takes a few seconds (ADR 0011).
+export const runMachine: ScopeCheck = async ({ home, registry, state, strict }) => {
 	const { data: manifest, rel } = await fetchBlueprint(state, registry, "machines");
 	return checkMachine({
 		blueprint: state.blueprint,
-		home: options.home,
-		live: options.live ?? defaultLive(state, rel),
+		home,
+		live: defaultLive(state, rel),
 		manifest,
-		strict: options.strict,
+		strict,
 	});
-}
+};

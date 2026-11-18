@@ -46,6 +46,13 @@ describe("mergeRecheck", () => {
 		]);
 	});
 
+	test("a same-ID skip on re-check (e.g. a per-check GitHub 403) keeps the drift", () => {
+		const previous = [result("github:b:general", false, "github")];
+		const rechecked = [result("github:b:general", false, "github", true)];
+		const merged = mergeRecheck(previous, rechecked, new Set(["github:b:general"]));
+		expect(merged).toEqual(previous);
+	});
+
 	test("a GitHub auth skip on re-check never reads as fixed", () => {
 		const previous = [result("github:b:general", false, "github")];
 		const rechecked = [result("github:b:auth", false, "github", true)];

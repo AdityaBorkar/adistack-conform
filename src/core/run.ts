@@ -1,9 +1,15 @@
-import type { ConfigPathOption, LoadedDesiredState, ScopeOptions } from "#/core/config.js";
+import type {
+	ConfigPathOption,
+	LoadedDesiredState,
+	ScopeCheck,
+	ScopeOptions,
+} from "#/core/config.js";
 import { activeScopes, loadDesiredState, scopeOf, stateOf } from "#/core/config.js";
 import { runGithubChecks } from "#/core/github/index.js";
 import { runMachine } from "#/core/machine/index.js";
 import { runProjectChecks } from "#/core/project/index.js";
 import type { CheckResult, CheckScope } from "#/core/result.js";
+import { isDrift } from "#/core/result.js";
 import type { RegistryDocument } from "#/core/upstream/registry.js";
 import { fetchRegistry } from "#/core/upstream/remote.js";
 import { errorMessage } from "#/utils/error.js";
@@ -34,31 +40,23 @@ function toSafeResults(task: Promise<CheckResult[]>, scope: CheckScope): Promise
 	]);
 }
 
-// One scope's checks. `selectedIds` narrows a project re-check to those IDs;
-// machine (a few seconds) and GitHub (one batch of API reads) re-check whole.
+const SCOPES: Record<CheckScope, ScopeCheck> = {
+	github: runGithubChecks,
+	machine: runMachine,
+	project: runProjectChecks,
+};
+
 function scopeTask(
 	ctx: RunContext,
 	scope: CheckScope,
-	selectedIds?: ReadonlySet<string>,
+	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const { desiredState, registry } = ctx;
-	const state = stateOf(desiredState, scope);
+	const state = stateOf(ctx.desiredState, scope);
 	if (state === undefined) {
 		return Promise.resolve([]);
 	}
-	if (scope === "project") {
-		// Project targets resolve against the dir that owns conform.json, not the cwd.
-		return runProjectChecks(
-			state,
-			{ baseDir: desiredState.dir, home: ctx.home },
-			registry,
-			selectedIds,
-		);
-	}
-	if (scope === "machine") {
-		return runMachine(state, registry, { home: ctx.home, strict: ctx.strict });
-	}
-	return runGithubChecks(state, registry);
+	const { home, registry, strict } = ctx;
+	return SCOPES[scope]({ baseDir: ctx.desiredState.dir, home, registry, state, strict }, onlyIds);
 }
 
 // Scopes run concurrently; each is timed on its own.
@@ -81,22 +79,23 @@ async function runAllChecks(ctx: RunContext): Promise<{
 
 async function recheckSelected(
 	ctx: RunContext,
-	selectedIds: ReadonlySet<string>,
+	selected: readonly CheckResult[],
 ): Promise<CheckResult[]> {
 	const rechecked = await Promise.all(
 		ctx.scopes.map((scope) => {
-			const ids = new Set([...selectedIds].filter((id) => id.startsWith(`${scope}:`)));
+			const ids = new Set(selected.filter((item) => item.scope === scope).map((item) => item.id));
 			return ids.size === 0 ? Promise.resolve([]) : scopeTask(ctx, scope, ids);
 		}),
 	);
 	return rechecked.flat();
 }
 
-// Re-checked IDs replace their previous results; results new to the run
-// (e.g. a GitHub auth skip or a machine domain error) are appended. A selected
-// ID missing from the re-check counts as resolved (e.g. a removed extra) only
-// when its scope's re-check hit no new failure: otherwise the scope could not
-// look at it, and the previous failure stands.
+// Re-checked IDs replace their previous results, except a skip never replaces
+// drift: the scope could not look (e.g. a GitHub 403), so the failure stands.
+// Results new to the run (e.g. a GitHub auth skip or a machine domain error)
+// are appended. A selected ID missing from the re-check counts as resolved
+// (e.g. a removed extra) only when its scope's re-check hit no new failure:
+// otherwise the scope could not look at it, and the previous failure stands.
 export function mergeRecheck(
 	previous: readonly CheckResult[],
 	rechecked: readonly CheckResult[],
@@ -111,7 +110,10 @@ export function mergeRecheck(
 			.filter(
 				(item) => byId.has(item.id) || !selectedIds.has(item.id) || unsureScopes.has(item.scope),
 			)
-			.map((item) => byId.get(item.id) ?? item),
+			.map((item) => {
+				const next = byId.get(item.id);
+				return next === undefined || (next.skipped === true && isDrift(item)) ? item : next;
+			}),
 		...added,
 	];
 }
@@ -124,7 +126,7 @@ export async function recheckAfterFix(
 ): Promise<CheckResult[]> {
 	try {
 		const selectedIds = new Set(selected.map((item) => item.id));
-		return mergeRecheck(previous, await recheckSelected(ctx, selectedIds), selectedIds);
+		return mergeRecheck(previous, await recheckSelected(ctx, selected), selectedIds);
 	} catch (error) {
 		console.error(`Selective re-check failed, running a full re-check: ${errorMessage(error)}`);
 		return (await runAllChecks(ctx)).results;

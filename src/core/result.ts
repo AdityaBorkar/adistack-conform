@@ -104,34 +104,3 @@ export function partitionResults(results: CheckResult[]): {
 		manual: failed.filter((item) => !isFixable(item)),
 	};
 }
-
-export function desiredContent(result: CheckResult): string {
-	if (
-		result.fix?.kind === "run-command" ||
-		result.fix?.kind === "symlink" ||
-		result.fix?.kind === "github-api"
-	) {
-		return result.fix.label;
-	}
-	if (result.fix?.kind === "overwrite-file") {
-		return result.fix.newContent;
-	}
-	return result.expected;
-}
-
-export function describeFix(result: CheckResult): string {
-	const fix = result.fix;
-	if (fix === undefined) {
-		return "manual";
-	}
-	if (fix.kind === "overwrite-file") {
-		return `overwrite ${fix.filePath}`;
-	}
-	if (fix.kind === "github-api") {
-		return `api ${fix.label}`;
-	}
-	if (fix.kind === "symlink") {
-		return fix.label;
-	}
-	return `run ${fix.label}`;
-}

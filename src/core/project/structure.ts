@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 
-import { projectBase } from "#/core/project/compare.js";
+import { projectBase, projectId } from "#/core/project/compare.js";
 import type { ProjectCheckOptions } from "#/core/project/index.js";
 import type { CheckResult } from "#/core/result.js";
 import { failManual, pass, skipped } from "#/core/result.js";
@@ -84,7 +84,7 @@ export async function checkFileStructure(
 		if (enforcedTargets.has(targetPath)) {
 			continue;
 		}
-		if (onlyIds !== undefined && !onlyIds.has(`project:${blueprint}:${entry.name}`)) {
+		if (onlyIds !== undefined && !onlyIds.has(projectId(blueprint, entry.name))) {
 			continue;
 		}
 		if (seenTargets.has(targetPath)) {

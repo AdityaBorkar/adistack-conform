@@ -1,5 +1,5 @@
+import { describeFix } from "#/core/fix.js";
 import type { CheckResult } from "#/core/result.js";
-import { describeFix } from "#/core/result.js";
 
 export type SelectionOutcome =
 	| { kind: "cancelled" }

@@ -3,10 +3,11 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import { errorMessage } from "#/utils/error.js";
+import { parseJsonc } from "#/utils/jsonc.js";
 
 export async function readJsonFile(path: string, label: string): Promise<unknown> {
 	try {
-		return (await Bun.file(path).json()) as unknown;
+		return parseJsonc(await Bun.file(path).text());
 	} catch (error) {
 		if (isMissingError(error)) {
 			throw new Error(`${label} not found: ${path}`, { cause: error });

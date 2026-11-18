@@ -11,10 +11,14 @@ import { readFileSafe } from "#/utils/fs.js";
 import { isRecord, omitKeys, serializeJson, deepEqual, setOwn } from "#/utils/json.js";
 import { parseJsonc } from "#/utils/jsonc.js";
 
-// Every project result id has the `project:<blueprint>:<name>` shape.
+// Every project result id has this shape; re-check narrowing matches on it too.
+export function projectId(blueprint: string, name: string): string {
+	return `project:${blueprint}:${name}`;
+}
+
 export function projectBase(blueprint: string, fileName: string, fileTarget: string): CheckBase {
 	return {
-		id: `project:${blueprint}:${fileName}`,
+		id: projectId(blueprint, fileName),
 		kind: "project",
 		scope: "project",
 		target: fileTarget,

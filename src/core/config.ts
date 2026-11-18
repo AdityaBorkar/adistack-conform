@@ -2,7 +2,8 @@ import { dirname, join } from "node:path";
 
 import type * as z from "zod";
 
-import type { CheckScope } from "#/core/result.js";
+import type { CheckResult, CheckScope } from "#/core/result.js";
+import type { RegistryDocument } from "#/core/upstream/registry.js";
 import { ConformSchema } from "#/schemas/config.js";
 import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
 import { parseOrThrow } from "#/utils/schema.js";
@@ -23,6 +24,24 @@ export interface RunState {
 	ref: string;
 	repo?: string;
 }
+
+// Everything one scope's check reads for one run.
+interface ScopeContext {
+	// The dir that owns conform.json: project targets resolve against it, not the cwd.
+	baseDir: string;
+	home: string;
+	registry: RegistryDocument;
+	state: RunState;
+	strict: boolean;
+}
+
+// The one interface every scope implements. `onlyIds` holds a re-check's
+// selected IDs for this scope; a scope that cannot narrow (machine, GitHub,
+// see ADR 0011) ignores it and re-checks whole.
+export type ScopeCheck = (
+	ctx: ScopeContext,
+	onlyIds?: ReadonlySet<string>,
+) => Promise<CheckResult[]>;
 
 function toLoadedDesiredState(path: string, parsed: unknown): LoadedDesiredState {
 	const data = parseOrThrow(ConformSchema, path, parsed, "desired state");

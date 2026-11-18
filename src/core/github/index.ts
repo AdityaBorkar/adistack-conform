@@ -1,4 +1,4 @@
-import type { RunState } from "#/core/config.js";
+import type { RunState, ScopeCheck } from "#/core/config.js";
 import {
 	checkActionsOidc,
 	checkActionsPermissions,
@@ -106,10 +106,8 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 	return results;
 }
 
-export async function runGithubChecks(
-	state: RunState,
-	registry: RegistryDocument,
-): Promise<CheckResult[]> {
+// Re-checks whole: one batch of API reads (ADR 0011).
+export const runGithubChecks: ScopeCheck = async ({ registry, state }) => {
 	const settings = await resolveGithubSettings(state, registry);
 	const repo = resolveTargetRepo(state.repo);
 	const target = `${repo} (repo settings)`;
@@ -176,4 +174,4 @@ export async function runGithubChecks(
 		}
 		throw error;
 	}
-}
+};

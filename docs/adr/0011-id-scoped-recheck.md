@@ -4,4 +4,4 @@ After `fix` applies, only scopes holding a selected result are re-checked and me
 
 ## Consequences
 
-Unselected drift is reported from the pre-fix run, not re-fetched. A selected ID missing from the re-check no longer exists (a removed extra), so it counts as resolved, but only when its scope's re-check produced no new failure. A new failure (a machine domain error, a GitHub auth skip) means the scope could not look, so the previous failure stands and is reported alongside it.
+Unselected drift is reported from the pre-fix run, not re-fetched. A selected ID missing from the re-check no longer exists (a removed extra), so it counts as resolved, but only when its scope's re-check produced no new failure. A new failure (a machine domain error, a GitHub auth skip) means the scope could not look, so the previous failure stands and is reported alongside it. Likewise a selected ID that comes back skipped (a per-check GitHub 403) could not be looked at, so the skip never replaces its previous failure.

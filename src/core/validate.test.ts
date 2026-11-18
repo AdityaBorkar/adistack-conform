@@ -136,6 +136,17 @@ describe("validateTechStack", () => {
 		expect(results[2]?.error).toContain("machines/secrets.yaml");
 	});
 
+	test("JSONC blueprints and registry are valid, as check parses them", async () => {
+		const dir = await fullRepo();
+		const path = join(dir, "github-configs/npm-package.json");
+		const text = await Bun.file(path).text();
+		await Bun.write(path, `// comment\n${text.replace(/\}\s*$/u, ",}")}`);
+		const registryPath = join(dir, "registry.json");
+		await Bun.write(registryPath, `/* c */${await Bun.file(registryPath).text()}`);
+		const results = await validateTechStack(dir);
+		expect(results.every((result) => result.ok)).toBe(true);
+	});
+
 	test("directory registry entries are invalid", async () => {
 		const results = await validateTechStack(
 			await fullRepo({

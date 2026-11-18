@@ -1,11 +1,8 @@
 import { dirname, join } from "node:path";
 
-import { machineSecretsRel } from "#/core/machine/live.js";
+import { blueprintLabels, blueprintSources, parseBlueprint } from "#/core/upstream/blueprint.js";
 import type { BlueprintKind, RegistryDocument } from "#/core/upstream/registry.js";
 import { blueprintNames, blueprintRel } from "#/core/upstream/registry.js";
-import { GithubSchema } from "#/schemas/github-settings.js";
-import { MachineManifestSchema, isSecretsTemplate } from "#/schemas/machine-manifest.js";
-import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 import { errorMessage } from "#/utils/error.js";
 import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
@@ -18,12 +15,6 @@ interface ValidateResult {
 }
 
 const REGISTRY_FILENAME = "registry.json";
-
-const KIND_LABEL: Record<BlueprintKind, string> = {
-	github_configs: "GitHub settings",
-	machines: "Machine blueprint",
-	projects: "Project blueprint",
-};
 
 // Tech-stack authors run `validate` inside their tech-stack repo (see that
 // repo's `verify` script). It never reads `conform.json`: consumers validate
@@ -77,44 +68,11 @@ async function validateBlueprint(
 		return { error: errorMessage(error), file: `${kind} "${name}"`, ok: false };
 	}
 	const abs = join(repoRoot, rel);
-	const label = KIND_LABEL[kind];
-	let parsed: unknown;
 	try {
-		parsed = await readJsonFile(abs, label);
-	} catch (error) {
-		return { error: errorMessage(error), file: rel, ok: false };
-	}
-	try {
-		if (kind === "projects") {
-			const manifest = parseOrThrow(ManifestSchema, abs, parsed, label);
-			const missing = await missingSources(
-				repoRoot,
-				manifest.files.map((file) => file.source),
-			);
-			if (missing.length > 0) {
-				return { error: `Missing blueprint sources: ${missing.join(", ")}`, file: rel, ok: false };
-			}
-		} else if (kind === "machines") {
-			const manifest = parseOrThrow(MachineManifestSchema, abs, parsed, label);
-			const missing = await missingSources(
-				repoRoot,
-				manifest.files.map((file) => file.source),
-			);
-			if (missing.length > 0) {
-				return { error: `Missing blueprint sources: ${missing.join(", ")}`, file: rel, ok: false };
-			}
-			if (manifest.files.some(isSecretsTemplate)) {
-				const secretsRel = machineSecretsRel(rel);
-				if (!(await Bun.file(join(repoRoot, secretsRel)).exists())) {
-					return {
-						error: `Missing secrets file ${secretsRel} (a files[] entry declares secrets).`,
-						file: rel,
-						ok: false,
-					};
-				}
-			}
-		} else {
-			parseOrThrow(GithubSchema, abs, parsed, label);
+		const data = parseBlueprint(kind, await readJsonFile(abs, blueprintLabels(kind).label), abs);
+		const missing = await missingSources(repoRoot, blueprintSources(kind, data, rel));
+		if (missing.length > 0) {
+			return { error: `Missing blueprint sources: ${missing.join(", ")}`, file: rel, ok: false };
 		}
 	} catch (error) {
 		return { error: errorMessage(error), file: rel, ok: false };

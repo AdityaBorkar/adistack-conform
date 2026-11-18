@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { machineSecretsRel, parseSimpleMapping } from "#/core/machine/live.js";
+import { parseSimpleMapping } from "#/core/machine/live.js";
+import { machineSecretsRel } from "#/core/upstream/blueprint.js";
 
 describe("parseSimpleMapping", () => {
 	test("reads flat KEY: value lines, unquoting values and skipping comments/markers", () => {

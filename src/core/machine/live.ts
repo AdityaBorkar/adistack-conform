@@ -1,12 +1,13 @@
 import { lstat, mkdtemp, readlink, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import type { RunState } from "#/core/config.js";
 import type { LinkStat } from "#/core/machine/links.js";
 import type { InstalledPackages, ManagerId } from "#/core/machine/managers/types.js";
 import { MANAGERS } from "#/core/machine/packages.js";
 import type { SecretsTemplateTarget } from "#/core/machine/templates.js";
+import { machineSecretsRel } from "#/core/upstream/blueprint.js";
 import { fetchBytesOrThrow, fetchTextOrThrow, rawUrl } from "#/core/upstream/remote.js";
 import { errorMessage } from "#/utils/error.js";
 import { isMissingError } from "#/utils/fs.js";
@@ -95,12 +96,6 @@ export function parseSimpleMapping(text: string): Record<string, string> {
 		setOwn(values, match[1], value);
 	}
 	return values;
-}
-
-// The sops-encrypted secrets file lives next to the machine manifest.
-export function machineSecretsRel(manifestRel: string): string {
-	const dir = dirname(manifestRel);
-	return dir === "" || dir === "." ? "secrets.yaml" : `${dir}/secrets.yaml`;
 }
 
 async function withTempDir<T>(run: (dir: string) => Promise<T>): Promise<T> {
