@@ -6,8 +6,8 @@ const TechStackSourceSchema = z
 		repo: z
 			.string()
 			.regex(/^[^/\s]+\/[^/\s]+$/u)
-			.describe("GitHub owner/repo holding blueprints (project) or nix flakes (machine)."),
-		type: z.literal("github").describe("Tech-stack source; only github is supported."),
+			.describe("GitHub owner/repo holding blueprints."),
+		type: z.literal("github").describe("Provider hosting the pin; only github is supported."),
 	})
 	.strict();
 
@@ -16,16 +16,7 @@ const ConformMachineSectionSchema = z
 		blueprint: z
 			.string()
 			.min(1)
-			.describe(
-				"Machine blueprint from the tech-stack registry (entry name or directory, e.g. main).",
-			),
-		configuration: z
-			.string()
-			.min(1)
-			.describe(
-				"homeConfigurations attribute to switch to, e.g. adityab. Defaults to home-manager auto-select ($USER).",
-			)
-			.optional(),
+			.describe("Machine blueprint name from the tech-stack registry, e.g. main."),
 	})
 	.strict();
 
@@ -59,7 +50,9 @@ export const ConformSchema = z.compile(
 			github: ConformGithubSectionSchema.describe("GitHub repo settings desired state.").optional(),
 			machine: ConformMachineSectionSchema.describe("Machine desired state.").optional(),
 			project: ConformProjectSectionSchema.describe("Project desired state.").optional(),
-			source: TechStackSourceSchema.describe("Tech-stack repo holding blueprints and nix flakes."),
+			source: TechStackSourceSchema.describe(
+				"Pin: the tech-stack repo and ref holding the registry and blueprints.",
+			),
 		})
 		.strict(),
 );

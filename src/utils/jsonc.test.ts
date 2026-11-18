@@ -9,6 +9,6 @@ describe("parseJsonc", () => {
 	});
 
 	test("unterminated block comment throws", () => {
-		expect(() => parseJsonc('{"a":1} /* oops')).toThrow("Unterminated block comment");
+		expect(() => parseJsonc('{"a":1} /* oops')).toThrow("UnexpectedEndOfComment");
 	});
 });

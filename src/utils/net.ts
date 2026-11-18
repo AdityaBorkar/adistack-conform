@@ -1,33 +1,46 @@
+import pRetry from "p-retry";
+
 export const FETCH_TIMEOUT_MS = 30_000;
 
-export const RETRY_MAX_ATTEMPTS = 3;
+const RETRY_MAX_ATTEMPTS = 3;
+const RETRY_MIN_TIMEOUT_MS = 500;
 
-export function retryDelayMs(attempt: number): number {
-	return 500 * 2 ** attempt;
-}
-
-export async function withRetry<T>(
+export function withRetry<T>(
 	task: () => Promise<T>,
 	isRetryable: (error: unknown) => boolean = () => true,
 ): Promise<T> {
-	let error: unknown;
-	for (let attempt = 0; attempt < RETRY_MAX_ATTEMPTS; attempt += 1) {
-		try {
-			return await task();
-		} catch (taskError) {
-			error = taskError;
-			if (!isRetryable(taskError) || attempt === RETRY_MAX_ATTEMPTS - 1) {
-				throw taskError;
-			}
-			await Bun.sleep(retryDelayMs(attempt));
-		}
-	}
-	throw error;
+	return pRetry(task, {
+		factor: 2,
+		minTimeout: RETRY_MIN_TIMEOUT_MS,
+		retries: RETRY_MAX_ATTEMPTS - 1,
+		shouldRetry: ({ error }) => isRetryable(error),
+	});
 }
 
+let ghToken: string | undefined | null = null;
+
+// `gh auth token`, run at most once per process; undefined when gh is missing or logged out.
+function ghAuthToken(): string | undefined {
+	if (ghToken === null) {
+		try {
+			const proc = Bun.spawnSync(["gh", "auth", "token"], {
+				stderr: "ignore",
+				stdin: "ignore",
+				timeout: 5000,
+			});
+			const out = proc.success ? proc.stdout.toString().trim() : "";
+			ghToken = out === "" ? undefined : out;
+		} catch {
+			ghToken = undefined;
+		}
+	}
+	return ghToken;
+}
+
+// GITHUB_TOKEN wins; otherwise fall back to the gh CLI login.
 export function githubToken(): string | undefined {
 	const token = process.env["GITHUB_TOKEN"]?.trim();
-	return token !== undefined && token !== "" ? token : undefined;
+	return token !== undefined && token !== "" ? token : ghAuthToken();
 }
 
 export function userAgentHeaders(): Record<string, string> {

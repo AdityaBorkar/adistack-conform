@@ -14,10 +14,10 @@ You declare the desired state in `conform.json`. The CLI compares it against rea
 ```
 
 ```bash
-adistack-conform check          # 0 in sync, 1 drift, 2 config error
-adistack-conform fix --dry-run  # preview, never writes
-adistack-conform fix            # interactive: space to select, enter to apply
-adistack-conform fix --all      # apply all fixable items (non-TTY safe)
+bunx @adistack/conform check          # 0 in sync, 1 drift, 2 desired-state error
+bunx @adistack/conform fix --dry-run  # preview, never writes
+bunx @adistack/conform fix            # interactive: space to select, enter to fix
+bunx @adistack/conform fix --all      # fix all fixable items (non-TTY safe)
 ```
 
 At least one of `project` / `machine` / `github` is required. Add `--project-only`, `--machine-only`, or `--github-only` to scope a run. Set `GITHUB_TOKEN` for private tech-stack repos or rate limits.

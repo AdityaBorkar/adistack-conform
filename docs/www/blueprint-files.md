@@ -4,13 +4,13 @@ description: blueprint files, upstream fetching, and per-target enforcement rule
 icon: Wrench
 ---
 
-A project blueprint is a JSON file (e.g. `projects/cli-app.json`) with `@name`/`@description` + `files[]` and optional `file_structure[]`:
+A project blueprint is a JSON file (e.g. `projects/cli-app.json`) with `$name`/`$description` + `files[]` and optional `file_structure[]`:
 
 ```jsonc
 {
 	"$schema": "https://stack.adityab.tech/conform/<VERSION>/schemas/project-manifest.json",
-	"@name": "CLI",
-	"@description": "CLI Application using Commander",
+	"$name": "CLI",
+	"$description": "CLI Application using Commander",
 	"files": [
 		{ "name": "Bun Config", "source": "projects/files/bunfig/base.toml", "target": "bunfig.toml" },
 	],
@@ -21,13 +21,13 @@ Schema: `./config/project-manifest.json` (generated, draft 2020-12).
 
 ## Where upstreams come from
 
-`source` is the upstream file's repo-relative path, used for `raw.githubusercontent.com` fetches (e.g. `projects/files/<group>/<variant>`; a leading `/` is stripped). Paths starting with `./` or `../` are rejected — sources must be repo-relative.
+`source` is the upstream file's repo-relative path, used for `raw.githubusercontent.com` fetches (e.g. `projects/files/<group>/<variant>`). A leading `/`, `./` or `../`, empty or `.`/`..` segments, and `\\` are rejected — sources must be repo-relative.
 
 Only the upstreams you need are fetched, deduplicated by repo-relative path, 16-way parallel. A missing upstream is a manual result (`<blueprint file missing>` with the repo-relative path).
 
 ## Where targets land
 
-`target` is the manifest-declared enforcement target, resolved against your cwd. Leading `~` expands against `$HOME`; absolute paths pass through.
+`target` is the manifest-declared enforcement target, resolved against the directory that owns `conform.json`. Leading `~` expands against `$HOME`; absolute paths pass through.
 
 ## How each file is judged
 
@@ -45,9 +45,7 @@ Per `files[]` entry: `ignore[]` keys are excluded from the compare and your loca
 
 <Accordion title="File structure — existence only">
 
-Blueprint `file_structure[]` entries (`name` + `target` + `kind: file|dir`) must exist; content is per-project. Missing file → manual with a generate hint; missing dir → manual with a `mkdir -p` hint. An entry whose `name` overlaps a `files[]` name is dropped with no result in favor of the file check.
-
-</Accordion>
+Blueprint `file_structure[]` entries (`name` + `target` + `kind: file|dir`) must exist; content is per-project. Missing file → manual with a generate hint; missing dir → manual with a `mkdir -p` hint. Names must be unique across `files[]` and `file_structure[]`, since each becomes the result id; the blueprint schema rejects a shared name. An entry whose target is also a `files[]` target is dropped with no result in favor of the file check.
 
 </Accordion>
 

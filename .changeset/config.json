@@ -1,7 +1,7 @@
 {
 	"$schema": "../node_modules/@changesets/config/schema.json",
 	"baseBranch": "main",
-	"updateInternalDependencies": "patch",
+	"changedFilePatterns": ["src/*", "skills/*", "package.json", "!**/*.test.ts"],
 	"commit": true,
-	"changedFilePatterns": ["src/*", "skills/*", "package.json", "!**/*.test.ts"]
+	"updateInternalDependencies": "patch"
 }

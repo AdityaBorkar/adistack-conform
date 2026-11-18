@@ -1,5 +1,7 @@
 import * as z from "zod";
 
+import { RepoRelSourceSchema } from "#/schemas/source.js";
+
 const ManifestCompareSchema = z
 	.object({
 		ignore: z
@@ -13,12 +15,9 @@ const ManifestFileSchema = z
 	.object({
 		compare: ManifestCompareSchema.describe("Semantic compare/fix rules for this file.").optional(),
 		name: z.string().min(1).describe("File name within the blueprint."),
-		source: z
-			.string()
-			.min(1)
-			.describe(
-				"Repo-relative source path of the upstream file (e.g. projects/files/<group>/<file>).",
-			),
+		source: RepoRelSourceSchema.describe(
+			"Repo-relative source path of the upstream file (e.g. projects/files/<group>/<file>).",
+		),
 		target: z.string().min(1).describe("Enforcement target."),
 	})
 	.strict();
@@ -36,14 +35,14 @@ const ManifestFileStructureSchema = z
 export const ManifestSchema = z.compile(
 	z
 		.object({
+			$description: z.string().describe("Human-readable blueprint description.").optional(),
+			$name: z.string().min(1).describe("Human-readable blueprint name.").optional(),
 			$schema: z
 				.string()
 				.describe(
 					"JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/project-manifest.json.",
 				)
 				.optional(),
-			"@description": z.string().describe("Human-readable blueprint description.").optional(),
-			"@name": z.string().min(1).describe("Human-readable blueprint name.").optional(),
 			file_structure: z
 				.array(ManifestFileStructureSchema)
 				.describe("Existence-only entries enforced by this blueprint (no content compare).")
@@ -59,16 +58,24 @@ export const ManifestSchema = z.compile(
 						"Blueprint enforces nothing: add at least one files[] or file_structure[] entry.",
 				});
 			}
+			// Names become check result ids, so they are unique across both lists.
+			const seen = new Map<string, string>();
 			for (const [label, names] of [
 				["files", data.files.map((file) => file.name)],
 				["file_structure", data.file_structure.map((entry) => entry.name)],
 			] as const) {
-				const seen = new Set<string>();
 				for (const name of names) {
-					if (seen.has(name)) {
+					const first = seen.get(name);
+					if (first === undefined) {
+						seen.set(name, label);
+					} else if (first === label) {
 						ctx.addIssue({ code: "custom", message: `${label} has duplicate name "${name}".` });
+					} else {
+						ctx.addIssue({
+							code: "custom",
+							message: `${label} name "${name}" is already used in ${first}; names are shared across files and file_structure.`,
+						});
 					}
-					seen.add(name);
 				}
 			}
 		}),
