@@ -5,7 +5,7 @@ import type { ProjectCheckOptions } from "#/core/project/index.js";
 import type { CheckResult } from "#/core/result.js";
 import { failManual, pass, skipped } from "#/core/result.js";
 import type { ManifestFile, ManifestFileStructure } from "#/core/upstream/registry.js";
-import { readFileSafe, resolveTargetPath } from "#/utils/fs.js";
+import { isMissingError, readFileSafe, resolveTargetPath } from "#/utils/fs.js";
 
 async function checkFileStructureEntry(args: {
 	blueprint: string;
@@ -27,12 +27,7 @@ async function checkFileStructureEntry(args: {
 				`${args.targetPath} exists but is not a directory; move it aside and run mkdir -p ${args.targetPath}.`,
 			);
 		} catch (error) {
-			if (
-				typeof error === "object" &&
-				error !== null &&
-				"code" in error &&
-				(error as { code?: unknown }).code === "ENOENT"
-			) {
+			if (isMissingError(error)) {
 				// shortcut: manual for now; extend to an ensure-dir fix if dir auto-creation is wanted.
 				return failManual(
 					base,

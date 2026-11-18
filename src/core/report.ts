@@ -1,7 +1,13 @@
 import pc from "picocolors";
 
 import type { CheckResult, CheckScope } from "#/core/result.js";
-import { describeFix, desiredContent, isFixable, partitionResults } from "#/core/result.js";
+import {
+	describeFix,
+	desiredContent,
+	isDrift,
+	isFixable,
+	partitionResults,
+} from "#/core/result.js";
 import { renderDiff } from "#/utils/diff.js";
 
 export function okMark(ok: boolean): string {
@@ -26,7 +32,7 @@ function sanitize(value: string): string {
 	return value.replaceAll(/[\u0000-\u001F\u007F]/gu, "");
 }
 
-export function formatResult(result: CheckResult): string {
+function formatResult(result: CheckResult): string {
 	const upstream = result.upstream === undefined ? "" : ` (${sanitize(result.upstream)})`;
 	if (result.skipped === true) {
 		return `${pc.gray("○")} ${pc.bold(sanitize(result.id))}${upstream} skipped: ${short(sanitize(result.actual))}`;
@@ -68,7 +74,7 @@ function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefin
 	// Machine results are per-item, so summarize the scope state in words
 	// instead of per-item counts.
 	if (scope === "machine") {
-		const failed = items.filter((item) => !item.ok && item.skipped !== true);
+		const failed = items.filter((item) => isDrift(item));
 		if (failed.length === 0) {
 			return `${okMark(true)} machine: in sync`;
 		}
@@ -110,26 +116,31 @@ export function printResults(
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
-// A secret fix keeps its content for the fix step only; JSON shows a marker.
-function withoutSecrets(result: CheckResult): CheckResult {
+// Fix payloads are for the fix step: a secret fix shows a marker, and link
+// bytes (a Uint8Array) are left out of the JSON.
+function forJson(result: CheckResult): CheckResult {
+	if (result.fix?.kind === "symlink") {
+		const { content: _content, ...fix } = result.fix;
+		return { ...result, fix: fix as typeof result.fix };
+	}
 	if (result.fix?.kind !== "overwrite-file" || result.fix.secret !== true) {
 		return result;
 	}
 	return { ...result, fix: { ...result.fix, newContent: "<redacted>" } };
 }
 
-export function printJsonSummary(desiredStates: string[], results: CheckResult[]): void {
-	const failed = results.filter((item) => !item.ok && item.skipped !== true);
+export function printJsonSummary(desiredState: string, results: CheckResult[]): void {
+	const failed = results.filter((item) => isDrift(item));
 	const skipped = results.filter((item) => item.skipped === true);
 	const passed = results.filter((item) => item.ok && item.skipped !== true);
 	console.log(
 		JSON.stringify(
 			{
-				desiredStates,
+				desiredStates: [desiredState],
 				failed: failed.length,
 				ok: failed.length === 0,
 				passed: passed.length,
-				results: results.map((item) => withoutSecrets(item)),
+				results: results.map((item) => forJson(item)),
 				skipped: skipped.length,
 				total: results.length,
 			},
@@ -162,8 +173,11 @@ const MAX_DIFFS_SHOWN = 20;
 export function renderFixDiffs(fixable: CheckResult[]): void {
 	const shown = fixable.slice(0, MAX_DIFFS_SHOWN);
 	const rendered = shown.map((item) => {
-		if (item.fix?.kind === "run-command" || item.fix?.kind === "symlink") {
+		if (item.fix?.kind === "run-command") {
 			return `\nrun ${sanitize(item.id)} (${sanitize(item.target)})\n${sanitize(item.fix.label)}`;
+		}
+		if (item.fix?.kind === "symlink") {
+			return `\nlink ${sanitize(item.id)} (${sanitize(item.target)})\n${sanitize(item.fix.label)}`;
 		}
 		if (item.fix?.kind === "github-api") {
 			return `\napi ${sanitize(item.id)} (${sanitize(item.target)})\n${item.fix.steps.map((step) => `${step.method} ${sanitize(step.path)}`).join("\n")}`;

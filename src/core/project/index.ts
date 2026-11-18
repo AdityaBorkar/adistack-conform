@@ -1,11 +1,11 @@
-import type { ProjectRunState } from "#/core/config.js";
+import type { RunState } from "#/core/config.js";
 import { checkProjectFileWithUpstream, projectBase } from "#/core/project/compare.js";
 import { checkFileStructure } from "#/core/project/structure.js";
 import { failManual, type CheckResult } from "#/core/result.js";
 import type { ManifestCompare, ManifestFile, RegistryDocument } from "#/core/upstream/registry.js";
 import {
 	UPSTREAM_FETCH_CONCURRENCY,
-	fetchProjectManifest,
+	fetchBlueprint,
 	fetchTextOrThrow,
 	isNotFoundError,
 	rawUrl,
@@ -20,14 +20,14 @@ export interface ProjectCheckOptions {
 }
 
 interface NeededFile {
-	blueprint: string;
 	compare: ManifestCompare | undefined;
 	fileName: string;
 	fileTarget: string;
-	sourceLabel: string;
 	sourceRel: string;
 	targetPath: string;
 }
+
+type Upstream = { error: string; notFound: boolean; text?: undefined } | { text: string };
 
 function collectNeeded(
 	blueprint: string,
@@ -41,11 +41,9 @@ function collectNeeded(
 			continue;
 		}
 		needed.push({
-			blueprint,
 			compare: file.compare,
 			fileName: file.name,
 			fileTarget: file.target,
-			sourceLabel: file.source,
 			sourceRel: file.source,
 			targetPath: resolveTargetPath(file.target, options.baseDir, options.home),
 		});
@@ -57,8 +55,8 @@ async function fetchUpstreams(
 	id: string,
 	ref: string,
 	needed: readonly NeededFile[],
-): Promise<Map<string, { error?: string; text?: string }>> {
-	const upstreams = new Map<string, { error?: string; text?: string }>();
+): Promise<Map<string, Upstream>> {
+	const upstreams = new Map<string, Upstream>();
 	const toFetch = [...new Set(needed.map((item) => item.sourceRel))];
 	await mapWithConcurrency(toFetch, UPSTREAM_FETCH_CONCURRENCY, async (rel) => {
 		try {
@@ -66,22 +64,23 @@ async function fetchUpstreams(
 				text: await fetchTextOrThrow(rawUrl(id, ref, rel), `blueprint file ${rel}`),
 			});
 		} catch (error) {
-			upstreams.set(rel, { error: errorMessage(error) });
+			upstreams.set(rel, { error: errorMessage(error), notFound: isNotFoundError(error) });
 		}
 	});
 	return upstreams;
 }
 
 function checkNeeded(
+	blueprint: string,
 	needed: readonly NeededFile[],
-	upstreams: Map<string, { error?: string; text?: string }>,
+	upstreams: Map<string, Upstream>,
 ): Promise<CheckResult[]> {
 	return Promise.all(
 		needed.map((item): Promise<CheckResult> => {
 			const upstream = upstreams.get(item.sourceRel);
 			if (upstream?.text === undefined) {
-				const base = projectBase(item.blueprint, item.fileName, item.fileTarget);
-				if (upstream?.error !== undefined && !isNotFoundError(upstream.error)) {
+				const base = projectBase(blueprint, item.fileName, item.fileTarget);
+				if (upstream !== undefined && !upstream.notFound) {
 					return Promise.resolve(
 						failManual(
 							base,
@@ -101,13 +100,13 @@ function checkNeeded(
 				);
 			}
 			return checkProjectFileWithUpstream({
-				blueprint: item.blueprint,
+				blueprint,
 				compare: item.compare,
 				fileName: item.fileName,
 				fileTarget: item.fileTarget,
-				sourceLabel: item.sourceLabel,
+				sourceLabel: item.sourceRel,
 				targetPath: item.targetPath,
-				upstream: upstream.text as string,
+				upstream: upstream.text,
 			});
 		}),
 	);
@@ -115,20 +114,16 @@ function checkNeeded(
 
 // `onlyIds` narrows a re-check after fix to the selected results.
 export async function runProjectChecks(
-	state: ProjectRunState,
+	state: RunState,
 	options: ProjectCheckOptions,
 	registry: RegistryDocument,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
-	const { files, structure } = await fetchProjectManifest(
-		state.id,
-		state.ref,
-		state.blueprint,
-		registry,
-	);
+	const { data } = await fetchBlueprint(state, registry, "projects");
+	const { files, file_structure: structure } = data;
 	const needed = collectNeeded(state.blueprint, files, options, onlyIds);
 	const upstreams = await fetchUpstreams(state.id, state.ref, needed);
-	const enforced = await checkNeeded(needed, upstreams);
+	const enforced = await checkNeeded(state.blueprint, needed, upstreams);
 	const structured = await checkFileStructure(state.blueprint, files, structure, options, onlyIds);
 	return [...enforced, ...structured];
 }

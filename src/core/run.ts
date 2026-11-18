@@ -1,14 +1,7 @@
 import type { DesiredStateOption, LoadedDesiredState, ScopeOptions } from "#/core/config.js";
-import {
-	activeScopes,
-	githubStateOf,
-	loadDesiredState,
-	machineStateOf,
-	projectStateOf,
-	scopeOf,
-} from "#/core/config.js";
+import { activeScopes, loadDesiredState, scopeOf, stateOf } from "#/core/config.js";
 import { runGithubChecks } from "#/core/github/index.js";
-import { recheckMachineSelected, runMachine } from "#/core/machine/index.js";
+import { runMachine } from "#/core/machine/index.js";
 import { runProjectChecks } from "#/core/project/index.js";
 import type { CheckResult, CheckScope } from "#/core/result.js";
 import type { RegistryDocument } from "#/core/upstream/registry.js";
@@ -17,7 +10,7 @@ import { errorMessage } from "#/utils/error.js";
 import { defaultHome } from "#/utils/fs.js";
 
 // Everything one check run needs, resolved once per command.
-export interface RunContext {
+interface RunContext {
 	desiredState: LoadedDesiredState;
 	home: string;
 	registry: RegistryDocument;
@@ -26,10 +19,7 @@ export interface RunContext {
 	strict: boolean;
 }
 
-export function toSafeResults(
-	task: Promise<CheckResult[]>,
-	scope: CheckScope,
-): Promise<CheckResult[]> {
+function toSafeResults(task: Promise<CheckResult[]>, scope: CheckScope): Promise<CheckResult[]> {
 	return task.catch((error) => [
 		{
 			actual: errorMessage(error),
@@ -44,35 +34,35 @@ export function toSafeResults(
 	]);
 }
 
-// One scope's checks; `selectedIds` narrows a re-check to those IDs.
+// One scope's checks. `selectedIds` narrows a project re-check to those IDs;
+// machine (a few seconds) and GitHub (one batch of API reads) re-check whole.
 function scopeTask(
 	ctx: RunContext,
 	scope: CheckScope,
 	selectedIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	const { desiredState, registry } = ctx;
-	const project = projectStateOf(desiredState);
-	if (scope === "project" && project !== undefined) {
+	const state = stateOf(desiredState, scope);
+	if (state === undefined) {
+		return Promise.resolve([]);
+	}
+	if (scope === "project") {
 		// Project targets resolve against the dir that owns conform.json, not the cwd.
-		const options = { baseDir: desiredState.dir, home: ctx.home };
-		return runProjectChecks(project, options, registry, selectedIds);
+		return runProjectChecks(
+			state,
+			{ baseDir: desiredState.dir, home: ctx.home },
+			registry,
+			selectedIds,
+		);
 	}
-	const machine = machineStateOf(desiredState);
-	if (scope === "machine" && machine !== undefined) {
-		return selectedIds === undefined
-			? runMachine(machine, registry, ctx.strict)
-			: recheckMachineSelected(machine, registry, selectedIds, ctx.strict);
+	if (scope === "machine") {
+		return runMachine(state, registry, { home: ctx.home, strict: ctx.strict });
 	}
-	const github = githubStateOf(desiredState);
-	if (scope === "github" && github !== undefined) {
-		// GitHub checks are one batch of API reads: re-check all of them.
-		return runGithubChecks(github, registry);
-	}
-	return Promise.resolve([]);
+	return runGithubChecks(state, registry);
 }
 
 // Scopes run concurrently; each is timed on its own.
-export async function runAllChecks(ctx: RunContext): Promise<{
+async function runAllChecks(ctx: RunContext): Promise<{
 	elapsedMs: Partial<Record<CheckScope, number>>;
 	results: CheckResult[];
 }> {
@@ -102,9 +92,11 @@ async function recheckSelected(
 	return rechecked.flat();
 }
 
-// A selected ID missing from the re-check no longer exists (e.g. a removed
-// extra), so it is resolved; re-check results new to the run (e.g. a scope
-// error) are appended.
+// Re-checked IDs replace their previous results; results new to the run
+// (e.g. a GitHub auth skip or a machine domain error) are appended. A selected
+// ID missing from the re-check counts as resolved (e.g. a removed extra) only
+// when its scope's re-check hit no new failure: otherwise the scope could not
+// look at it, and the previous failure stands.
 export function mergeRecheck(
 	previous: readonly CheckResult[],
 	rechecked: readonly CheckResult[],
@@ -112,11 +104,15 @@ export function mergeRecheck(
 ): CheckResult[] {
 	const byId = new Map(rechecked.map((item) => [item.id, item]));
 	const previousIds = new Set(previous.map((item) => item.id));
+	const added = rechecked.filter((item) => !previousIds.has(item.id));
+	const unsureScopes = new Set(added.filter((item) => !item.ok).map((item) => item.scope));
 	return [
 		...previous
-			.filter((item) => byId.has(item.id) || !selectedIds.has(item.id))
+			.filter(
+				(item) => byId.has(item.id) || !selectedIds.has(item.id) || unsureScopes.has(item.scope),
+			)
 			.map((item) => byId.get(item.id) ?? item),
-		...rechecked.filter((item) => !previousIds.has(item.id)),
+		...added,
 	];
 }
 

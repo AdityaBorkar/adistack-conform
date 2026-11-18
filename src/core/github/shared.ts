@@ -14,7 +14,3 @@ export function baseFor(blueprint: string, name: string, target: string): CheckB
 		upstream: `tech-stack:${blueprint}`,
 	};
 }
-
-export function diffSummary(diffs: readonly string[]): string {
-	return diffs.join("; ");
-}

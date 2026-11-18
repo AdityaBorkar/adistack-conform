@@ -10,4 +10,4 @@ A separate `switch` command that applied machine drift without a prompt (rejecte
 
 ## Consequences
 
-Secrets come from one decryption per run, shared by every template. Links point at a materialized copy of the upstream next to the target, so the check stays pure. Templates enforce their declared file mode after writing.
+Secrets come from one decryption per run, shared by every template. Links point at a materialized copy of the upstream next to the target, so the check stays pure. A secrets template substitutes only the secrets it lists and enforces its file mode (default `0600`).

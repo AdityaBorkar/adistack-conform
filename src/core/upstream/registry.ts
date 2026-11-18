@@ -9,7 +9,10 @@ export type ManifestFileStructure = NonNullable<
 	z.infer<typeof ManifestSchema>["file_structure"]
 >[number];
 export type RegistryDocument = z.infer<typeof RegistrySchema>;
-export type RegistryEntry = {
+// Registry sections, one per scope.
+export type BlueprintKind = "github_configs" | "machines" | "projects";
+
+type RegistryEntry = {
 	name: string;
 	path: string;
 };
@@ -43,7 +46,7 @@ function findInPathMap(
 	return undefined;
 }
 
-export const MAX_LIST_SHOWN = 10;
+const MAX_LIST_SHOWN = 10;
 
 export function availableHint(names: string[], label: string): string {
 	if (names.length > MAX_LIST_SHOWN) {
@@ -55,37 +58,16 @@ export function availableHint(names: string[], label: string): string {
 	return "";
 }
 
-export function listMachineBlueprintNames(registry: RegistryDocument): string[] {
-	return Object.keys(registry.machines).toSorted();
+export function blueprintNames(registry: RegistryDocument, kind: BlueprintKind): string[] {
+	return Object.keys(registry[kind]).toSorted();
 }
 
-export function listProjectBlueprintNames(registry: RegistryDocument): string[] {
-	return Object.keys(registry.projects).toSorted();
-}
-
-export function listGithubBlueprintNames(registry: RegistryDocument): string[] {
-	return Object.keys(registry.github_configs).toSorted();
-}
-
-export function findProjectEntry(
-	name: string,
+export function findEntry(
 	registry: RegistryDocument,
-): RegistryEntry | undefined {
-	return findInPathMap(name, registry.projects);
-}
-
-export function findGithubEntry(
+	kind: BlueprintKind,
 	name: string,
-	registry: RegistryDocument,
 ): RegistryEntry | undefined {
-	return findInPathMap(name, registry.github_configs);
-}
-
-export function findMachineEntry(
-	name: string,
-	registry: RegistryDocument,
-): RegistryEntry | undefined {
-	return findInPathMap(name, registry.machines);
+	return findInPathMap(name, registry[kind]);
 }
 
 function assertSafeRel(normalized: string, original: string, label: string): string {

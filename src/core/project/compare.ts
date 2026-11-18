@@ -74,46 +74,34 @@ function overlayResult(
 function semanticResult(args: SemanticArgs): CheckResult | undefined {
 	const template = isTemplateUpstream(args.upstream);
 	const needsJson = template || hasCompareRules(args.compare);
+	// Upstream that is not a JSON object/array: templates and compare rules cannot apply.
+	const invalidUpstream = (): CheckResult | undefined => {
+		if (template) {
+			return failManual(
+				args.base,
+				args.localText,
+				args.upstream,
+				`Blueprint ${args.fileName} is not a valid JSON object; cannot compare.`,
+			);
+		}
+		if (hasCompareRules(args.compare)) {
+			return failManual(
+				args.base,
+				args.localText,
+				args.upstream,
+				`Cannot use compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
+			);
+		}
+		return undefined;
+	};
 	let upstreamParsed: unknown;
 	try {
 		upstreamParsed = parseJsonc(args.upstream);
 	} catch {
-		if (template) {
-			return failManual(
-				args.base,
-				args.localText,
-				args.upstream,
-				`Blueprint ${args.fileName} is not valid JSON; cannot compare.`,
-			);
-		}
-		if (hasCompareRules(args.compare)) {
-			return failManual(
-				args.base,
-				args.localText,
-				args.upstream,
-				`Cannot use compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
-			);
-		}
-		return undefined;
+		return invalidUpstream();
 	}
 	if (!isRecord(upstreamParsed) && !Array.isArray(upstreamParsed)) {
-		if (template) {
-			return failManual(
-				args.base,
-				args.localText,
-				args.upstream,
-				`Blueprint ${args.fileName} is not an object; cannot compare.`,
-			);
-		}
-		if (hasCompareRules(args.compare)) {
-			return failManual(
-				args.base,
-				args.localText,
-				args.upstream,
-				`Cannot use compare rules for ${args.fileName}: the upstream is not a JSON object; fix the blueprint manually.`,
-			);
-		}
-		return undefined;
+		return invalidUpstream();
 	}
 	let localParsed: unknown;
 	try {

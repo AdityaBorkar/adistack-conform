@@ -1,51 +1,23 @@
 import { dirname, join } from "node:path";
 
+import type * as z from "zod";
+
 import type { CheckScope } from "#/core/result.js";
 import { ConformSchema } from "#/schemas/config.js";
 import { readJsonFile, resolveDesiredStatePath } from "#/utils/fs.js";
 import { parseOrThrow } from "#/utils/schema.js";
 
-export interface ConformSource {
-	id: string;
-	provider: "github";
-	ref: string;
-}
+type Conform = z.infer<typeof ConformSchema>;
 
-export interface ConformMachine {
-	blueprint: string;
-}
-
-export interface ConformGithub {
-	blueprint: string;
-	repo?: string;
-}
-
-export interface ConformProject {
-	blueprint: string;
-}
-
-export interface LoadedDesiredState {
+export type LoadedDesiredState = Pick<Conform, CheckScope> & {
 	dir: string;
-	github?: ConformGithub;
-	machine?: ConformMachine;
 	path: string;
-	project?: ConformProject;
-	source: ConformSource;
-}
+	// `id` is the tech-stack owner/repo.
+	source: { id: string; ref: string };
+};
 
-export interface ProjectRunState {
-	blueprint: string;
-	id: string;
-	ref: string;
-}
-
-export interface MachineRunState {
-	blueprint: string;
-	id: string;
-	ref: string;
-}
-
-export interface GithubRunState {
+// One scope's slice of the desired state plus the tech-stack source it reads from.
+export interface RunState {
 	blueprint: string;
 	id: string;
 	ref: string;
@@ -65,11 +37,7 @@ function toLoadedDesiredState(path: string, parsed: unknown): LoadedDesiredState
 		machine: data.machine,
 		path,
 		project: data.project,
-		source: {
-			id: data.source.repo,
-			provider: "github",
-			ref: data.source.ref,
-		},
+		source: { id: data.source.repo, ref: data.source.ref },
 	};
 }
 
@@ -102,34 +70,9 @@ export async function loadDesiredState(path: string | undefined): Promise<Loaded
 	return toLoadedDesiredState(resolved, await readJsonFile(resolved, "Desired state"));
 }
 
-export function projectStateOf(loaded: LoadedDesiredState): ProjectRunState | undefined {
-	if (loaded.project === undefined) {
-		return undefined;
-	}
-	return { blueprint: loaded.project.blueprint, id: loaded.source.id, ref: loaded.source.ref };
-}
-
-export function machineStateOf(loaded: LoadedDesiredState): MachineRunState | undefined {
-	if (loaded.machine === undefined) {
-		return undefined;
-	}
-	return {
-		blueprint: loaded.machine.blueprint,
-		id: loaded.source.id,
-		ref: loaded.source.ref,
-	};
-}
-
-export function githubStateOf(loaded: LoadedDesiredState): GithubRunState | undefined {
-	if (loaded.github === undefined) {
-		return undefined;
-	}
-	return {
-		blueprint: loaded.github.blueprint,
-		id: loaded.source.id,
-		ref: loaded.source.ref,
-		repo: loaded.github.repo,
-	};
+export function stateOf(loaded: LoadedDesiredState, scope: CheckScope): RunState | undefined {
+	const section = loaded[scope];
+	return section === undefined ? undefined : { ...section, ...loaded.source };
 }
 
 export type ScopeOptions = { githubOnly?: boolean; machineOnly?: boolean; projectOnly?: boolean };

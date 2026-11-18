@@ -1,6 +1,6 @@
 import { apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor, diffSummary } from "#/core/github/shared.js";
+import { baseFor } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
 import { failFixable, pass, skipped } from "#/core/result.js";
 
@@ -47,7 +47,7 @@ export async function checkActionsPermissions(
 		label: `github PUT ${repo} actions permissions`,
 		steps: [{ body, method: "PUT", path: repoPath(repo, "/actions/permissions") }],
 	};
-	return failFixable(base, diffSummary(diffs), "actions permissions match", fix);
+	return failFixable(base, diffs.join("; "), "actions permissions match", fix);
 }
 
 export async function checkActionsWorkflow(
@@ -140,10 +140,10 @@ export async function checkActionsWorkflow(
 	const result = failFixable(
 		base,
 		forkDiff === ""
-			? diffSummary(diffs)
+			? diffs.join("; ")
 			: diffs.length === 0
 				? forkDiff
-				: `${diffSummary(diffs)}; ${forkDiff}`,
+				: `${diffs.join("; ")}; ${forkDiff}`,
 		"workflow permissions match",
 		fix,
 	);

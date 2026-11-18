@@ -1,9 +1,7 @@
 import type { Command } from "commander";
 
 import type { DesiredStateOption, ScopeOptions } from "#/core/config.js";
-import { machineStateOf } from "#/core/config.js";
-import { unattendedRefusal } from "#/core/fix.js";
-import { fixSelectedAcrossScopes } from "#/core/machine/fix.js";
+import { fixSelected, unattendedRefusal } from "#/core/fix.js";
 import {
 	formatDuration,
 	outroAllPassed,
@@ -12,7 +10,7 @@ import {
 	renderFixDiffs,
 	reportManual,
 } from "#/core/report.js";
-import { partitionResults } from "#/core/result.js";
+import { isDrift, partitionResults } from "#/core/result.js";
 import { prepareRun, recheckAfterFix } from "#/core/run.js";
 import { isInteractive, selectFixes } from "#/core/select.js";
 
@@ -46,7 +44,7 @@ async function run(options: FixOptions): Promise<number> {
 	}
 
 	if (options.all === true && !isInteractive()) {
-		const refusal = unattendedRefusal(fixable, ctx.desiredState.dir);
+		const refusal = await unattendedRefusal(fixable, ctx.desiredState.dir);
 		if (refusal !== undefined) {
 			console.error(refusal);
 			return 2;
@@ -66,15 +64,10 @@ async function run(options: FixOptions): Promise<number> {
 	if (options.diff !== false) {
 		renderFixDiffs(selection.selected);
 	}
-	const fixed = await fixSelectedAcrossScopes({
-		home: ctx.home,
-		registry: ctx.registry,
-		selected: selection.selected,
-		state: machineStateOf(ctx.desiredState),
-	});
+	const fixed = await fixSelected(selection.selected);
 
 	const recheckResults = await recheckAfterFix(ctx, results, selection.selected);
-	const remaining = recheckResults.filter((item) => !item.ok && item.skipped !== true);
+	const remaining = recheckResults.filter((item) => isDrift(item));
 	const elapsedMs = performance.now() - start;
 	console.log(
 		`\nFixed ${fixed.length}/${selection.selected.length}. ${remaining.length} result(s) still failing in ${formatDuration(elapsedMs)}.`,

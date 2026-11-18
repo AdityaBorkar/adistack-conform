@@ -17,8 +17,11 @@ export interface RunCommandFix {
 	label: string;
 }
 
+// The fix writes `content` (the upstream bytes the check compared) to
+// `cachePath`, then points `targetAbs` at it, so it links exactly what was checked.
 export interface SymlinkFix {
 	cachePath: string;
+	content: Uint8Array;
 	kind: "symlink";
 	label: string;
 	targetAbs: string;
@@ -84,12 +87,17 @@ export function failManual(
 	return { actual, expected, hint, ok: false, ...base };
 }
 
+// Drift = a failing result that is not a skip; it decides exit codes and summaries.
+export function isDrift(result: CheckResult): boolean {
+	return !result.ok && result.skipped !== true;
+}
+
 export function partitionResults(results: CheckResult[]): {
 	failed: CheckResult[];
 	fixable: CheckResult[];
 	manual: CheckResult[];
 } {
-	const failed = results.filter((item) => !item.ok && item.skipped !== true);
+	const failed = results.filter((item) => isDrift(item));
 	return {
 		failed,
 		fixable: failed.filter((item) => isFixable(item)),
@@ -121,6 +129,9 @@ export function describeFix(result: CheckResult): string {
 	}
 	if (fix.kind === "github-api") {
 		return `api ${fix.label}`;
+	}
+	if (fix.kind === "symlink") {
+		return fix.label;
 	}
 	return `run ${fix.label}`;
 }

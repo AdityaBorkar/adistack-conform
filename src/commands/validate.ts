@@ -3,11 +3,11 @@ import type { Command } from "commander";
 import type { DesiredStateOption } from "#/core/config.js";
 import { loadDesiredState } from "#/core/config.js";
 import { okMark } from "#/core/report.js";
-import { collectValidateTargets, validateTargets } from "#/core/validate.js";
+import { validateDesiredState } from "#/core/validate.js";
 
 async function run(options: DesiredStateOption): Promise<number> {
 	const desiredState = await loadDesiredState(options.desiredState);
-	const results = await validateTargets(collectValidateTargets(desiredState));
+	const results = await validateDesiredState(desiredState);
 	for (const result of results) {
 		if (result.ok) {
 			console.log(`${okMark(true)} ${result.file}`);

@@ -1,4 +1,4 @@
-import type { GithubRunState } from "#/core/config.js";
+import type { RunState } from "#/core/config.js";
 import {
 	checkActionsOidc,
 	checkActionsPermissions,
@@ -22,33 +22,32 @@ import { resolveTargetRepo } from "#/core/github/target-repo.js";
 import type { CheckResult } from "#/core/result.js";
 import { failManual, skipped } from "#/core/result.js";
 import type { RegistryDocument } from "#/core/upstream/registry.js";
-import { findGithubEntry, blueprintRel } from "#/core/upstream/registry.js";
-import { fetchGithubSettings, isNotFoundError } from "#/core/upstream/remote.js";
+import { blueprintRel, findEntry } from "#/core/upstream/registry.js";
+import { fetchBlueprint, isNotFoundError } from "#/core/upstream/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 
-export { forkApprovalPolicy } from "#/core/github/actions.js";
-export { protectionPutBody } from "#/core/github/protection.js";
-export { isPrivateVulnEnabled } from "#/core/github/security.js";
+// Lower than upstream fetches: GitHub's secondary rate limits punish bursts.
+const GITHUB_API_CONCURRENCY = 6;
 
 type GithubSettingsResult =
 	| { rel: string; upstream: GithubSettings }
 	| { rel: string }
 	| Record<string, never>;
 
+// A missing registry entry or settings file is a manual result with a hint,
+// not an internal error: both are blueprint fixes the user can make.
 async function resolveGithubSettings(
-	id: string,
-	ref: string,
-	blueprint: string,
+	state: RunState,
 	registry: RegistryDocument,
 ): Promise<GithubSettingsResult> {
-	const entry = findGithubEntry(blueprint, registry);
+	const entry = findEntry(registry, "github_configs", state.blueprint);
 	if (entry === undefined) {
 		return {};
 	}
 	const rel = blueprintRel(entry.path);
 	try {
-		const { upstream } = await fetchGithubSettings(id, ref, blueprint, registry);
-		return { rel, upstream };
+		const { data } = await fetchBlueprint(state, registry, "github_configs");
+		return { rel, upstream: data };
 	} catch (error) {
 		if (isNotFoundError(error)) {
 			return { rel };
@@ -108,10 +107,10 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 }
 
 export async function runGithubChecks(
-	state: GithubRunState,
+	state: RunState,
 	registry: RegistryDocument,
 ): Promise<CheckResult[]> {
-	const settings = await resolveGithubSettings(state.id, state.ref, state.blueprint, registry);
+	const settings = await resolveGithubSettings(state, registry);
 	const repo = resolveTargetRepo(state.repo);
 	const target = `${repo} (repo settings)`;
 	if (!("upstream" in settings)) {
@@ -161,7 +160,9 @@ export async function runGithubChecks(
 			() => checkSecurity(state.blueprint, repo, upstream, target, getRepoInfo),
 			() => checkSecrets(state.blueprint, repo, upstream, target),
 		];
-		const settled = await mapWithConcurrency(checks, 6, (run) => Promise.resolve(run()));
+		const settled = await mapWithConcurrency(checks, GITHUB_API_CONCURRENCY, (run) =>
+			Promise.resolve(run()),
+		);
 		return [...settled.flat(), ...checkUiOnly(state.blueprint, upstream, target)];
 	} catch (error) {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {

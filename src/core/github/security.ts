@@ -1,6 +1,6 @@
 import { apiEnabled, apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor, diffSummary } from "#/core/github/shared.js";
+import { baseFor } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
 import { failFixable, failManual, pass, skipped } from "#/core/result.js";
 
@@ -146,7 +146,7 @@ export async function checkSecurity(
 		return [
 			failManual(
 				base,
-				diffSummary(diffs),
+				diffs.join("; "),
 				"security settings match",
 				"Toggle in Settings → Code security, then re-check (needs GITHUB_TOKEN).",
 			),
@@ -154,7 +154,7 @@ export async function checkSecurity(
 		];
 	}
 	const fix: GithubApiFix = { kind: "github-api", label: `github PATCH ${repo} security`, steps };
-	return [failFixable(base, diffSummary(diffs), "security settings match", fix), ...notes];
+	return [failFixable(base, diffs.join("; "), "security settings match", fix), ...notes];
 }
 
 export async function checkSecrets(

@@ -1,15 +1,17 @@
-import { lstat, mkdtemp, readlink, rmdir, stat, unlink } from "node:fs/promises";
+import { lstat, mkdtemp, readlink, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { MachineRunState } from "#/core/config.js";
+import type { RunState } from "#/core/config.js";
 import type { LinkStat } from "#/core/machine/links.js";
-import { listBunPackages } from "#/core/machine/managers/bun.js";
-import { listPacmanPackages } from "#/core/machine/managers/pacman.js";
-import type { InstalledPackages } from "#/core/machine/managers/types.js";
-import type { TemplateTarget } from "#/core/machine/templates.js";
+import type { InstalledPackages, ManagerId } from "#/core/machine/managers/types.js";
+import { MANAGERS } from "#/core/machine/packages.js";
+import type { SecretsTemplateTarget } from "#/core/machine/templates.js";
 import { fetchBytesOrThrow, fetchTextOrThrow, rawUrl } from "#/core/upstream/remote.js";
 import { errorMessage } from "#/utils/error.js";
+import { isMissingError } from "#/utils/fs.js";
+import { setOwn } from "#/utils/json.js";
+import { captureCommand } from "#/utils/process.js";
 
 // Live reality behind the machine checks. Every member is a small injectable
 // function so tests can fake the whole machine without network or disk.
@@ -18,18 +20,17 @@ export interface MachineLive {
 	decryptSecrets: () => Promise<Record<string, string>>;
 	fetchSource: (rel: string) => Promise<Uint8Array>;
 	fetchText: (rel: string) => Promise<string>;
-	listBun: () => Promise<InstalledPackages>;
-	listPacman: () => Promise<InstalledPackages>;
-	readTemplateTarget: (abs: string) => Promise<TemplateTarget>;
+	listPackages: (manager: ManagerId) => Promise<InstalledPackages>;
+	readSecretsTemplateTarget: (abs: string) => Promise<SecretsTemplateTarget>;
 	statLink: (targetAbs: string) => Promise<LinkStat>;
 }
 
-export async function statLinkPath(targetAbs: string): Promise<LinkStat> {
+async function statLinkPath(targetAbs: string): Promise<LinkStat> {
 	let info: Awaited<ReturnType<typeof lstat>>;
 	try {
 		info = await lstat(targetAbs);
 	} catch (error) {
-		if ((error as { code?: unknown } | null)?.code === "ENOENT") {
+		if (isMissingError(error)) {
 			return { kind: "missing" };
 		}
 		throw error;
@@ -48,7 +49,7 @@ export async function statLinkPath(targetAbs: string): Promise<LinkStat> {
 	return { isFile: info.isFile(), kind: "other" };
 }
 
-export async function readTemplateTargetPath(abs: string): Promise<TemplateTarget> {
+async function readSecretsTemplateTarget(abs: string): Promise<SecretsTemplateTarget> {
 	let mode: string | undefined;
 	let isFile = false;
 	try {
@@ -56,7 +57,7 @@ export async function readTemplateTargetPath(abs: string): Promise<TemplateTarge
 		isFile = info.isFile();
 		mode = (info.mode & 0o777).toString(8);
 	} catch (error) {
-		if ((error as { code?: unknown } | null)?.code === "ENOENT") {
+		if (isMissingError(error)) {
 			return { exists: false };
 		}
 		throw error;
@@ -77,7 +78,7 @@ export function parseSimpleMapping(text: string): Record<string, string> {
 		if (raw === "" || raw.startsWith("#") || raw === "---" || raw === "...") {
 			continue;
 		}
-		const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*?)\s*$/u.exec(raw);
+		const match = /^([A-Za-z_][\w.-]*)\s*:\s*(.*?)\s*$/u.exec(raw);
 		if (match?.[1] === undefined) {
 			throw new Error(
 				`Unsupported secrets line ${index + 1}: ${JSON.stringify(raw)} (flat KEY: value only; nested blocks are not supported).`,
@@ -91,7 +92,7 @@ export function parseSimpleMapping(text: string): Record<string, string> {
 		) {
 			value = value.slice(1, -1);
 		}
-		values[match[1]] = value;
+		setOwn(values, match[1], value);
 	}
 	return values;
 }
@@ -111,19 +112,14 @@ async function withTempDir<T>(run: (dir: string) => Promise<T>): Promise<T> {
 		return await run(dir);
 	} finally {
 		try {
-			await unlink(join(dir, "secrets.yaml"));
+			await rm(dir, { force: true, recursive: true });
 		} catch {
 			// Best-effort temp cleanup; the run result does not depend on it.
-		}
-		try {
-			await rmdir(dir);
-		} catch {
-			// Best-effort temp cleanup.
 		}
 	}
 }
 
-export async function decryptSecretsLive(
+async function decryptSecretsLive(
 	id: string,
 	ref: string,
 	secretsRel: string,
@@ -138,45 +134,21 @@ export async function decryptSecretsLive(
 	}
 	return withTempDir(async (dir) => {
 		const tmp = join(dir, "secrets.yaml");
+		await Bun.write(tmp, encrypted);
+		let text: string;
 		try {
-			await Bun.write(tmp, encrypted);
+			text = await captureCommand(["sops", "--decrypt", tmp]);
 		} catch (error) {
-			throw new Error(`Cannot stage secrets file for sops: ${errorMessage(error)}`, {
-				cause: error,
-			});
-		}
-		let proc: ReturnType<typeof Bun.spawn>;
-		try {
-			proc = Bun.spawn(["sops", "--decrypt", tmp], {
-				stderr: "pipe",
-				stdin: "ignore",
-				stdout: "pipe",
-			});
-		} catch (error) {
-			throw new Error(`Cannot run sops --decrypt (is sops installed?): ${errorMessage(error)}`, {
-				cause: error,
-			});
-		}
-		const { stderr, stdout } = proc;
-		if (!(stdout instanceof ReadableStream) || !(stderr instanceof ReadableStream)) {
-			throw new TypeError("Cannot capture sops --decrypt output.");
-		}
-		const [text, errText, code] = await Promise.all([
-			new Response(stdout).text(),
-			new Response(stderr).text(),
-			proc.exited,
-		]);
-		if (code !== 0) {
-			const detail = errText.trim();
 			throw new Error(
-				`sops --decrypt failed (exit ${code})${detail === "" ? "" : `: ${detail}`}; fix decryption (age key?), then re-check.`,
+				`sops --decrypt failed (is sops installed, with the age key available?): ${errorMessage(error)}`,
+				{ cause: error },
 			);
 		}
 		return parseSimpleMapping(text);
 	});
 }
 
-export function defaultLive(state: MachineRunState, manifestRel: string): MachineLive {
+export function defaultLive(state: RunState, manifestRel: string): MachineLive {
 	const secretsRel = machineSecretsRel(manifestRel);
 	return {
 		decryptSecrets: () => decryptSecretsLive(state.id, state.ref, secretsRel),
@@ -184,9 +156,8 @@ export function defaultLive(state: MachineRunState, manifestRel: string): Machin
 			fetchBytesOrThrow(rawUrl(state.id, state.ref, rel), `blueprint file ${rel}`),
 		fetchText: (rel: string) =>
 			fetchTextOrThrow(rawUrl(state.id, state.ref, rel), `blueprint file ${rel}`),
-		listBun: listBunPackages,
-		listPacman: listPacmanPackages,
-		readTemplateTarget: readTemplateTargetPath,
+		listPackages: (manager) => MANAGERS[manager].list(),
+		readSecretsTemplateTarget,
 		statLink: statLinkPath,
 	};
 }

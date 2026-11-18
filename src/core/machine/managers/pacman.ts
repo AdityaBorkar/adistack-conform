@@ -1,16 +1,5 @@
-import { captureCommand } from "#/core/machine/managers/types.js";
-import type { InstalledPackages } from "#/core/machine/managers/types.js";
-
-export async function listPacmanPackages(): Promise<InstalledPackages> {
-	const [explicitOut, versionsOut] = await Promise.all([
-		captureCommand(["pacman", "-Qqe"]),
-		captureCommand(["pacman", "-Q"]),
-	]);
-	return {
-		explicit: new Set(parsePacmanExplicit(explicitOut)),
-		versions: parsePacmanVersions(versionsOut),
-	};
-}
+import type { PackageManager } from "#/core/machine/managers/types.js";
+import { captureCommand } from "#/utils/process.js";
 
 export function parsePacmanExplicit(stdout: string): string[] {
 	return stdout.split(/\s+/u).filter((name) => name !== "");
@@ -30,3 +19,32 @@ export function parsePacmanVersions(stdout: string): Map<string, string> {
 	}
 	return versions;
 }
+
+// `--` ends option parsing, so a package name can never act as a pacman flag under sudo.
+export const pacmanManager: PackageManager = {
+	install: ({ name, version }) => {
+		const spec = version === "latest" ? name : `${name}=${version}`;
+		return {
+			args: ["pacman", "-S", "--needed", "--noconfirm", "--", spec],
+			command: "sudo",
+			kind: "run-command",
+			label: `sudo pacman -S --needed --noconfirm -- ${spec}`,
+		};
+	},
+	list: async () => {
+		const [explicitOut, versionsOut] = await Promise.all([
+			captureCommand(["pacman", "-Qqe"]),
+			captureCommand(["pacman", "-Q"]),
+		]);
+		return {
+			explicit: new Set(parsePacmanExplicit(explicitOut)),
+			versions: parsePacmanVersions(versionsOut),
+		};
+	},
+	remove: (name) => ({
+		args: ["pacman", "-Rs", "--noconfirm", "--", name],
+		command: "sudo",
+		kind: "run-command",
+		label: `sudo pacman -Rs --noconfirm -- ${name}`,
+	}),
+};

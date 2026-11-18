@@ -1,77 +1,56 @@
 import { constants } from "node:fs";
-import { copyFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import type { Stats } from "node:fs";
+import { copyFile, lstat, rename, symlink, unlink } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 
 import { fixGithubApiFix } from "#/core/github/api.js";
-import { statLinkPath } from "#/core/machine/live.js";
-import type { CheckResult } from "#/core/result.js";
+import type { CheckFix, CheckResult, SymlinkFix } from "#/core/result.js";
 import { errorMessage } from "#/utils/error.js";
-import { writeFileEnsuringDir } from "#/utils/fs.js";
+import { isMissingError, realPathOf, writeFileEnsuringDir } from "#/utils/fs.js";
+import { runCommand } from "#/utils/process.js";
 
-export const FIX_TIMEOUT_MS = 10 * 60_000;
+const FIX_TIMEOUT_MS = 10 * 60_000;
 
-async function runCommandFix(argv: string[], label: string): Promise<void> {
-	const proc = Bun.spawn(argv, {
-		stderr: "inherit",
-		stdin: "inherit",
-		stdout: "inherit",
-	});
-	let timedOut = false;
-	const timer = setTimeout(() => {
-		timedOut = true;
-		try {
-			proc.kill();
-			setTimeout(() => {
-				try {
-					proc.kill(9);
-				} catch {
-					// Already exited.
-				}
-			}, 5000).unref?.();
-		} catch {
-			// Already exited; the await below settles first.
-		}
-	}, FIX_TIMEOUT_MS);
-	let code: number;
+async function lstatOrMissing(path: string): Promise<Stats | undefined> {
 	try {
-		code = await proc.exited;
-	} finally {
-		clearTimeout(timer);
-	}
-	if (timedOut) {
-		throw new Error(`Command timed out after ${Math.round(FIX_TIMEOUT_MS / 1000)}s: ${label}`);
-	}
-	if (code !== 0) {
-		throw new Error(`Command failed with exit code ${code}: ${label}`);
+		return await lstat(path);
+	} catch (error) {
+		if (isMissingError(error)) {
+			return undefined;
+		}
+		throw error;
 	}
 }
 
-export async function fixResult(result: CheckResult): Promise<void> {
-	const fix = result.fix;
-	if (fix === undefined) {
-		throw new Error(`Result ${result.id} is not fixable.`);
+async function unlinkIfPresent(path: string): Promise<void> {
+	try {
+		await unlink(path);
+	} catch (error) {
+		if (!isMissingError(error)) {
+			throw error;
+		}
 	}
-	if (fix.kind === "github-api") {
-		await fixGithubApiFix(fix);
-		return;
-	}
-	if (fix.kind === "overwrite-file") {
-		const mode = fix.mode === undefined ? undefined : Number.parseInt(fix.mode, 8);
-		await writeFileEnsuringDir(fix.filePath, fix.newContent, mode);
-		return;
-	}
-	if (fix.kind === "symlink") {
-		await runCommandFix(["ln", "-sfn", fix.cachePath, fix.targetAbs], fix.label);
-		return;
-	}
-	await runCommandFix([fix.command, ...fix.args], fix.label);
 }
 
-// copyFile keeps the source's bytes and mode, so a 0600 secrets file never
-// gets a world-readable backup; COPYFILE_EXCL never overwrites an older backup.
-async function backupExistingFile(filePath: string): Promise<string | undefined> {
-	if (!(await Bun.file(filePath).exists())) {
+// Backs up a regular file to the next free .conform.bak[.N]. Refuses before
+// reading a byte when the path is a symlink (a planted link must never copy
+// its target into the workspace) or not a regular file. copyFile keeps the
+// mode, so a 0600 file never gets a world-readable backup; COPYFILE_EXCL never
+// overwrites an older backup. `single` keeps one backup (secrets files), so
+// decrypted copies do not pile up.
+async function backupExistingFile(filePath: string, single = false): Promise<string | undefined> {
+	const info = await lstatOrMissing(filePath);
+	if (info === undefined) {
 		return undefined;
+	}
+	if (info.isSymbolicLink()) {
+		throw new Error(`Refusing to write through symlink: ${filePath}`);
+	}
+	if (!info.isFile()) {
+		throw new Error(`Refusing to replace ${filePath}: not a regular file.`);
+	}
+	if (single) {
+		await unlinkIfPresent(`${filePath}.conform.bak`);
 	}
 	for (let suffix = 0; suffix < 100; suffix += 1) {
 		const backupPath = `${filePath}.conform.bak${suffix === 0 ? "" : `.${suffix}`}`;
@@ -87,23 +66,28 @@ async function backupExistingFile(filePath: string): Promise<string | undefined>
 	throw new Error(`Too many backups of ${filePath}; remove old .conform.bak files first.`);
 }
 
-// `ln -sfn` replaces whatever is at the target: back up a regular file first
-// (same .conform.bak rule as overwrite-file fixes). Symlinks need no backup;
-// directories are refused so a file fix never swallows a directory.
-async function backupLinkTarget(targetAbs: string): Promise<string | undefined> {
-	const stat = await statLinkPath(targetAbs);
-	if (stat.kind === "missing" || stat.kind === "symlink") {
-		return undefined;
-	}
-	if (!stat.isFile) {
-		throw new Error(`Refusing to replace ${targetAbs}: not a regular file.`);
-	}
-	return backupExistingFile(targetAbs);
+// Writes the checked upstream bytes to the cache, then swaps the link in
+// atomically (symlink to a temp name, rename over the target). A symlink at
+// the target needs no backup; a regular file is backed up first.
+async function linkToCache(fix: SymlinkFix): Promise<string | undefined> {
+	const current = await lstatOrMissing(fix.targetAbs);
+	const backup =
+		current?.isSymbolicLink() === true ? undefined : await backupExistingFile(fix.targetAbs);
+	await writeFileEnsuringDir(fix.cachePath, fix.content);
+	const tmp = `${fix.targetAbs}.conform-tmp`;
+	await unlinkIfPresent(tmp);
+	await symlink(fix.cachePath, tmp);
+	await rename(tmp, fix.targetAbs);
+	return backup;
 }
 
 async function fixOnce(item: CheckResult, written: Map<string, string>): Promise<boolean> {
 	const fix = item.fix;
-	if (fix?.kind === "overwrite-file") {
+	if (fix === undefined) {
+		throw new Error(`Result ${item.id} is not fixable.`);
+	}
+	let backup: string | undefined;
+	if (fix.kind === "overwrite-file") {
 		const prior = written.get(fix.filePath);
 		if (prior !== undefined) {
 			if (prior === fix.newContent) {
@@ -115,39 +99,27 @@ async function fixOnce(item: CheckResult, written: Map<string, string>): Promise
 			);
 			return false;
 		}
-		const backup = await backupExistingFile(fix.filePath);
-		await fixResult(item);
+		backup = await backupExistingFile(fix.filePath, fix.secret === true);
+		const mode = fix.mode === undefined ? undefined : Number.parseInt(fix.mode, 8);
+		await writeFileEnsuringDir(fix.filePath, fix.newContent, mode);
 		written.set(fix.filePath, fix.newContent);
-		console.log(`✓ fixed ${item.id}${backup === undefined ? "" : ` (backup: ${backup})`}`);
-		return true;
+	} else if (fix.kind === "symlink") {
+		backup = await linkToCache(fix);
+	} else if (fix.kind === "github-api") {
+		await fixGithubApiFix(fix);
+	} else {
+		await runCommand([fix.command, ...fix.args], fix.label, FIX_TIMEOUT_MS);
 	}
-	if (fix?.kind === "symlink") {
-		const linkBackup = await backupLinkTarget(fix.targetAbs);
-		await fixResult(item);
-		console.log(`✓ fixed ${item.id}${linkBackup === undefined ? "" : ` (backup: ${linkBackup})`}`);
-		return true;
-	}
-	await fixResult(item);
-	console.log(`✓ fixed ${item.id}`);
+	console.log(`✓ fixed ${item.id}${backup === undefined ? "" : ` (backup: ${backup})`}`);
 	return true;
 }
 
 export async function fixSelected(selected: CheckResult[]): Promise<CheckResult[]> {
-	const byFile = new Map<string, CheckResult[]>();
-	const others: CheckResult[] = [];
-	for (const item of selected) {
-		if (item.fix?.kind === "overwrite-file") {
-			const list = byFile.get(item.fix.filePath) ?? [];
-			list.push(item);
-			byFile.set(item.fix.filePath, list);
-		} else {
-			others.push(item);
-		}
-	}
 	// File writes first so conflicting same-path fixes are coalesced through
 	// the `written` map before any command fix runs; order within each group
 	// follows selection order.
-	const ordered = [...[...byFile.values()].flat(), ...others];
+	const files = selected.filter((item) => item.fix?.kind === "overwrite-file");
+	const ordered = [...files, ...selected.filter((item) => item.fix?.kind !== "overwrite-file")];
 	const written = new Map<string, string>();
 	const fixed: CheckResult[] = [];
 	for (const item of ordered) {
@@ -162,31 +134,44 @@ export async function fixSelected(selected: CheckResult[]): Promise<CheckResult[
 	return fixed;
 }
 
-function isInsideDir(filePath: string, dir: string): boolean {
-	const rel = relative(resolve(dir), resolve(filePath));
+function writtenPath(fix: CheckFix | undefined): string | undefined {
+	if (fix?.kind === "overwrite-file") {
+		return fix.filePath;
+	}
+	return fix?.kind === "symlink" ? fix.targetAbs : undefined;
+}
+
+// Compares real locations: a symlinked parent dir (e.g. `.github -> /elsewhere`)
+// cannot smuggle a write out of the project. The last segment stays literal,
+// since fixes replace it rather than write through it.
+async function isInsideDir(filePath: string, realDir: string): Promise<boolean> {
+	const real = join(await realPathOf(dirname(filePath)), basename(filePath));
+	const rel = relative(realDir, real);
 	return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
 // `--all` without a TTY never runs commands, edits GitHub, or writes outside
 // the project: returns why it refuses, or undefined when every fix is safe.
-export function unattendedRefusal(
+export async function unattendedRefusal(
 	fixable: readonly CheckResult[],
-	cwd: string,
-): string | undefined {
+	projectDir: string,
+): Promise<string | undefined> {
 	const risky = fixable.filter(
-		(item) =>
-			item.fix?.kind === "run-command" ||
-			item.fix?.kind === "symlink" ||
-			item.fix?.kind === "github-api",
+		(item) => item.fix?.kind === "run-command" || item.fix?.kind === "github-api",
 	);
 	if (risky.length > 0) {
 		return `Refusing --all in non-TTY: ${risky.length} fix(es) run commands or edit GitHub (${risky.map((item) => item.id).join(", ")}). Run again in a terminal or select file-only fixes.`;
 	}
-	const outside = fixable.filter(
-		(item) => item.fix?.kind === "overwrite-file" && !isInsideDir(item.fix.filePath, cwd),
-	);
+	const realDir = await realPathOf(projectDir);
+	const outside: CheckResult[] = [];
+	for (const item of fixable) {
+		const path = writtenPath(item.fix);
+		if (path !== undefined && !(await isInsideDir(path, realDir))) {
+			outside.push(item);
+		}
+	}
 	if (outside.length > 0) {
-		return `Refusing --all in non-TTY: ${outside.length} file fix(es) write outside the project dir (${outside.map((item) => item.id).join(", ")}). Run again in a terminal to confirm.`;
+		return `Refusing --all in non-TTY: ${outside.length} fix(es) write outside the project dir (${outside.map((item) => item.id).join(", ")}). Run again in a terminal to confirm.`;
 	}
 	return undefined;
 }

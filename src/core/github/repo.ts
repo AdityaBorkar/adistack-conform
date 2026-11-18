@@ -1,6 +1,6 @@
 import { apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor, diffSummary } from "#/core/github/shared.js";
+import { baseFor } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
 import { failFixable, failManual, pass, skipped } from "#/core/result.js";
 
@@ -154,8 +154,8 @@ export async function checkGeneral(
 	const result = failFixable(
 		base,
 		discussionsNote === ""
-			? diffSummary(state.diffs)
-			: `${diffSummary(state.diffs)}; ${discussionsNote}`,
+			? state.diffs.join("; ")
+			: `${state.diffs.join("; ")}; ${discussionsNote}`,
 		"repo settings match",
 		fix,
 	);

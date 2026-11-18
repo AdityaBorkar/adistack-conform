@@ -70,7 +70,7 @@
 		"verify": "bun scripts/verify.ts"
 	},
 	"dependencies": {
-		"@clack/prompts": "1.8.1",
+		"@clack/prompts": "1.9.0",
 		"commander": "15.1.0",
 		"diff": "9.0.0",
 		"picocolors": "1.1.1",
@@ -82,11 +82,11 @@
 		"@types/bun": "1.4.4",
 		"@types/node": "26.6.6",
 		"husky": "9.1.7",
-		"knip": "6.44.2",
-		"oxfmt": "0.76.0",
-		"oxlint": "1.92.0",
+		"knip": "6.45.1",
+		"oxfmt": "0.78.0",
+		"oxlint": "1.93.0",
 		"rimraf": "6.1.4",
-		"tsrs": "0.23.0-ts7.1.0-beta",
+		"tsrs": "0.25.0-ts7.1.0-beta",
 		"typescript": "7.0.2"
 	},
 	"peerDependencies": {}

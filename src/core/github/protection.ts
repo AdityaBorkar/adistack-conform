@@ -1,6 +1,6 @@
 import { ApiError, apiJson, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor, diffSummary } from "#/core/github/shared.js";
+import { baseFor } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
 import { failFixable, failManual, pass } from "#/core/result.js";
 
@@ -140,7 +140,7 @@ export function protectionPutBody(
 	};
 }
 
-export function protectionInput(upstream: GithubSettings): ProtectionInput {
+function protectionInput(upstream: GithubSettings): ProtectionInput {
 	return {
 		branch: upstream.defaultBranch,
 		checks: upstream.checks,
@@ -293,7 +293,7 @@ export async function checkReviews(
 	) {
 		return failManual(
 			base,
-			diffSummary(diffs),
+			diffs.join("; "),
 			"code reviews match",
 			"Add a push allowlist (users/teams) in Settings → Branches, then re-check.",
 		);
@@ -320,5 +320,5 @@ export async function checkReviews(
 		label: `github PUT ${repo} branch protection (${upstream.defaultBranch})`,
 		steps,
 	};
-	return failFixable(base, diffSummary(diffs), "code reviews match", fix);
+	return failFixable(base, diffs.join("; "), "code reviews match", fix);
 }

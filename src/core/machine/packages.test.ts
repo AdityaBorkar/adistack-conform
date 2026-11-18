@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import type { InstalledPackages } from "#/core/machine/managers/types.js";
-import { declaredFromManifest, evaluatePackages, splitDeclared } from "#/core/machine/packages.js";
-import type { EvaluatePackagesArgs, ManifestPackages } from "#/core/machine/packages.js";
+import { evaluatePackages, splitDeclared } from "#/core/machine/packages.js";
+import type { EvaluatePackagesArgs } from "#/core/machine/packages.js";
 import { partitionResults } from "#/core/result.js";
 
 function installed(names: string[], versions: Record<string, string> = {}): InstalledPackages {
@@ -16,31 +16,14 @@ function installed(names: string[], versions: Record<string, string> = {}): Inst
 
 function baseArgs(overrides: Partial<EvaluatePackagesArgs> = {}): EvaluatePackagesArgs {
 	return {
-		allowlist: { bun: new Set(), pacman: new Set(["base", "linux"]) },
+		allowlist: { pacman: ["base", "linux"] },
 		blueprint: "main",
-		declared: [{ manager: "pacman", name: "ripgrep", version: "latest" }],
+		declared: { bun: {}, pacman: { ripgrep: "latest" } },
 		installed: { bun: installed([]), pacman: installed(["ripgrep", "base", "linux"]) },
 		strict: false,
 		...overrides,
 	};
 }
-
-function manifest(packages: ManifestPackages) {
-	return packages;
-}
-
-describe("declaredFromManifest", () => {
-	test("flattens pacman/bun maps to manager entries", () => {
-		expect(
-			declaredFromManifest(
-				manifest({ bun: { "eas-cli": "latest" }, pacman: { ripgrep: "14.1.0-1" } }),
-			),
-		).toEqual([
-			{ manager: "pacman", name: "ripgrep", version: "14.1.0-1" },
-			{ manager: "bun", name: "eas-cli", version: "latest" },
-		]);
-	});
-});
 
 describe("evaluatePackages", () => {
 	test("all present passes strict or not", () => {
@@ -57,7 +40,7 @@ describe("evaluatePackages", () => {
 	test("pinned version matching installed passes", () => {
 		const results = evaluatePackages(
 			baseArgs({
-				declared: [{ manager: "pacman", name: "ripgrep", version: "14.1.0-1" }],
+				declared: { bun: {}, pacman: { ripgrep: "14.1.0-1" } },
 				installed: {
 					bun: installed([]),
 					pacman: installed(["ripgrep"], { ripgrep: "14.1.0-1" }),
@@ -72,7 +55,7 @@ describe("evaluatePackages", () => {
 		for (const strict of [false, true] as const) {
 			const results = evaluatePackages(
 				baseArgs({
-					declared: [{ manager: "pacman", name: "ripgrep", version: "14.1.0-1" }],
+					declared: { bun: {}, pacman: { ripgrep: "14.1.0-1" } },
 					installed: {
 						bun: installed([]),
 						pacman: installed(["ripgrep"], { ripgrep: "13.0.0-1" }),
@@ -83,10 +66,10 @@ describe("evaluatePackages", () => {
 			expect(results).toHaveLength(1);
 			expect(results[0]?.ok).toBe(false);
 			expect(results[0]?.fix).toEqual({
-				args: ["pacman", "-S", "--needed", "--noconfirm", "ripgrep=14.1.0-1"],
+				args: ["pacman", "-S", "--needed", "--noconfirm", "--", "ripgrep=14.1.0-1"],
 				command: "sudo",
 				kind: "run-command",
-				label: "sudo pacman -S --needed --noconfirm ripgrep=14.1.0-1",
+				label: "sudo pacman -S --needed --noconfirm -- ripgrep=14.1.0-1",
 			});
 		}
 	});
@@ -98,10 +81,10 @@ describe("evaluatePackages", () => {
 		const missing = results.find((item) => item.id === "machine:main:pacman:ripgrep");
 		expect(missing?.ok).toBe(false);
 		expect(missing?.fix).toEqual({
-			args: ["pacman", "-S", "--needed", "--noconfirm", "ripgrep"],
+			args: ["pacman", "-S", "--needed", "--noconfirm", "--", "ripgrep"],
 			command: "sudo",
 			kind: "run-command",
-			label: "sudo pacman -S --needed --noconfirm ripgrep",
+			label: "sudo pacman -S --needed --noconfirm -- ripgrep",
 		});
 		const extra = results.find((item) => item.id === "machine:main:pacman:extra-pkg");
 		expect(extra?.skipped).toBe(true);
@@ -122,10 +105,10 @@ describe("evaluatePackages", () => {
 		expect(extra?.ok).toBe(false);
 		expect(extra?.skipped).toBeUndefined();
 		expect(extra?.fix).toEqual({
-			args: ["pacman", "-Rs", "--noconfirm", "extra-pkg"],
+			args: ["pacman", "-Rs", "--noconfirm", "--", "extra-pkg"],
 			command: "sudo",
 			kind: "run-command",
-			label: "sudo pacman -Rs --noconfirm extra-pkg",
+			label: "sudo pacman -Rs --noconfirm -- extra-pkg",
 		});
 		expect(partitionResults(results).fixable).toHaveLength(2);
 	});
@@ -133,7 +116,7 @@ describe("evaluatePackages", () => {
 	test("bun fixes use name@version", () => {
 		const missing = evaluatePackages(
 			baseArgs({
-				declared: [{ manager: "bun", name: "eas-cli", version: "2.0.0" }],
+				declared: { bun: { "eas-cli": "2.0.0" }, pacman: {} },
 				installed: { bun: installed([]), pacman: installed([]) },
 				strict: true,
 			}),
@@ -146,7 +129,7 @@ describe("evaluatePackages", () => {
 		});
 		const extra = evaluatePackages(
 			baseArgs({
-				declared: [],
+				declared: { bun: {}, pacman: {} },
 				installed: { bun: installed(["stray"]), pacman: installed([]) },
 				strict: true,
 			}),

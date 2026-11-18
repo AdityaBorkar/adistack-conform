@@ -1,97 +1,52 @@
-import type { LoadedDesiredState } from "#/core/config.js";
+import type { LoadedDesiredState, RunState } from "#/core/config.js";
+import { stateOf } from "#/core/config.js";
 import { machineSecretsRel } from "#/core/machine/live.js";
-import { blueprintRel, findMachineEntry } from "#/core/upstream/registry.js";
-import type { RegistryDocument } from "#/core/upstream/registry.js";
+import type { CheckScope } from "#/core/result.js";
+import type { BlueprintKind, RegistryDocument } from "#/core/upstream/registry.js";
+import type { BlueprintData } from "#/core/upstream/remote.js";
 import {
-	fetchGithubSettings,
-	fetchMachineManifest,
-	fetchProjectManifest,
+	UPSTREAM_FETCH_CONCURRENCY,
+	fetchBlueprint,
 	fetchRegistry,
 	fetchTextOrThrow,
 	rawUrl,
 } from "#/core/upstream/remote.js";
+import { isSecretsTemplate } from "#/schemas/machine-manifest.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { errorMessage } from "#/utils/error.js";
 
-export interface ValidateResult {
+interface ValidateResult {
 	error?: string;
 	file: string;
 	ok: boolean;
 }
 
-export interface ValidateTargets {
-	github?: string;
-	id: string;
-	machine?: string;
-	project?: string;
-	ref: string;
-}
-
-type FetchDeps = {
-	fetchGithub: typeof fetchGithubSettings;
-	fetchMachine: typeof fetchMachineManifest;
-	fetchManifest: typeof fetchProjectManifest;
+export type FetchDeps = {
+	fetchBlueprint: typeof fetchBlueprint;
 	fetchRegistry: typeof fetchRegistry;
 	fetchText: typeof fetchTextOrThrow;
 };
 
-const defaultDeps: FetchDeps = {
-	fetchGithub: fetchGithubSettings,
-	fetchMachine: fetchMachineManifest,
-	fetchManifest: fetchProjectManifest,
-	fetchRegistry,
-	fetchText: fetchTextOrThrow,
+const defaultDeps: FetchDeps = { fetchBlueprint, fetchRegistry, fetchText: fetchTextOrThrow };
+
+const KIND_OF: Record<CheckScope, BlueprintKind> = {
+	github: "github_configs",
+	machine: "machines",
+	project: "projects",
 };
 
-export function collectValidateTargets(loaded: LoadedDesiredState): ValidateTargets {
-	return {
-		github: loaded.github?.blueprint,
-		id: loaded.source.id,
-		machine: loaded.machine?.blueprint,
-		project: loaded.project?.blueprint,
-		ref: loaded.source.ref,
-	};
-}
-
-function machineEntryError(blueprint: string, registry: RegistryDocument): string | undefined {
-	const entry = findMachineEntry(blueprint, registry);
-	if (entry === undefined) {
-		return `Machine blueprint "${blueprint}" not found in the tech-stack repo.`;
-	}
-	try {
-		blueprintRel(entry.path);
-	} catch (error) {
-		return errorMessage(error);
-	}
-	return undefined;
-}
-
-async function validateMachine(
-	target: ValidateTargets,
-	blueprint: string,
-	registry: RegistryDocument,
+// Machine blueprints are only usable when every file source (and, for
+// secrets templates, the secrets.yaml next to the manifest) is fetchable.
+async function machineSourcesError(
+	state: RunState,
+	manifest: BlueprintData<"machines">,
+	rel: string,
 	deps: FetchDeps,
-): Promise<ValidateResult> {
-	const file = `machine "${blueprint}" in registry.json (${target.id}@${target.ref})`;
-	const entryError = machineEntryError(blueprint, registry);
-	if (entryError !== undefined) {
-		return { error: entryError, file, ok: false };
-	}
-	let manifest: Awaited<ReturnType<FetchDeps["fetchMachine"]>>["manifest"];
-	let manifestRel: string;
-	try {
-		const fetched = await deps.fetchMachine(target.id, target.ref, blueprint, registry);
-		manifest = fetched.manifest;
-		manifestRel = fetched.manifestRel;
-	} catch (error) {
-		return { error: errorMessage(error), file, ok: false };
-	}
-	// Names and managers are enforced by the manifest schema; here only the
-	// source bytes must exist (same fetch order as project scope).
+): Promise<string | undefined> {
 	const sources = manifest.files.map((entry) => entry.source);
-	const errors = await mapWithConcurrency(sources, 8, async (source) => {
+	const errors = await mapWithConcurrency(sources, UPSTREAM_FETCH_CONCURRENCY, async (source) => {
 		try {
-			await deps.fetchText(rawUrl(target.id, target.ref, source), `machine file ${source}`);
+			await deps.fetchText(rawUrl(state.id, state.ref, source), `machine file ${source}`);
 			return null;
 		} catch (error) {
 			return `${source}: ${errorMessage(error)}`;
@@ -99,71 +54,64 @@ async function validateMachine(
 	});
 	const missing = errors.filter((item) => item !== null);
 	if (missing.length > 0) {
-		return { error: `Unfetchable machine sources: ${missing.join("; ")}`, file, ok: false };
+		return `Unfetchable machine sources: ${missing.join("; ")}`;
 	}
-	// Templates render from the sops-encrypted secrets next to the manifest;
-	// a manifest whose secrets file is unfetchable can never render.
-	if (manifest.files.some((entry) => (entry.secrets?.length ?? 0) > 0)) {
-		const secretsRel = machineSecretsRel(manifestRel);
+	if (manifest.files.some(isSecretsTemplate)) {
+		const secretsRel = machineSecretsRel(rel);
 		try {
-			await deps.fetchText(rawUrl(target.id, target.ref, secretsRel), `secrets file ${secretsRel}`);
+			await deps.fetchText(rawUrl(state.id, state.ref, secretsRel), `secrets file ${secretsRel}`);
 		} catch (error) {
-			return {
-				error: `Unfetchable machine secrets ${secretsRel}: ${errorMessage(error)}`,
-				file,
-				ok: false,
-			};
+			return `Unfetchable machine secrets ${secretsRel}: ${errorMessage(error)}`;
 		}
 	}
-	return { file: `${manifestRel} (${target.id}@${target.ref})`, ok: true };
+	return undefined;
 }
 
-async function validateProject(
-	target: ValidateTargets,
-	blueprint: string,
+async function validateBlueprint(
+	state: RunState,
+	scope: CheckScope,
 	registry: RegistryDocument,
 	deps: FetchDeps,
 ): Promise<ValidateResult> {
+	const at = `(${state.id}@${state.ref})`;
+	let fetched: { data: unknown; rel: string };
 	try {
-		const manifest = await deps.fetchManifest(target.id, target.ref, blueprint, registry);
-		return { file: `${manifest.blueprintRel} (${target.id}@${target.ref})`, ok: true };
+		fetched = await deps.fetchBlueprint(state, registry, KIND_OF[scope]);
 	} catch (error) {
-		const file = `blueprint "${blueprint}" in registry.json (${target.id}@${target.ref})`;
+		const file = `${scope} "${state.blueprint}" in registry.json ${at}`;
 		return { error: errorMessage(error), file, ok: false };
 	}
+	const file = `${fetched.rel} ${at}`;
+	const error =
+		scope === "machine"
+			? await machineSourcesError(
+					state,
+					fetched.data as BlueprintData<"machines">,
+					fetched.rel,
+					deps,
+				)
+			: undefined;
+	return error === undefined ? { file, ok: true } : { error, file, ok: false };
 }
 
-async function validateGithub(
-	target: ValidateTargets,
-	blueprint: string,
-	registry: RegistryDocument,
-	deps: FetchDeps,
-): Promise<ValidateResult> {
-	try {
-		const settings = await deps.fetchGithub(target.id, target.ref, blueprint, registry);
-		return { file: `${settings.githubRel} (${target.id}@${target.ref})`, ok: true };
-	} catch (error) {
-		const file = `github "${blueprint}" in registry.json (${target.id}@${target.ref})`;
-		return { error: errorMessage(error), file, ok: false };
-	}
-}
-
-export async function validateTargets(
-	target: ValidateTargets,
+// The registry first, then one result per configured scope's blueprint.
+export async function validateDesiredState(
+	loaded: LoadedDesiredState,
 	deps: FetchDeps = defaultDeps,
 ): Promise<ValidateResult[]> {
-	const registryFile = `registry.json (${target.id}@${target.ref})`;
+	const { id, ref } = loaded.source;
+	const registryFile = `registry.json (${id}@${ref})`;
 	let registry: RegistryDocument;
 	try {
-		registry = await deps.fetchRegistry(target.id, target.ref);
+		registry = await deps.fetchRegistry(id, ref);
 	} catch (error) {
 		return [{ error: errorMessage(error), file: registryFile, ok: false }];
 	}
-	const { github, machine, project } = target;
-	const checks = await Promise.all([
-		machine === undefined ? undefined : validateMachine(target, machine, registry, deps),
-		project === undefined ? undefined : validateProject(target, project, registry, deps),
-		github === undefined ? undefined : validateGithub(target, github, registry, deps),
-	]);
+	const checks = await Promise.all(
+		(["machine", "project", "github"] as const).map((scope) => {
+			const state = stateOf(loaded, scope);
+			return state === undefined ? undefined : validateBlueprint(state, scope, registry, deps);
+		}),
+	);
 	return [{ file: registryFile, ok: true }, ...checks.filter((item) => item !== undefined)];
 }

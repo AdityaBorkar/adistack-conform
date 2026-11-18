@@ -2,13 +2,15 @@ import { describe, expect, test } from "bun:test";
 
 import type { LoadedDesiredState } from "#/core/config.js";
 import type { RegistryDocument } from "#/core/upstream/registry.js";
-import { collectValidateTargets, validateTargets } from "#/core/validate.js";
+import { fetchBlueprint } from "#/core/upstream/remote.js";
+import type { FetchDeps } from "#/core/validate.js";
+import { validateDesiredState } from "#/core/validate.js";
 
 function loaded(overrides: Partial<LoadedDesiredState> = {}): LoadedDesiredState {
 	return {
 		dir: "/tmp",
 		path: "/tmp/conform.json",
-		source: { id: "o/r", provider: "github", ref: "main" },
+		source: { id: "o/r", ref: "main" },
 		...overrides,
 	};
 }
@@ -19,38 +21,34 @@ const registry = {
 	projects: { "cli-app": "./projects/cli-app.json" },
 } as unknown as RegistryDocument;
 
-describe("collectValidateTargets", () => {
-	test("maps each configured scope to its blueprint", () => {
-		expect(
-			collectValidateTargets(
-				loaded({ machine: { blueprint: "main" }, project: { blueprint: "cli-app" } }),
-			),
-		).toEqual({
-			github: undefined,
-			id: "o/r",
-			machine: "main",
-			project: "cli-app",
-			ref: "main",
-		});
-	});
+const mustNotCall = () => Promise.reject(new Error("must not be called"));
+
+function blueprint(rel: string, data: unknown): FetchDeps["fetchBlueprint"] {
+	return (() => Promise.resolve({ data, rel })) as unknown as FetchDeps["fetchBlueprint"];
+}
+
+function deps(overrides: Partial<FetchDeps>): FetchDeps {
+	return {
+		fetchBlueprint: mustNotCall as unknown as FetchDeps["fetchBlueprint"],
+		fetchRegistry: () => Promise.resolve(registry),
+		fetchText: mustNotCall,
+		...overrides,
+	};
+}
+
+const machineManifest = (files: unknown[]) => ({
+	allowlist: {},
+	files,
+	packages: { bun: {}, pacman: {} },
 });
 
-describe("validateTargets", () => {
-	test("reports registry plus manifest results in order", async () => {
-		const results = await validateTargets(
-			collectValidateTargets(loaded({ project: { blueprint: "cli-app" } })),
-			{
-				fetchGithub: () => Promise.reject(new Error("must not be called")),
-				fetchMachine: () => Promise.reject(new Error("must not be called")),
-				fetchManifest: () =>
-					Promise.resolve({
-						blueprintRel: "projects/cli-app.json",
-						files: [],
-						structure: [],
-					}),
-				fetchRegistry: () => Promise.resolve(registry),
-				fetchText: () => Promise.reject(new Error("must not be called")),
-			},
+describe("validateDesiredState", () => {
+	test("reports registry plus project blueprint results in order", async () => {
+		const results = await validateDesiredState(
+			loaded({ project: { blueprint: "cli-app" } }),
+			deps({
+				fetchBlueprint: blueprint("projects/cli-app.json", { file_structure: [], files: [] }),
+			}),
 		);
 		expect(results.map((item) => item.file)).toEqual([
 			"registry.json (o/r@main)",
@@ -60,19 +58,9 @@ describe("validateTargets", () => {
 	});
 
 	test("reports registry plus github settings results in order", async () => {
-		const results = await validateTargets(
-			collectValidateTargets(loaded({ github: { blueprint: "npm-package" } })),
-			{
-				fetchGithub: () =>
-					Promise.resolve({
-						githubRel: "github-configs/npm-package.json",
-						upstream: {} as never,
-					}),
-				fetchMachine: () => Promise.reject(new Error("must not be called")),
-				fetchManifest: () => Promise.reject(new Error("must not be called")),
-				fetchRegistry: () => Promise.resolve(registry),
-				fetchText: () => Promise.reject(new Error("must not be called")),
-			},
+		const results = await validateDesiredState(
+			loaded({ github: { blueprint: "npm-package" } }),
+			deps({ fetchBlueprint: blueprint("github-configs/npm-package.json", {}) }),
 		);
 		expect(results.map((item) => item.file)).toEqual([
 			"registry.json (o/r@main)",
@@ -81,50 +69,40 @@ describe("validateTargets", () => {
 		expect(results.every((item) => item.ok)).toBe(true);
 	});
 
-	test("registry fetch error skips manifests for that ref", async () => {
-		const results = await validateTargets(
-			collectValidateTargets(loaded({ project: { blueprint: "cli-app" } })),
-			{
-				fetchGithub: () => Promise.reject(new Error("must not be called")),
-				fetchMachine: () => Promise.reject(new Error("must not be called")),
-				fetchManifest: () => Promise.reject(new Error("must not be called")),
+	test("registry fetch error skips blueprints for that ref", async () => {
+		const results = await validateDesiredState(
+			loaded({ project: { blueprint: "cli-app" } }),
+			deps({
 				fetchRegistry: () =>
 					Promise.reject(new Error("registry.json fetch failed (boom): HTTP 404.")),
-				fetchText: () => Promise.reject(new Error("must not be called")),
-			},
+			}),
 		);
 		expect(results).toHaveLength(1);
 		expect(results[0]?.ok).toBe(false);
 		expect(results[0]?.error).toContain("HTTP 404");
 	});
 
-	test("missing machine blueprint is invalid", async () => {
-		const results = await validateTargets(
-			collectValidateTargets(loaded({ machine: { blueprint: "nope" } })),
-			{
-				fetchGithub: () => Promise.reject(new Error("must not be called")),
-				fetchMachine: () => Promise.reject(new Error("must not be called")),
-				fetchManifest: () => Promise.reject(new Error("must not be called")),
-				fetchRegistry: () => Promise.resolve(registry),
-				fetchText: () => Promise.reject(new Error("must not be called")),
-			},
+	test("missing machine blueprint is invalid before any fetch", async () => {
+		const results = await validateDesiredState(
+			loaded({ machine: { blueprint: "nope" } }),
+			deps({ fetchBlueprint }),
 		);
 		expect(results).toHaveLength(2);
 		expect(results[0]?.ok).toBe(true);
 		expect(results[1]?.ok).toBe(false);
 		expect(results[1]?.error).toContain('"nope"');
+		expect(results[1]?.error).toContain("Available machine blueprints: main");
 	});
 
-	test("manifest schema error is reported per blueprint", async () => {
-		const results = await validateTargets(
-			collectValidateTargets(loaded({ project: { blueprint: "cli-app" } })),
-			{
-				fetchGithub: () => Promise.reject(new Error("must not be called")),
-				fetchMachine: () => Promise.reject(new Error("must not be called")),
-				fetchManifest: () => Promise.reject(new Error("Invalid blueprint in x:\nfiles: Required")),
-				fetchRegistry: () => Promise.resolve(registry),
-				fetchText: () => Promise.reject(new Error("must not be called")),
-			},
+	test("blueprint schema error is reported per blueprint", async () => {
+		const results = await validateDesiredState(
+			loaded({ project: { blueprint: "cli-app" } }),
+			deps({
+				fetchBlueprint: (() =>
+					Promise.reject(
+						new Error("Invalid blueprint in x:\nfiles: Required"),
+					)) as unknown as FetchDeps["fetchBlueprint"],
+			}),
 		);
 		expect(results).toHaveLength(2);
 		expect(results[1]?.ok).toBe(false);
@@ -132,79 +110,51 @@ describe("validateTargets", () => {
 	});
 
 	test("machine manifest sources must be fetchable", async () => {
-		const deps = {
-			fetchGithub: () => Promise.reject(new Error("must not be called")),
-			fetchMachine: () =>
-				Promise.resolve({
-					manifest: {
-						allowlist: {},
-						files: [
-							{
-								name: "Zshrc",
-								source: "machines/main/files/.zshrc",
-								target: "~/.zshrc",
-							},
-						],
-						packages: { bun: {}, pacman: {} },
-					},
-					manifestRel: "machines/main.json",
-				}),
-			fetchManifest: () => Promise.reject(new Error("must not be called")),
-			fetchRegistry: () => Promise.resolve(registry),
-			fetchText: () => Promise.resolve("content"),
-		};
-		const ok = await validateTargets(
-			collectValidateTargets(loaded({ machine: { blueprint: "main" } })),
-			deps,
+		const machine = blueprint(
+			"machines/main.json",
+			machineManifest([
+				{ name: "Zshrc", source: "machines/main/files/.zshrc", target: "~/.zshrc" },
+			]),
+		);
+		const ok = await validateDesiredState(
+			loaded({ machine: { blueprint: "main" } }),
+			deps({ fetchBlueprint: machine, fetchText: () => Promise.resolve("content") }),
 		);
 		expect(ok.map((item) => item.file)).toEqual([
 			"registry.json (o/r@main)",
 			"machines/main.json (o/r@main)",
 		]);
 		expect(ok.every((item) => item.ok)).toBe(true);
-		const failing = await validateTargets(
-			collectValidateTargets(loaded({ machine: { blueprint: "main" } })),
-			{
-				...deps,
-				fetchText: () => Promise.reject(new Error("HTTP 404.")),
-			},
+		const failing = await validateDesiredState(
+			loaded({ machine: { blueprint: "main" } }),
+			deps({ fetchBlueprint: machine, fetchText: () => Promise.reject(new Error("HTTP 404.")) }),
 		);
 		expect(failing[1]?.ok).toBe(false);
 		expect(failing[1]?.error).toContain("Unfetchable machine sources");
 	});
 
 	test("machine manifest with secrets requires a fetchable secrets file", async () => {
-		const withSecrets = {
-			fetchGithub: () => Promise.reject(new Error("must not be called")),
-			fetchMachine: () =>
-				Promise.resolve({
-					manifest: {
-						allowlist: {},
-						files: [
-							{
-								mode: "0600" as const,
-								name: "Npmrc",
-								secrets: ["npm_auth_token"],
-								source: "machines/main/files/.npmrc",
-								target: "~/.npmrc",
-							},
-						],
-						packages: { bun: {}, pacman: {} },
-					},
-					manifestRel: "machines/main.json",
-				}),
-			fetchManifest: () => Promise.reject(new Error("must not be called")),
-			fetchRegistry: () => Promise.resolve(registry),
-			fetchText: (url: string) =>
-				url.endsWith("secrets.yaml")
-					? Promise.reject(new Error("HTTP 404."))
-					: Promise.resolve("content"),
-		};
-		const results = await validateTargets(
-			collectValidateTargets(loaded({ machine: { blueprint: "main" } })),
-			withSecrets,
+		const results = await validateDesiredState(
+			loaded({ machine: { blueprint: "main" } }),
+			deps({
+				fetchBlueprint: blueprint(
+					"machines/main.json",
+					machineManifest([
+						{
+							name: "Npmrc",
+							secrets: ["npm_auth_token"],
+							source: "machines/main/files/.npmrc",
+							target: "~/.npmrc",
+						},
+					]),
+				),
+				fetchText: (url: string) =>
+					url.endsWith("secrets.yaml")
+						? Promise.reject(new Error("HTTP 404."))
+						: Promise.resolve("content"),
+			}),
 		);
 		expect(results[1]?.ok).toBe(false);
-		expect(results[1]?.error).toContain("secrets");
+		expect(results[1]?.error).toContain("machines/secrets.yaml");
 	});
 });

@@ -1,4 +1,4 @@
-export const DEFAULT_CONCURRENCY = 32;
+const DEFAULT_CONCURRENCY = 32;
 
 export async function mapWithConcurrency<T, R>(
 	items: readonly T[],

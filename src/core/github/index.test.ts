@@ -1,11 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-	forkApprovalPolicy,
-	isPrivateVulnEnabled,
-	protectionPutBody,
-} from "#/core/github/index.js";
-import { checkSecrets, checkSecurity } from "#/core/github/security.js";
+import { forkApprovalPolicy } from "#/core/github/actions.js";
+import { protectionPutBody } from "#/core/github/protection.js";
+import { checkSecrets, checkSecurity, isPrivateVulnEnabled } from "#/core/github/security.js";
 import { ConformSchema } from "#/schemas/config.js";
 import { GithubSchema } from "#/schemas/github-settings.js";
 

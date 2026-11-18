@@ -1,8 +1,8 @@
 export const FETCH_TIMEOUT_MS = 30_000;
 
-export const RETRY_MAX_ATTEMPTS = 3;
+const RETRY_MAX_ATTEMPTS = 3;
 
-export function retryDelayMs(attempt: number): number {
+function retryDelayMs(attempt: number): number {
 	return 500 * 2 ** attempt;
 }
 

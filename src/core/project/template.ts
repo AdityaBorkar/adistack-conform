@@ -13,7 +13,7 @@ export function upstreamPlaceholders(upstream: string): string[] {
 
 // Placeholders in non-JSON upstreams (HTML comments, TS generics) never count:
 // only an upstream that parses as JSON and holds `<...>` slots is a template.
-function upstreamHasPlaceholders(upstream: string): boolean {
+export function isTemplateUpstream(upstream: string): boolean {
 	let parsed: unknown;
 	try {
 		parsed = parseJsonc(upstream);
@@ -24,10 +24,6 @@ function upstreamHasPlaceholders(upstream: string): boolean {
 		return false;
 	}
 	return PLACEHOLDER.test(stripJsonc(upstream));
-}
-
-export function isTemplateUpstream(upstream: string): boolean {
-	return upstreamHasPlaceholders(upstream);
 }
 
 // An upstream string with `<...>` slots matches any local string holding real

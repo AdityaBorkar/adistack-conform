@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import { MachineManifestSchema } from "#/schemas/machine-manifest.js";
 
+function withSecrets(secrets: string[]) {
+	return { files: [{ name: "N", secrets, source: "a/b", target: "~/.n" }] };
+}
+
 describe("MachineManifestSchema", () => {
 	test("valid minimal manifest passes with defaults", () => {
 		const result = MachineManifestSchema.safeParse({
@@ -101,5 +105,37 @@ describe("MachineManifestSchema", () => {
 			surprise: true,
 		});
 		expect(result.success).toBe(false);
+	});
+
+	test("option-shaped or shell-ish package names fail", () => {
+		for (const name of ["--hookdir=/tmp", "-Syu", ".hidden", "a b", "x;rm"]) {
+			const result = MachineManifestSchema.safeParse({
+				packages: { pacman: { [name]: "latest" } },
+			});
+			expect(result.success).toBe(false);
+		}
+		expect(
+			MachineManifestSchema.safeParse({
+				allowlist: { bun: ["--global"] },
+				packages: { pacman: { git: "latest" } },
+			}).success,
+		).toBe(false);
+	});
+
+	test("real package names pass", () => {
+		const result = MachineManifestSchema.safeParse({
+			packages: {
+				bun: { "@scope/tool": "1.0.0", "eas-cli": "latest" },
+				pacman: { "gtk+3": "latest", "python-pip": "latest" },
+			},
+		});
+		expect(result.success).toBe(true);
+	});
+
+	test("secret names must match the secrets.yaml key alphabet", () => {
+		expect(MachineManifestSchema.safeParse(withSecrets(["npm-token", "a.b", "_x"])).success).toBe(
+			true,
+		);
+		expect(MachineManifestSchema.safeParse(withSecrets(["bad name"])).success).toBe(false);
 	});
 });

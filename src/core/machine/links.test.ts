@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { checkLinks } from "#/core/machine/links.js";
+import { checkLinks, linkCachePath } from "#/core/machine/links.js";
 
 const blueprint = "main";
 const encoder = new TextEncoder();
@@ -17,7 +17,7 @@ describe("checkLinks", () => {
 	};
 	const cache = "/home/ada/.zshrc.conform-src";
 
-	test("missing target fails fixable with an ln fix", async () => {
+	test("missing target fails fixable with a link fix carrying the checked bytes", async () => {
 		const results = await checkLinks({
 			blueprint,
 			fetch: () => Promise.resolve(utf8("content")),
@@ -33,8 +33,9 @@ describe("checkLinks", () => {
 		expect(results[0]?.ok).toBe(false);
 		expect(results[0]?.fix).toEqual({
 			cachePath: cache,
+			content: utf8("content"),
 			kind: "symlink",
-			label: `ln -sfn ${cache} /home/ada/.zshrc`,
+			label: `link /home/ada/.zshrc -> ${cache}`,
 			targetAbs: "/home/ada/.zshrc",
 		});
 	});
@@ -88,9 +89,39 @@ describe("checkLinks", () => {
 		expect(results[0]?.ok).toBe(false);
 		expect(results[0]?.fix).toEqual({
 			cachePath: cache,
+			content: utf8("content"),
 			kind: "symlink",
-			label: `ln -sfn ${cache} /home/ada/.zshrc`,
+			label: `link /home/ada/.zshrc -> ${cache}`,
 			targetAbs: "/home/ada/.zshrc",
 		});
+	});
+
+	test("regular file is fixable (backed up first)", async () => {
+		const results = await checkLinks({
+			blueprint,
+			fetch: () => Promise.resolve(utf8("content")),
+			links: [link],
+			stat: () => Promise.resolve({ isFile: true, kind: "other" }),
+		});
+		expect(results[0]?.fix?.kind).toBe("symlink");
+		expect(results[0]?.hint).toContain(".conform.bak");
+	});
+
+	test("directory target is manual, since the fix never replaces directories", async () => {
+		const results = await checkLinks({
+			blueprint,
+			fetch: () => Promise.resolve(utf8("content")),
+			links: [link],
+			stat: () => Promise.resolve({ isFile: false, kind: "other" }),
+		});
+		expect(results[0]?.ok).toBe(false);
+		expect(results[0]?.fix).toBeUndefined();
+		expect(results[0]?.hint).toContain("not a regular file");
+	});
+});
+
+describe("linkCachePath", () => {
+	test("derives the sibling materialization path from the target", () => {
+		expect(linkCachePath("/home/ada/.zshrc")).toBe("/home/ada/.zshrc.conform-src");
 	});
 });

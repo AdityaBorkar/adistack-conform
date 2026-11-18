@@ -15,9 +15,8 @@ function fakeLive(overrides: Partial<MachineLive> = {}): MachineLive {
 		decryptSecrets: () => Promise.resolve({}),
 		fetchSource: () => Promise.resolve(utf8("content")),
 		fetchText: () => Promise.resolve("content"),
-		listBun: () => Promise.resolve({ explicit: new Set<string>(), versions: new Map() }),
-		listPacman: () => Promise.resolve({ explicit: new Set<string>(), versions: new Map() }),
-		readTemplateTarget: () => Promise.resolve({ exists: false }),
+		listPackages: () => Promise.resolve({ explicit: new Set<string>(), versions: new Map() }),
+		readSecretsTemplateTarget: () => Promise.resolve({ exists: false }),
 		statLink: () => Promise.resolve({ kind: "missing" }),
 		...overrides,
 	};
@@ -39,11 +38,15 @@ function installed(names: string[]): { explicit: Set<string>; versions: Map<stri
 	};
 }
 
+function pacmanOnly(names: string[]): MachineLive["listPackages"] {
+	return (manager) => Promise.resolve(installed(manager === "pacman" ? names : []));
+}
+
 function input(overrides: Partial<MachineCheckInput> = {}): MachineCheckInput {
 	return {
 		blueprint: "main",
 		home: "/home/ada",
-		live: fakeLive({ listPacman: () => Promise.resolve(installed(["ripgrep"])) }),
+		live: fakeLive({ listPackages: pacmanOnly(["ripgrep"]) }),
 		manifest: manifest(),
 		strict: false,
 		...overrides,
@@ -54,7 +57,7 @@ describe("checkMachine packages", () => {
 	test("non-strict: extras are skipped", async () => {
 		const results = await checkMachine(
 			input({
-				live: fakeLive({ listPacman: () => Promise.resolve(installed(["ripgrep", "extra-pkg"])) }),
+				live: fakeLive({ listPackages: pacmanOnly(["ripgrep", "extra-pkg"]) }),
 			}),
 		);
 		const extra = results.find((item) => item.id === "machine:main:pacman:extra-pkg");
@@ -66,7 +69,7 @@ describe("checkMachine packages", () => {
 	test("strict: extras are fixable", async () => {
 		const results = await checkMachine(
 			input({
-				live: fakeLive({ listPacman: () => Promise.resolve(installed(["ripgrep", "extra-pkg"])) }),
+				live: fakeLive({ listPackages: pacmanOnly(["ripgrep", "extra-pkg"]) }),
 				strict: true,
 			}),
 		);
@@ -74,10 +77,10 @@ describe("checkMachine packages", () => {
 		expect(extra?.skipped).toBeUndefined();
 		expect(extra?.ok).toBe(false);
 		expect(extra?.fix).toEqual({
-			args: ["pacman", "-Rs", "--noconfirm", "extra-pkg"],
+			args: ["pacman", "-Rs", "--noconfirm", "--", "extra-pkg"],
 			command: "sudo",
 			kind: "run-command",
-			label: "sudo pacman -Rs --noconfirm extra-pkg",
+			label: "sudo pacman -Rs --noconfirm -- extra-pkg",
 		});
 	});
 
@@ -94,7 +97,7 @@ describe("checkMachine packages", () => {
 });
 
 describe("checkMachine links", () => {
-	test("missing link is fixable with an ln label pointing at .conform-src", async () => {
+	test("missing link is fixable with a link label pointing at .conform-src", async () => {
 		const results = await checkMachine(
 			input({
 				live: fakeLive(),
@@ -134,7 +137,7 @@ describe("checkMachine templates", () => {
 			}),
 		);
 		expect(results).toHaveLength(1);
-		expect(results[0]?.id).toBe("machine:main:template:Npmrc");
+		expect(results[0]?.id).toBe("machine:main:secrets-template:Npmrc");
 		expect(results[0]?.ok).toBe(false);
 		expect(results[0]?.fix).toBeUndefined();
 		expect(results[0]?.hint).toContain("sops");

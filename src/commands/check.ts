@@ -2,6 +2,7 @@ import type { Command } from "commander";
 
 import type { DesiredStateOption, ScopeOptions } from "#/core/config.js";
 import { printJsonSummary, printResults } from "#/core/report.js";
+import { isDrift } from "#/core/result.js";
 import { prepareRun } from "#/core/run.js";
 
 type CheckOptions = DesiredStateOption &
@@ -14,11 +15,11 @@ type CheckOptions = DesiredStateOption &
 async function run(options: CheckOptions): Promise<number> {
 	const { desiredState, elapsedMs, results } = await prepareRun(options);
 	if (options.json) {
-		printJsonSummary([desiredState.path], results);
+		printJsonSummary(desiredState.path, results);
 	} else {
 		printResults(results, elapsedMs, { verbose: options.verbose === true });
 	}
-	return results.some((item) => !item.ok && item.skipped !== true) ? 1 : 0;
+	return results.some((item) => isDrift(item)) ? 1 : 0;
 }
 
 export const checkCommand = {

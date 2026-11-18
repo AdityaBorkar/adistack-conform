@@ -1,23 +1,15 @@
 import type * as z from "zod";
 
-import type {
-	ManifestFile,
-	ManifestFileStructure,
-	RegistryDocument,
-} from "#/core/upstream/registry.js";
+import type { RunState } from "#/core/config.js";
+import type { BlueprintKind, RegistryDocument } from "#/core/upstream/registry.js";
 import {
 	availableHint,
-	findGithubEntry,
-	findMachineEntry,
-	findProjectEntry,
-	listGithubBlueprintNames,
-	listMachineBlueprintNames,
-	listProjectBlueprintNames,
+	blueprintNames,
 	blueprintRel,
+	findEntry,
 } from "#/core/upstream/registry.js";
 import { GithubSchema } from "#/schemas/github-settings.js";
 import { MachineManifestSchema } from "#/schemas/machine-manifest.js";
-import type { MachineManifest } from "#/schemas/machine-manifest.js";
 import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 import { errorMessage } from "#/utils/error.js";
@@ -45,7 +37,18 @@ export function rawUrl(id: string, ref: string, relPath: string): string {
 const MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
-async function fetchOkResponse(url: string, label: string): Promise<Response> {
+// `status` is the HTTP status, or undefined for a network/timeout failure.
+export class FetchError extends Error {
+	status: number | undefined;
+
+	constructor(message: string, status: number | undefined, options?: ErrorOptions) {
+		super(message, options);
+		this.status = status;
+	}
+}
+
+// Follows redirects by hand so GITHUB_TOKEN is only ever sent to the origin it was meant for.
+export async function fetchOkResponse(url: string, label: string): Promise<Response> {
 	const origin = new URL(url).origin;
 	let current = url;
 	for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -58,42 +61,44 @@ async function fetchOkResponse(url: string, label: string): Promise<Response> {
 				signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
 			});
 		} catch (error) {
-			throw new Error(`Cannot fetch ${label}: ${errorMessage(error)}`, { cause: error });
+			throw new FetchError(`Cannot fetch ${label}: ${errorMessage(error)}`, undefined, {
+				cause: error,
+			});
 		}
-		if (REDIRECT_STATUSES.has(response.status) && response.headers.get("location") !== null) {
-			if (hop === MAX_REDIRECTS) {
-				throw new Error(`${label} fetch failed (${url}): too many redirects.`);
-			}
-			current = new URL(response.headers.get("location") as string, current).toString();
+		const location = response.headers.get("location");
+		if (REDIRECT_STATUSES.has(response.status) && location !== null) {
+			current = new URL(location, current).toString();
 			continue;
 		}
+		if (response.status === 404) {
+			throw new FetchError(`${label} not found (${url}): HTTP 404.`, 404);
+		}
+		if (response.status === 401 || response.status === 403) {
+			throw new FetchError(
+				`${label} refused (${url}): HTTP ${response.status} (private repo or rate limit — set GITHUB_TOKEN).`,
+				response.status,
+			);
+		}
 		if (!response.ok) {
-			if (response.status === 404) {
-				throw new Error(`${label} not found (${url}): HTTP 404.`);
-			}
-			if (response.status === 401 || response.status === 403) {
-				throw new Error(
-					`${label} refused (${url}): HTTP 401/403 (private repo or rate limit — set GITHUB_TOKEN).`,
-				);
-			}
-			throw new Error(`${label} fetch failed (${url}): HTTP ${response.status}.`);
+			throw new FetchError(
+				`${label} fetch failed (${url}): HTTP ${response.status}.`,
+				response.status,
+			);
 		}
 		return response;
 	}
+	// Plain Error: a redirect loop is not worth retrying.
 	throw new Error(`${label} fetch failed (${url}): too many redirects.`);
 }
 
-// fetchOkResponse marks a missing upstream file with "HTTP 404".
 export function isNotFoundError(error: unknown): boolean {
-	return errorMessage(error).includes("HTTP 404");
+	return error instanceof FetchError && error.status === 404;
 }
 
 function isFetchRetryable(error: unknown): boolean {
 	return (
-		error instanceof Error &&
-		(/Cannot fetch /u.test(error.message) ||
-			/HTTP 429/u.test(error.message) ||
-			/HTTP 5\d\d/u.test(error.message))
+		error instanceof FetchError &&
+		(error.status === undefined || error.status === 429 || error.status >= 500)
 	);
 }
 
@@ -110,17 +115,7 @@ export function fetchBytesOrThrow(url: string, label: string): Promise<Uint8Arra
 	);
 }
 
-async function fetchJson(url: string, label: string): Promise<unknown> {
-	const text = await fetchTextOrThrow(url, label);
-	try {
-		return JSON.parse(text) as unknown;
-	} catch (error) {
-		throw new Error(`${label} has invalid JSON in ${url}: ${errorMessage(error)}`, {
-			cause: error,
-		});
-	}
-}
-
+// JSONC is a superset of JSON, so every upstream document parses the same way.
 async function fetchJsonc(url: string, label: string): Promise<unknown> {
 	const text = await fetchTextOrThrow(url, label);
 	try {
@@ -133,76 +128,36 @@ async function fetchJsonc(url: string, label: string): Promise<unknown> {
 }
 
 export async function fetchRegistry(id: string, ref: string): Promise<RegistryDocument> {
-	const parsed = await fetchJson(rawUrl(id, ref, "registry.json"), "tech-stack registry");
+	const parsed = await fetchJsonc(rawUrl(id, ref, "registry.json"), "tech-stack registry");
 	return parseOrThrow(RegistrySchema, "registry.json (remote)", parsed, "tech-stack registry");
 }
 
-export async function fetchProjectManifest(
-	id: string,
-	ref: string,
-	blueprint: string,
+const BLUEPRINTS = {
+	github_configs: { label: "GitHub blueprint", plural: "GitHub blueprints", schema: GithubSchema },
+	machines: {
+		label: "Machine blueprint",
+		plural: "machine blueprints",
+		schema: MachineManifestSchema,
+	},
+	projects: { label: "Project blueprint", plural: "project blueprints", schema: ManifestSchema },
+} as const;
+
+export type BlueprintData<K extends BlueprintKind> = z.infer<(typeof BLUEPRINTS)[K]["schema"]>;
+
+// Registry lookup, fetch and schema parse for one scope's blueprint file.
+export async function fetchBlueprint<K extends BlueprintKind>(
+	state: Pick<RunState, "blueprint" | "id" | "ref">,
 	registry: RegistryDocument,
-): Promise<{
-	blueprintRel: string;
-	files: ManifestFile[];
-	structure: ManifestFileStructure[];
-}> {
-	const entry = findProjectEntry(blueprint, registry);
+	kind: K,
+): Promise<{ data: BlueprintData<K>; rel: string }> {
+	const { label, plural, schema } = BLUEPRINTS[kind];
+	const entry = findEntry(registry, kind, state.blueprint);
 	if (entry === undefined) {
-		const hint = availableHint(listProjectBlueprintNames(registry), "blueprints");
-		throw new Error(`Blueprint "${blueprint}" not found in the tech-stack repo.${hint}`);
+		const hint = availableHint(blueprintNames(registry, kind), plural);
+		throw new Error(`${label} "${state.blueprint}" not found in the tech-stack registry.${hint}`);
 	}
 	const rel = blueprintRel(entry.path);
-	const parsed = await fetchJson(rawUrl(id, ref, rel), `blueprint ${blueprint}`);
-	const data = parseOrThrow(ManifestSchema, `${rel} (remote)`, parsed, "blueprint");
-	return {
-		blueprintRel: rel,
-		files: data.files,
-		structure: data.file_structure,
-	};
-}
-
-export async function fetchGithubSettings(
-	id: string,
-	ref: string,
-	blueprint: string,
-	registry: RegistryDocument,
-): Promise<{
-	githubRel: string;
-	upstream: z.infer<typeof GithubSchema>;
-}> {
-	const entry = findGithubEntry(blueprint, registry);
-	if (entry === undefined) {
-		const hint = availableHint(listGithubBlueprintNames(registry), "blueprints");
-		throw new Error(`GitHub blueprint "${blueprint}" not found in the tech-stack repo.${hint}`);
-	}
-	const rel = blueprintRel(entry.path);
-	const parsed = await fetchJsonc(rawUrl(id, ref, rel), `github settings ${blueprint}`);
-	const upstream = parseOrThrow(GithubSchema, `${rel} (remote)`, parsed, "github settings");
-	return { githubRel: rel, upstream };
-}
-
-export async function fetchMachineManifest(
-	id: string,
-	ref: string,
-	blueprint: string,
-	registry: RegistryDocument,
-): Promise<{
-	manifest: MachineManifest;
-	manifestRel: string;
-}> {
-	const entry = findMachineEntry(blueprint, registry);
-	if (entry === undefined) {
-		const hint = availableHint(listMachineBlueprintNames(registry), "machine blueprints");
-		throw new Error(`Machine blueprint "${blueprint}" not found in the tech-stack repo.${hint}`);
-	}
-	const manifestRel = blueprintRel(entry.path);
-	const parsed = await fetchJson(rawUrl(id, ref, manifestRel), `machine manifest ${blueprint}`);
-	const manifest = parseOrThrow(
-		MachineManifestSchema,
-		`${manifestRel} (remote)`,
-		parsed,
-		"machine manifest",
-	);
-	return { manifest, manifestRel };
+	const parsed = await fetchJsonc(rawUrl(state.id, state.ref, rel), `${label} ${state.blueprint}`);
+	const data = parseOrThrow(schema as z.ZodType<unknown>, `${rel} (remote)`, parsed, label);
+	return { data: data as BlueprintData<K>, rel };
 }

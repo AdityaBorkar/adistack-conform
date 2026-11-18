@@ -57,7 +57,7 @@ Reference the blueprints in `registry.json` (`machines` + `projects` + `github_c
 </Callout>
 
 - `$schema` fields point at `https://stack.adityab.tech/conform/<VERSION>/schemas/<registry|project-manifest>.json`.
-- Machine manifests (`machines/<name>.json`) declare `packages` (pacman/bun) plus `files[]` (`name` + `source` + `target`, optional `mode` and `secrets`). New dotfiles go under `machines/files/` + a `files[]` entry; entries with `secrets` render as templates from `source` with `@@NAME@@` placeholders whose real values live only in sops-encrypted `secrets.yaml`.
+- Machine manifests (`machines/<name>.json`) declare `packages` (pacman/bun) plus `files[]` (`name` + `source` + `target`, optional `mode` and `secrets`). New dotfiles go under `machines/files/` + a `files[]` entry; entries with `secrets` are secrets templates rendered from `source`: each listed name fills its `@@NAME@@` slot from the sops-encrypted `secrets.yaml` next to the manifest (flat `KEY: value`), unlisted secrets are never substituted, and the file is written and enforced with `mode` (default `0600`).
 
 ## Versioning and rollout
 

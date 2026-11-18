@@ -1,150 +1,98 @@
-import type { InstalledPackages, ManagerId, PackageRef } from "#/core/machine/managers/types.js";
-import type { CheckBase, CheckResult, RunCommandFix } from "#/core/result.js";
+import { bunManager } from "#/core/machine/managers/bun.js";
+import { pacmanManager } from "#/core/machine/managers/pacman.js";
+import type {
+	InstalledPackages,
+	ManagerId,
+	PackageManager,
+} from "#/core/machine/managers/types.js";
+import type { CheckBase, CheckResult } from "#/core/result.js";
 import { failFixable, pass, skipped } from "#/core/result.js";
+import type { MachineManifest } from "#/schemas/machine-manifest.js";
 
-export interface DeclaredPackage {
-	manager: ManagerId;
-	name: string;
-	version: string;
-}
+export const MANAGERS: Record<ManagerId, PackageManager> = {
+	bun: bunManager,
+	pacman: pacmanManager,
+};
 
-export interface ManifestPackages {
-	bun: Record<string, string>;
-	pacman: Record<string, string>;
-}
+// Report order.
+const MANAGER_IDS: ManagerId[] = ["bun", "pacman"];
 
 export interface EvaluatePackagesArgs {
-	allowlist: Record<ManagerId, Set<string>>;
+	allowlist: MachineManifest["allowlist"];
 	blueprint: string;
-	declared: DeclaredPackage[];
+	declared: MachineManifest["packages"];
 	installed: Record<ManagerId, InstalledPackages>;
 	// Strict runs treat extras as drift (fixable removal) instead of skipping them.
 	strict: boolean;
 }
 
-const MANAGERS: ManagerId[] = ["bun", "pacman"];
-
-// Declared maps (name -> version) flatten to one entry per manager+name.
-// Record keys are unique by construction, so no dedupe pass is needed.
-export function declaredFromManifest(packages: ManifestPackages): DeclaredPackage[] {
-	const declared: DeclaredPackage[] = [];
-	for (const [name, version] of Object.entries(packages.pacman)) {
-		declared.push({ manager: "pacman", name, version });
-	}
-	for (const [name, version] of Object.entries(packages.bun)) {
-		declared.push({ manager: "bun", name, version });
-	}
-	return declared;
+// Every manager's installed list, read concurrently.
+export async function listInstalled(
+	list: (manager: ManagerId) => Promise<InstalledPackages>,
+): Promise<Record<ManagerId, InstalledPackages>> {
+	const [pacman, bun] = await Promise.all([list("pacman"), list("bun")]);
+	return { bun, pacman };
 }
 
-function installFix(manager: ManagerId, entry: PackageRef): RunCommandFix {
-	if (manager === "pacman") {
-		const spec = entry.version === "latest" ? entry.name : `${entry.name}=${entry.version}`;
-		return {
-			args: ["pacman", "-S", "--needed", "--noconfirm", spec],
-			command: "sudo",
-			kind: "run-command",
-			label: `sudo pacman -S --needed --noconfirm ${spec}`,
-		};
-	}
-	return {
-		args: ["add", "-g", `${entry.name}@${entry.version}`],
-		command: "bun",
-		kind: "run-command",
-		label: `bun add -g ${entry.name}@${entry.version}`,
-	};
-}
-
-function removeFix(manager: ManagerId, name: string): RunCommandFix {
-	if (manager === "pacman") {
-		return {
-			args: ["pacman", "-Rs", "--noconfirm", name],
-			command: "sudo",
-			kind: "run-command",
-			label: `sudo pacman -Rs --noconfirm ${name}`,
-		};
-	}
-	return {
-		args: ["remove", "-g", name],
-		command: "bun",
-		kind: "run-command",
-		label: `bun remove -g ${name}`,
-	};
+function extraActual(name: string): string {
+	return `extra: ${name} is installed but not declared`;
 }
 
 // One result per declared package plus one per extra. Missing and version
 // drift are always fixable; extras are skipped unless the run is strict.
 export function evaluatePackages(args: EvaluatePackagesArgs): CheckResult[] {
-	const upstream = `tech-stack:${args.blueprint}`;
 	const results: CheckResult[] = [];
-	for (const manager of MANAGERS) {
-		const wanted = new Map<string, string>();
-		for (const entry of args.declared) {
-			if (entry.manager === manager) {
-				wanted.set(entry.name, entry.version);
-			}
-		}
-		const declaredNames = [...wanted.keys()].toSorted();
-		const installed = args.installed[manager] ?? {
-			explicit: new Set<string>(),
-			versions: new Map<string, string>(),
-		};
-		const { versions } = installed;
-		const allow = args.allowlist[manager] ?? new Set<string>();
-		const { extra, missing } = splitDeclared(declaredNames, installed, allow);
+	for (const manager of MANAGER_IDS) {
+		const wanted = args.declared[manager];
+		const installed = args.installed[manager];
+		const allow = new Set(args.allowlist[manager] ?? []);
+		const { extra, missing } = splitDeclared(Object.keys(wanted), installed, allow);
 		const missingSet = new Set(missing);
-		for (const name of declaredNames) {
-			const version = wanted.get(name) ?? "latest";
-			const base: CheckBase = {
-				id: `machine:${args.blueprint}:${manager}:${name}`,
-				kind: "machine",
-				scope: "machine",
-				target: `${manager}:${name}`,
-				upstream,
-			};
+		const base = (name: string): CheckBase => ({
+			id: `machine:${args.blueprint}:${manager}:${name}`,
+			kind: "machine",
+			scope: "machine",
+			target: `${manager}:${name}`,
+			upstream: `tech-stack:${args.blueprint}`,
+		});
+		for (const name of Object.keys(wanted).toSorted()) {
+			const version = wanted[name] as string;
+			const have = installed.versions.get(name);
+			const install = MANAGERS[manager].install({ name, version });
 			if (missingSet.has(name)) {
 				results.push(
 					failFixable(
-						base,
+						base(name),
 						`missing: ${name} is not installed`,
 						`package ${name} installed`,
-						installFix(manager, { name, version }),
+						install,
 					),
 				);
-			} else if (version !== "latest" && versions.get(name) !== version) {
+			} else if (version !== "latest" && have !== version) {
 				results.push(
 					failFixable(
-						base,
-						`version drift: ${name} is ${versions.get(name) ?? "<unknown>"}, want ${version}`,
+						base(name),
+						`version drift: ${name} is ${have ?? "<unknown>"}, want ${version}`,
 						`package ${name}@${version} installed`,
-						installFix(manager, { name, version }),
+						install,
 					),
 				);
 			} else {
-				results.push(pass(base, `package ${name} installed`, `package ${name} installed`));
+				results.push(pass(base(name), `package ${name} installed`, `package ${name} installed`));
 			}
 		}
 		const expectedExtras = `only declared ${manager} packages installed`;
 		for (const name of extra) {
-			const base: CheckBase = {
-				id: `machine:${args.blueprint}:${manager}:${name}`,
-				kind: "machine",
-				scope: "machine",
-				target: `${manager}:${name}`,
-				upstream,
-			};
-			if (args.strict) {
-				results.push(
-					failFixable(
-						base,
-						`extra: ${name} is installed but not declared`,
-						expectedExtras,
-						removeFix(manager, name),
-					),
-				);
-			} else {
-				results.push(skipped(base, expectedExtras, `extra: ${name} is installed but not declared`));
-			}
+			results.push(
+				args.strict
+					? failFixable(
+							base(name),
+							extraActual(name),
+							expectedExtras,
+							MANAGERS[manager].remove(name),
+						)
+					: skipped(base(name), expectedExtras, extraActual(name)),
+			);
 		}
 	}
 	return results;

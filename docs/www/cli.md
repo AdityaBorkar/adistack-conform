@@ -43,7 +43,7 @@ Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="war
 }
 ```
 
-`--json` ignores `--verbose` (JSON always carries every result). Each result carries `id` (`project:<blueprint>:<name>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `machine` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `target`, `expected`, `actual`, plus `upstream` (`tech-stack:<blueprint>`, omitted on `internal-error` where `target` is the scope name), `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, `symlink` with `cachePath`/`targetAbs`, or `github-api` multi-step REST calls) and/or `hint` (manual always hints; fixable machine/github results may carry both), and `skipped: true` when skipped.
+`--json` ignores `--verbose` (JSON always carries every result). Each result carries `id` (`project:<blueprint>:<name>`; machine uses `machine:<blueprint>:<section>:<name>` with section `pacman`/`bun`/`link`/`secrets-template`, or `machine:<blueprint>:<domain>` when a whole domain cannot run; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `machine` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `target`, `expected`, `actual`, plus `upstream` (`tech-stack:<blueprint>`, omitted on `internal-error` where `target` is the scope name), `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, `symlink` with `cachePath`/`targetAbs`/`label` (the link bytes stay out of the JSON), or `github-api` multi-step REST calls) and/or `hint` (manual always hints; fixable machine/github results may carry both), and `skipped: true` when skipped.
 
 ## `fix`
 
@@ -77,7 +77,7 @@ Unless you passed `--no-diff`, you get a unified diff preview (diffs over ~200KB
 
 <Step title="Pick and apply">
 
-A group-multiselect prompt lists each fix (each option shows the fix command; space toggles). `overwrite-file` fixes apply first, then commands/API fixes. Each `overwrite-file` fix writes a `.conform.bak` backup next to the target before writing (numbered `.conform.bak.N` when one already exists); writes through symlinks are refused. Non-TTY `--all` also refuses file fixes outside the project directory.
+A group-multiselect prompt lists each fix (each option shows the fix command; space toggles). `overwrite-file` fixes apply first, then links, commands and API fixes. Each `overwrite-file` fix writes a `.conform.bak` backup next to the target before writing (numbered `.conform.bak.N` when one already exists; secrets templates keep one); a symlink or non-regular target is refused before anything is copied. Non-TTY `--all` also refuses file and link fixes outside the project directory, resolving symlinked parent directories first.
 
 </Step>
 
@@ -100,7 +100,7 @@ adistack-conform validate
 adistack-conform --desired-state ./packages/a/conform.json validate
 ```
 
-Validates `registry.json` plus the blueprint file of every configured project blueprint and the settings file of every configured `github` blueprint (machine blueprints check the registry entry only, including path sanity) at the pinned `source.repo@ref`. Prints one `✓` line per valid file/entry to stdout and `✗` lines with the error detail to stderr. The global `--desired-state` flag applies here too.
+Validates `registry.json` plus the blueprint file of every configured project blueprint and the settings file of every configured `github` blueprint, and the machine manifest of every configured machine blueprint, including fetchability of each `files[]` source and of the adjacent `secrets.yaml` when any file declares `secrets`, at the pinned `source.repo@ref`. Prints one `✓` line per valid file/entry to stdout and `✗` lines with the error detail to stderr. The global `--desired-state` flag applies here too.
 
 Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 desired-state error</Badge>.
 

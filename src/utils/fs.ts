@@ -1,6 +1,6 @@
-import { chmod, lstat, mkdir, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 import { errorMessage } from "#/utils/error.js";
 
@@ -33,7 +33,7 @@ export async function readFileSafe(path: string): Promise<FileRead> {
 	}
 }
 
-function isMissingError(error: unknown): boolean {
+export function isMissingError(error: unknown): boolean {
 	if (typeof error !== "object" || error === null) {
 		return false;
 	}
@@ -44,7 +44,7 @@ function isMissingError(error: unknown): boolean {
 // new file is created with that mode, so secrets are never briefly world-readable.
 export async function writeFileEnsuringDir(
 	path: string,
-	content: string,
+	content: string | Uint8Array,
 	mode?: number,
 ): Promise<void> {
 	try {
@@ -53,7 +53,7 @@ export async function writeFileEnsuringDir(
 			throw new Error(`Refusing to write through symlink: ${path}`);
 		}
 	} catch (error) {
-		if ((error as { code?: unknown } | null)?.code !== "ENOENT") {
+		if (!isMissingError(error)) {
 			throw error;
 		}
 	}
@@ -65,14 +65,14 @@ export async function writeFileEnsuringDir(
 	try {
 		await chmod(path, mode);
 	} catch (error) {
-		if ((error as { code?: unknown } | null)?.code !== "ENOENT") {
+		if (!isMissingError(error)) {
 			throw error;
 		}
 	}
 	await writeFile(path, content, { mode });
 }
 
-export function expandHome(value: string, home: string): string {
+function expandHome(value: string, home: string): string {
 	if (/^~($|\/)/u.test(value) && home.length > 0) {
 		return value === "~" ? home : join(home, value.slice(2));
 	}
@@ -99,4 +99,19 @@ export function resolveTargetPath(raw: string, baseDir: string, home: string): s
 
 export function resolveDesiredStatePath(raw: string): string {
 	return resolveAgainstBase(raw, process.cwd(), (value) => expandHome(value, defaultHome()));
+}
+
+// Where a path really lives: symlinks in every existing ancestor resolved,
+// the not-yet-existing tail appended as-is.
+export async function realPathOf(path: string): Promise<string> {
+	const abs = resolve(path);
+	try {
+		return await realpath(abs);
+	} catch (error) {
+		if (!isMissingError(error)) {
+			throw error;
+		}
+	}
+	const parent = dirname(abs);
+	return parent === abs ? abs : join(await realPathOf(parent), basename(abs));
 }

@@ -4,63 +4,60 @@ import { UPSTREAM_FETCH_CONCURRENCY } from "#/core/upstream/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { errorMessage } from "#/utils/error.js";
 
-export interface RenderedTemplate {
-	leftover: string[];
-	text: string;
-}
+// Rendered files hold decrypted secrets: without a declared mode they are
+// written and enforced owner-only.
+const DEFAULT_SECRETS_MODE = "0600";
 
 const LEFTOVER_PATTERN = /@@[^@\s]+@@/gu;
 
-// Replaces @@NAME@@ slots with secret values (secret names are used as-is;
-// the SPEC example secret `npm_auth_token` is lowercase). Slots without a
-// matching secret stay in place; leftover reports any remaining @@...@@
-// slot so unresolved placeholders never pass as clean.
-export function renderTemplate(
+// Replaces @@NAME@@ slots with the given values (names used as-is). Slots
+// without a value stay in place and are reported as leftovers, so unresolved
+// placeholders never pass as clean.
+export function renderSecretsTemplate(
 	sourceText: string,
-	secrets: Record<string, string>,
-): RenderedTemplate {
+	values: Record<string, string>,
+): { leftover: string[]; text: string } {
 	let text = sourceText;
-	for (const [name, value] of Object.entries(secrets)) {
-		if (name === "") {
-			continue;
-		}
+	for (const [name, value] of Object.entries(values)) {
 		text = text.replaceAll(`@@${name}@@`, value);
 	}
 	return { leftover: [...new Set(text.match(LEFTOVER_PATTERN) ?? [])], text };
 }
 
-export interface MachineTemplate {
+interface SecretsTemplate {
 	mode?: string;
 	name: string;
-	secrets?: string[];
+	// Only these secrets are substituted; the rest of secrets.yaml never reaches the file.
+	secrets: string[];
 	source: string;
+	// Absolute (already resolved against $HOME).
 	target: string;
 }
 
-export interface TemplateTarget {
+export interface SecretsTemplateTarget {
 	exists: boolean;
 	mode?: string;
 	text?: string;
 }
 
-export interface CheckTemplatesArgs {
+interface CheckSecretsTemplatesArgs {
 	blueprint: string;
 	decryptSecrets: () => Promise<Record<string, string>>;
-	fetchSource: (source: string) => Promise<string | null>;
-	readTarget: (path: string) => Promise<TemplateTarget>;
-	templates: MachineTemplate[];
+	fetchSource: (source: string) => Promise<string>;
+	readTarget: (path: string) => Promise<SecretsTemplateTarget>;
+	templates: SecretsTemplate[];
 }
 
-interface TemplateObservation {
-	error?: string;
-	exists: boolean;
-	mode?: string;
-	text?: string;
-}
+type Secrets = { error: string; values?: undefined } | { values: Record<string, string> };
 
-function templateBase(blueprint: string, template: MachineTemplate): CheckBase {
+type Observed =
+	| { error: string; kind: "source" }
+	| { error: string; kind: "target" }
+	| { kind: "ok"; live: SecretsTemplateTarget; sourceText: string };
+
+function templateBase(blueprint: string, template: SecretsTemplate): CheckBase {
 	return {
-		id: `machine:${blueprint}:template:${template.name}`,
+		id: `machine:${blueprint}:secrets-template:${template.name}`,
 		kind: "machine",
 		scope: "machine",
 		target: template.target,
@@ -75,130 +72,130 @@ function normalizeMode(mode: string): string {
 	return stripped === "" ? "0" : stripped;
 }
 
+// Rendered and live text hold decrypted secrets: keep them out of reports.
+function redacted(text: string): string {
+	return `<redacted: ${text.length} chars with secrets>`;
+}
+
 function templateResult(
 	blueprint: string,
-	template: MachineTemplate,
-	sourceText: string | null,
-	sourceError: string,
-	live: TemplateObservation,
-	secrets: Record<string, string> | null,
-	secretsError: string,
+	template: SecretsTemplate,
+	observed: Observed,
+	secrets: Secrets,
 ): CheckResult {
 	const base = templateBase(blueprint, template);
-	if (live.error !== undefined) {
+	if (observed.kind === "target") {
 		return failManual(
 			base,
 			"<unreadable>",
 			template.source,
-			`Cannot read ${template.target}: ${live.error}`,
+			`Cannot read ${template.target}: ${observed.error}`,
 		);
 	}
-	if (sourceText === null) {
-		const detail = sourceError === "" ? "" : `: ${sourceError}`;
+	if (observed.kind === "source") {
 		return failManual(
 			base,
 			"<blueprint fetch failed>",
 			template.source,
-			`Cannot fetch blueprint file ${template.source}${detail}; fix the network or blueprint, then re-check.`,
+			`Cannot fetch blueprint file ${template.source}: ${observed.error}; fix the network or blueprint, then re-check.`,
 		);
 	}
-	if ((template.secrets?.length ?? 0) > 0 && secrets === null) {
-		const detail = secretsError === "" ? "" : `: ${secretsError}`;
+	if (secrets.values === undefined) {
 		return failManual(
 			base,
 			"<secrets unavailable>",
 			`rendered ${template.source}`,
-			`Cannot decrypt secrets${detail}; make sops --decrypt work (missing sops or age key?), then re-check.`,
+			`Cannot decrypt secrets: ${secrets.error}; make sops --decrypt work (missing sops or age key?), then re-check.`,
 		);
 	}
-	const rendered = renderTemplate(sourceText, secrets ?? {});
+	const { values } = secrets;
+	const undeclared = template.secrets.filter((name) => !Object.hasOwn(values, name));
+	if (undeclared.length > 0) {
+		return failManual(
+			base,
+			`<secrets missing: ${undeclared.join(", ")}>`,
+			`rendered ${template.source}`,
+			`Add ${undeclared.join(", ")} to the machine's secrets.yaml, then re-check.`,
+		);
+	}
+	const rendered = renderSecretsTemplate(
+		observed.sourceText,
+		Object.fromEntries(template.secrets.map((name) => [name, values[name] as string])),
+	);
 	if (rendered.leftover.length > 0) {
 		return failManual(
 			base,
 			`contains placeholders: ${rendered.leftover.join(", ")}`,
-			"rendered template (no @@PLACEHOLDER@@ slots)",
-			`Provide values for ${rendered.leftover.join(", ")} via sops secrets, then re-check.`,
+			"rendered secrets template (no @@PLACEHOLDER@@ slots)",
+			`Declare ${rendered.leftover.join(", ")} in the file's secrets list (and secrets.yaml), then re-check.`,
 		);
 	}
-	const hasSecrets = (template.secrets?.length ?? 0) > 0;
-	// Rendered and live text hold decrypted secrets: keep them out of reports.
-	const shown = (text: string): string =>
-		hasSecrets ? `<redacted: ${text.length} chars with secrets>` : text;
+	const mode = template.mode ?? DEFAULT_SECRETS_MODE;
 	const fix: OverwriteFileFix = {
 		filePath: template.target,
 		kind: "overwrite-file",
-		mode: template.mode,
+		mode,
 		newContent: rendered.text,
-		...(hasSecrets ? { secret: true } : {}),
+		secret: true,
 	};
+	const { live } = observed;
 	if (!live.exists) {
-		return failFixable(base, "<missing>", "rendered template", fix);
+		return failFixable(base, "<missing>", "rendered secrets template", fix);
 	}
 	if (live.text === undefined) {
 		return failManual(
 			base,
 			"<not a regular file>",
-			"rendered template",
+			"rendered secrets template",
 			`${template.target} is not a regular file; move it aside, then re-check.`,
 		);
 	}
-	const modeMismatch =
-		template.mode !== undefined &&
-		live.mode !== undefined &&
-		normalizeMode(live.mode) !== normalizeMode(template.mode);
+	const modeMismatch = live.mode !== undefined && normalizeMode(live.mode) !== normalizeMode(mode);
 	if (live.text !== rendered.text || modeMismatch) {
-		const outcome = failFixable(base, shown(live.text), shown(rendered.text), fix);
+		const outcome = failFixable(base, redacted(live.text), redacted(rendered.text), fix);
 		if (modeMismatch) {
-			outcome.hint = `Mode is ${live.mode ?? "<unknown>"}, want ${template.mode}: fix rewrites the file with mode ${template.mode}.`;
+			outcome.hint = `Mode is ${live.mode ?? "<unknown>"}, want ${mode}: fix rewrites the file with mode ${mode}.`;
 		}
 		return outcome;
 	}
-	return pass(base, "matches rendered template", `rendered ${template.source}`);
+	return pass(base, "matches rendered secrets template", `rendered ${template.source}`);
 }
 
-export async function checkTemplates(args: CheckTemplatesArgs): Promise<CheckResult[]> {
-	const needsSecrets = args.templates.some((template) => (template.secrets?.length ?? 0) > 0);
-	// One decrypt per run, shared by every template. Failures keep their
-	// cause so the manual hint says why instead of a generic nudge.
-	const secretsTask = needsSecrets
-		? args.decryptSecrets().then(
-				(secrets) => ({ secrets, secretsError: "" }),
-				(error: unknown) => ({
-					secrets: null as Record<string, string> | null,
-					secretsError: errorMessage(error),
-				}),
-			)
-		: Promise.resolve({ secrets: {} as Record<string, string>, secretsError: "" });
-	const rows = await mapWithConcurrency(
+async function observe(
+	args: CheckSecretsTemplatesArgs,
+	template: SecretsTemplate,
+): Promise<Observed> {
+	let live: SecretsTemplateTarget;
+	try {
+		live = await args.readTarget(template.target);
+	} catch (error) {
+		return { error: errorMessage(error), kind: "target" };
+	}
+	try {
+		return { kind: "ok", live, sourceText: await args.fetchSource(template.source) };
+	} catch (error) {
+		return { error: errorMessage(error), kind: "source" };
+	}
+}
+
+export async function checkSecretsTemplates(
+	args: CheckSecretsTemplatesArgs,
+): Promise<CheckResult[]> {
+	if (args.templates.length === 0) {
+		return [];
+	}
+	// One decrypt per run, shared by every template; failures keep their cause.
+	const secretsTask = args.decryptSecrets().then(
+		(values): Secrets => ({ values }),
+		(error: unknown): Secrets => ({ error: errorMessage(error) }),
+	);
+	const observed = await mapWithConcurrency(
 		args.templates,
 		UPSTREAM_FETCH_CONCURRENCY,
-		async (template) => {
-			let sourceText: string | null = null;
-			let sourceError = "";
-			try {
-				sourceText = await args.fetchSource(template.source);
-			} catch (error) {
-				sourceError = errorMessage(error);
-			}
-			let live: TemplateObservation;
-			try {
-				live = await args.readTarget(template.target);
-			} catch (error) {
-				live = { error: errorMessage(error), exists: false };
-			}
-			return { live, sourceError, sourceText, template };
-		},
+		(template) => observe(args, template),
 	);
-	const { secrets, secretsError } = await secretsTask;
-	return rows.map((row) =>
-		templateResult(
-			args.blueprint,
-			row.template,
-			row.sourceText,
-			row.sourceError,
-			row.live,
-			secrets,
-			secretsError,
-		),
+	const secrets = await secretsTask;
+	return args.templates.map((template, index) =>
+		templateResult(args.blueprint, template, observed[index] as Observed, secrets),
 	);
 }
