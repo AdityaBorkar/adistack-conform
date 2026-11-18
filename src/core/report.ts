@@ -84,7 +84,9 @@ function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefin
 	const { failed, fixable } = partitionResults(items);
 	const skipped = items.filter((item) => item.skipped === true).length;
 	const passed = items.length - failed.length - skipped;
-	return `${okMark(failed.length === 0)} ${scope}: ${passed} passed, ${failed.length} failed (${fixable.length} fixable), ${skipped} skipped`;
+	const failedPart =
+		failed.length === 0 ? "0 failed" : `${failed.length} failed (${fixable.length} fixable)`;
+	return `${okMark(failed.length === 0)} ${scope}: ${passed} passed, ${failedPart}, ${skipped} skipped`;
 }
 
 export function printResults(

@@ -69,11 +69,22 @@ export async function checkGeneral(
 			pr.permissions === undefined ? undefined : PR_CREATION_TO_API[pr.permissions],
 		],
 		["allow_merge_commit", pr.merge_commit],
-		["merge_commit_title", MERGE_TITLE_TO_API[pr.merge_title]],
-		["merge_commit_message", MERGE_MESSAGE_TO_API[pr.merge_message]],
+		// GitHub 422s (no_merge_strategy) when merge titles are sent while
+		// merge commits are disabled: only manage them when enabled.
+		...(pr.merge_commit === true
+			? ([
+					["merge_commit_title", MERGE_TITLE_TO_API[pr.merge_title]],
+					["merge_commit_message", MERGE_MESSAGE_TO_API[pr.merge_message]],
+				] as Array<[string, unknown]>)
+			: []),
 		["allow_squash_merge", pr.squash_merge],
-		["squash_merge_commit_title", SQUASH_TITLE_TO_API[pr.squash_title]],
-		["squash_merge_commit_message", SQUASH_MESSAGE_TO_API[pr.squash_message]],
+		// Same as above: squash titles require squash merging to be allowed.
+		...(pr.squash_merge === true
+			? ([
+					["squash_merge_commit_title", SQUASH_TITLE_TO_API[pr.squash_title]],
+					["squash_merge_commit_message", SQUASH_MESSAGE_TO_API[pr.squash_message]],
+				] as Array<[string, unknown]>)
+			: []),
 		["allow_rebase_merge", pr.rebase_merge],
 		["allow_update_branch", pr.suggest_updating_branches],
 		["allow_auto_merge", pr.auto_merge],

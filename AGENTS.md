@@ -13,8 +13,8 @@ bun install                          # CI uses bun install --frozen-lockfile
 bun dev check                        # run CLI from source (bun ./src/index.ts); pass check/fix args after dev
 bun test                             # all tests (script adds --only-failures --parallel=4); single file: bun test src/core/result.test.ts
 bun run build                        # regen config/*.json from src/schemas/* + compile --minify --bytecode to .output/
-bun run verify                       # gate before pushing: format (writes, not --check) + check:lint + check:types + test + check:knip in parallel (scripts/verify.ts)
-bun run check:conform                # dogfood self-check (bun dev check); NOT part of verify — run separately
+bun run verify                       # gate before pushing: format (writes, not --check) + check:lint + check:types + test + check:knip + check:conform in parallel (scripts/verify.ts)
+bun run check:conform                # dogfood self-check (bun dev check --project-only); full run is bun run review:conform
 ```
 
 - Always `bun run <script>`, never `npm`/`npx` (`bunfig.toml` sets `shell = "bun"`, plus `ignore-scripts=true`, `exact=true`, `minimumReleaseAge=3d`).
@@ -31,8 +31,12 @@ bun run check:conform                # dogfood self-check (bun dev check); NOT p
 ## Layout
 
 - `src/index.ts` registers commands only; `src/commands/` one file per command (`check`/`fix`/`validate`), each exporting `{ name, configure, run }` — `run` takes plain options and returns the exit code.
-- `src/core/` holds all domain logic, no Commander imports: pipeline at the top level (`config` (desired state + scope flags), `run`, `result`, `fix`, `select`, `validate`, `report`), shared `upstream/` access (`tech-stack` is the one seam scopes and `validate` read the pinned repo through: registry, blueprints, files, and `UpstreamMissingError` for absent entries/files; adapters `remote` `pinnedReader` (HTTPS) and `localReader` (checkout), plus `memory-reader` for tests; `registry` lookup + path rules), and one folder per scope with an `index.ts` entry (`project/`, `machine/`, `github/`). Scope folders never import each other — only `run`/`fix`/`validate` wire them together. `src/utils/` is generic helpers with no domain knowledge (`process` runs commands with timeouts); `src/schemas/` is the Zod source of truth. Check result ids/bases come only from `checkBase`/`checkId` in `result` (`<scope>:<blueprint>:<name>`, wire output per ADR 0012); `run` rejects a scope run with a repeated id.
-- Scope internals: `project/` (`compare`/`template`/`structure`), `machine/` (`links`/`templates` (secrets templates)/`packages`/`live` + `managers/` with one file per package manager: parser plus list/install/remove), `github/` (`api`/`target-repo`/`shared` + per-area checks). Tests colocate as `*.test.ts` next to source.
+- `src/core/` holds all domain logic, no Commander imports. Top-level pipeline: `config` (desired state + scope flags), `run`, `result`, `fix`, `select`, `validate`, `report`.
+- Shared `upstream/` access: `tech-stack` is the one seam scopes and `validate` read the pinned repo through (registry, blueprints, files; `UpstreamMissingError` for absent entries/files). Adapters `remote` `pinnedReader` (HTTPS) and `localReader` (checkout), plus `memory-reader` for tests; `registry` lookup + path rules.
+- One folder per scope with an `index.ts` entry (`project/`, `machine/`, `github/`). Scope folders never import each other — only `run`/`fix`/`validate` wire them together.
+- `src/utils/` is generic helpers with no domain knowledge (`process` runs commands with timeouts); `src/schemas/` is the Zod source of truth. Check result ids/bases come only from `checkBase`/`checkId` in `result` (`<scope>:<blueprint>:<name>`, wire output per ADR 0012); `run` rejects a scope run with a repeated id.
+- Scope internals: `project/` (`compare`/`template`/`structure`), `machine/` (`links`/`templates` (secrets templates)/`packages`/`live` + `managers/` with one file per package manager: parser plus list/install/remove), `github/` (`api`/`target-repo`/`shared` + per-area checks).
+- Tests colocate as `*.test.ts` next to source.
 - `.output/` and `config/` are gitignored build output (config regen on every build).
 - This repo dogfoods itself: `conform.json` pins `AdityaBorkar/tech-stack@<ref>` — read it for the current scopes, don't assume. Reference blueprints/registry live at `~/repo/tech-stack` (`opencode.json` already allows `external_directory` there) — read `registry.json`/blueprint files directly instead of guessing.
 

@@ -4,6 +4,7 @@ import { checkInteractionLimits } from "#/core/github/access.js";
 import { checkActionsOidc, checkEnvironmentProtection } from "#/core/github/actions.js";
 import { checkCopilotCloud } from "#/core/github/copilot.js";
 import { protectionPutBody } from "#/core/github/protection.js";
+import { checkGeneral } from "#/core/github/repo.js";
 import { checkRulesets, rulesFromApi, rulesetBody, rulesetDrift } from "#/core/github/rulesets.js";
 import type { Ruleset } from "#/core/github/rulesets.js";
 import {
@@ -512,6 +513,59 @@ describe("github check mappings", () => {
 });
 
 describe("rulesets", () => {
+	test("general omits merge titles when merge commits are disabled (no_merge_strategy)", async () => {
+		mockFetch([["/topics", { names: [] }]]);
+		const upstream = parse();
+		// Live has merge disabled but stale titles: no PATCH for titles.
+		const disabled = await checkGeneral("bp", "o/r", upstream, "t", () =>
+			Promise.resolve({
+				allow_auto_merge: false,
+				allow_merge_commit: false,
+				allow_rebase_merge: false,
+				allow_squash_merge: true,
+				allow_update_branch: false,
+				default_branch: "main",
+				delete_branch_on_merge: true,
+				has_discussions: false,
+				has_issues: true,
+				has_projects: false,
+				has_pull_requests: true,
+				has_wiki: false,
+				merge_commit_message: "BLANK",
+				merge_commit_title: "MERGE_MESSAGE",
+				squash_merge_commit_message: "PR_BODY",
+				squash_merge_commit_title: "PR_TITLE",
+				web_commit_signoff_required: false,
+			}),
+		);
+		expect(disabled.ok).toBe(true);
+		// Live has merge enabled, want disabled: PATCH disables without titles.
+		const enabled = await checkGeneral("bp", "o/r", upstream, "t", () =>
+			Promise.resolve({
+				allow_auto_merge: false,
+				allow_merge_commit: true,
+				allow_rebase_merge: false,
+				allow_squash_merge: true,
+				allow_update_branch: false,
+				default_branch: "main",
+				delete_branch_on_merge: true,
+				has_discussions: false,
+				has_issues: true,
+				has_projects: false,
+				has_pull_requests: true,
+				has_wiki: false,
+				merge_commit_message: "BLANK",
+				merge_commit_title: "MERGE_MESSAGE",
+				squash_merge_commit_message: "PR_BODY",
+				squash_merge_commit_title: "PR_TITLE",
+				web_commit_signoff_required: false,
+			}),
+		);
+		const body = (steps(enabled)?.[0]?.body ?? {}) as Record<string, unknown>;
+		expect(body["allow_merge_commit"]).toBe(false);
+		expect("merge_commit_title" in body).toBe(false);
+		expect("merge_commit_message" in body).toBe(false);
+	});
 	test("live rules normalise to the manifest shape and match the declared ruleset", () => {
 		expect(rulesFromApi(liveRuleset.rules)).toMatchObject({
 			deletion: true,
