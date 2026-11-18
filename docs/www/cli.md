@@ -15,18 +15,19 @@ Without `--desired-state`, the CLI walks up from your cwd to find `conform.json`
 Look, don't touch:
 
 ```bash
-adistack-conform check [--json] [--verbose] [--project-only | --machine-only | --github-only]
+adistack-conform check [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
 ```
 
 | Flag                                                  | Meaning                                                   |
 | ----------------------------------------------------- | --------------------------------------------------------- |
 | `--json`                                              | Print a machine-readable summary instead of human lines.  |
 | `--verbose`                                           | Show passing results too (default: failing results only). |
+| `--strict`                                            | Report undeclared machine packages (extras) as drift.     |
 | `--project-only` / `--machine-only` / `--github-only` | Run one scope. Passing two is an error.                   |
 
 Output lists only drift (failing results) plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | manual`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
 
-Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>. Drift includes unknown blueprints and scoped-run fetch errors (reported as `<scope>:internal-error` with no `source`); top-level registry fetch errors outside the scoped run exit 2. Desired-state errors are a missing file, invalid JSON/schema, or passing two scope flags. An unresolvable GitHub target repo (no `github.repo`, no `$GITHUB_REPOSITORY`, no git origin) is drift (`github:internal-error`, exit 1), not a desired-state error.
+Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>. Drift includes unknown blueprints and scoped-run fetch errors (reported as `<scope>:internal-error` with no `upstream`); top-level registry fetch errors outside the scoped run exit 2. Desired-state errors are a missing file, invalid JSON/schema, or passing two scope flags. An unresolvable GitHub target repo (no `github.repo`, no `$GITHUB_REPOSITORY`, no git origin) is drift (`github:internal-error`, exit 1), not a desired-state error.
 
 `--json` shape:
 
@@ -42,14 +43,14 @@ Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="war
 }
 ```
 
-`--json` ignores `--verbose` (JSON always carries every result). Each result carries `id` (`project:<blueprint>:<name>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `machine` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `target`, `expected`, `actual`, plus `source` (`tech-stack:<blueprint>`, omitted on `internal-error` where `target` is the scope name), `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, or `github-api` multi-step REST calls) and/or `hint` (manual always hints; fixable machine/github results may carry both), and `skipped: true` when skipped.
+`--json` ignores `--verbose` (JSON always carries every result). Each result carries `id` (`project:<blueprint>:<name>`; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `machine` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `target`, `expected`, `actual`, plus `upstream` (`tech-stack:<blueprint>`, omitted on `internal-error` where `target` is the scope name), `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, `symlink` with `cachePath`/`targetAbs`, or `github-api` multi-step REST calls) and/or `hint` (manual always hints; fixable machine/github results may carry both), and `skipped: true` when skipped.
 
 ## `fix`
 
 Change things, carefully:
 
 ```bash
-adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine-only | --github-only]
+adistack-conform fix [--all] [--dry-run] [--no-diff] [--strict] [--project-only | --machine-only | --github-only]
 ```
 
 | Flag                                                  | Meaning                                                                                                  |
@@ -57,6 +58,7 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--project-only | --machine
 | `--all`                                               | Apply all fixable items without prompting. Required for non-TTY use.                                     |
 | `--dry-run`                                           | Show what would be fixed without writing. Never prompts, never writes. Implies exit 1 when drift exists. |
 | `--no-diff`                                           | Hide the unified diff preview (useful for huge files).                                                   |
+| `--strict`                                            | Also remove undeclared machine packages (extras).                                                        |
 | `--project-only` / `--machine-only` / `--github-only` | Fix one scope. Passing two is an error.                                                                  |
 
 <Steps>

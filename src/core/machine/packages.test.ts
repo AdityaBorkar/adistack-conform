@@ -20,7 +20,7 @@ function baseArgs(overrides: Partial<EvaluatePackagesArgs> = {}): EvaluatePackag
 		blueprint: "main",
 		declared: [{ manager: "pacman", name: "ripgrep", version: "latest" }],
 		installed: { bun: installed([]), pacman: installed(["ripgrep", "base", "linux"]) },
-		mode: "conform",
+		strict: false,
 		...overrides,
 	};
 }
@@ -43,9 +43,9 @@ describe("declaredFromManifest", () => {
 });
 
 describe("evaluatePackages", () => {
-	test("all present passes in both modes", () => {
-		for (const mode of ["conform", "drift"] as const) {
-			const results = evaluatePackages(baseArgs({ mode }));
+	test("all present passes strict or not", () => {
+		for (const strict of [false, true] as const) {
+			const results = evaluatePackages(baseArgs({ strict }));
 			expect(results).toHaveLength(1);
 			expect(results[0]?.ok).toBe(true);
 			expect(results[0]?.id).toBe("machine:main:pacman:ripgrep");
@@ -68,8 +68,8 @@ describe("evaluatePackages", () => {
 		expect(results[0]?.ok).toBe(true);
 	});
 
-	test("pinned version drift is fixable in both modes", () => {
-		for (const mode of ["conform", "drift"] as const) {
+	test("pinned version drift is fixable strict or not", () => {
+		for (const strict of [false, true] as const) {
 			const results = evaluatePackages(
 				baseArgs({
 					declared: [{ manager: "pacman", name: "ripgrep", version: "14.1.0-1" }],
@@ -77,7 +77,7 @@ describe("evaluatePackages", () => {
 						bun: installed([]),
 						pacman: installed(["ripgrep"], { ripgrep: "13.0.0-1" }),
 					},
-					mode,
+					strict,
 				}),
 			);
 			expect(results).toHaveLength(1);
@@ -91,7 +91,7 @@ describe("evaluatePackages", () => {
 		}
 	});
 
-	test("conform mode: missing fails fixable, extra is skipped", () => {
+	test("non-strict: missing fails fixable, extra is skipped", () => {
 		const results = evaluatePackages(
 			baseArgs({ installed: { bun: installed([]), pacman: installed(["extra-pkg"]) } }),
 		);
@@ -111,11 +111,11 @@ describe("evaluatePackages", () => {
 		]);
 	});
 
-	test("drift mode: missing and extra both fail fixable", () => {
+	test("strict: missing and extra both fail fixable", () => {
 		const results = evaluatePackages(
 			baseArgs({
 				installed: { bun: installed([]), pacman: installed(["extra-pkg"]) },
-				mode: "drift",
+				strict: true,
 			}),
 		);
 		const extra = results.find((item) => item.id === "machine:main:pacman:extra-pkg");
@@ -135,7 +135,7 @@ describe("evaluatePackages", () => {
 			baseArgs({
 				declared: [{ manager: "bun", name: "eas-cli", version: "2.0.0" }],
 				installed: { bun: installed([]), pacman: installed([]) },
-				mode: "drift",
+				strict: true,
 			}),
 		);
 		expect(missing[0]?.fix).toEqual({
@@ -148,7 +148,7 @@ describe("evaluatePackages", () => {
 			baseArgs({
 				declared: [],
 				installed: { bun: installed(["stray"]), pacman: installed([]) },
-				mode: "drift",
+				strict: true,
 			}),
 		);
 		expect(extra[0]?.fix).toEqual({

@@ -1,157 +1,161 @@
 # Conformance Checking
 
-The domain of declaring desired project, machine, and GitHub state and checking reality against tech-stack blueprints.
+The domain of declaring the desired state of a project, a machine, and a GitHub repo, and checking reality against tech-stack blueprints.
 
 ## Language
 
 ### Desired state
 
 **Desired State**:
-The declaration of which project, machine, and GitHub blueprints the directory, machine, and repo should match, plus the tech-stack repo and ref holding the truth.
+The declaration of which project, machine, and GitHub blueprints a directory, machine, and repo should match, plus the tech-stack source holding them.
 _Avoid_: config, spec
 
 **Discovery**:
-Finding the desired state by walking up from the invocation directory, or from an explicit path override.
+Finding the desired state by walking up from the invocation directory, unless an explicit path is given.
 _Avoid_: lookup, search
 
-**Blueprint**:
-A named desired state from the tech-stack registry: a project file set, a machine manifest, or a GitHub settings set.
-_Avoid_: preset, template
+**Tech-stack source**:
+The repo and ref that hold the registry, blueprints, and upstreams.
+_Avoid_: preset repo, remote
 
-**Blueprint resolution**:
-Matching a desired blueprint name to a registry entry by key, path, or short name.
-_Avoid_: lookup rules, matching config
+**Provider**:
+The kind of host serving the tech-stack source; only GitHub exists.
+_Avoid_: source type, backend
 
 **Registry**:
-The listing of every project, machine, and GitHub blueprint the tech-stack source offers.
+The listing of every project, machine, and GitHub blueprint a tech-stack source offers.
 _Avoid_: catalog, index
 
+**Blueprint**:
+A named entry in the registry describing one desired shape: a project file set, a machine, or a set of GitHub repo settings.
+_Avoid_: preset, template, profile
+
+**Blueprint resolution**:
+Matching a desired-state blueprint name to a registry entry, by exact name or path only.
+_Avoid_: lookup, fuzzy match
+
 **Manifest**:
-A blueprint file declaring its identity plus its enforced entries: a project manifest holds enforced files, compare rules, and existence-only entries; a machine manifest holds packages, files, allowlist, params, and system.
+The blueprint file declaring what that blueprint enforces.
 _Avoid_: blueprint config, spec file
 
 **Machine manifest**:
-The JSON machine blueprint (`machines/<name>.json`) declaring versioned `packages.pacman`/`packages.bun` maps plus a single `files[]` list where each entry is a link or a secrets template.
+A manifest declaring the packages a machine must have and the files it must carry.
 _Avoid_: flake, system config
-
-**Compare**:
-The per-file semantic rule declared by a manifest: ignored keys are excluded from the compare and local values are preserved by fix.
-_Avoid_: compare config
-
-**File Structure**:
-Existence-only project-manifest entries: content is per-project, missing entries carry a human hint.
-_Avoid_: required docs, required dirs
 
 ### Enforcement
 
-**Upstream**:
-The `tech-stack:<blueprint>` label identifying which blueprint a result came from; compared content travels via `expected`/`actual`, not this field.
-_Avoid_: golden, preset file, expected content
-
-**Source**:
-The repo-relative path of a manifest entry inside the tech-stack repo; it lives on manifest entries, not on results.
-_Avoid_: preset path, upstream path
-
-**Provider**:
-The host type of the tech-stack source; only github is supported.
-_Avoid_: source type, backend
-
-**Target**:
-The manifest-declared enforcement target: a directory-relative path for project files, an absolute home-directory path or `manager:name` for machines, or a repo for GitHub settings.
-_Avoid_: destination, output
-
 **Scope**:
-One of the three enforcement domains: project files, the whole machine state, or GitHub repo settings.
+One of the three enforcement domains: project, machine, or GitHub.
 _Avoid_: mode, area
 
 **Scope filter**:
-Narrowing a run to a single scope; omitting a scope from desired state is the permanent equivalent.
+Narrowing one run to a single scope.
 _Avoid_: scope flag, mode filter
 
+**Source**:
+Where an upstream lives inside the tech-stack source, as declared by a manifest entry.
+_Avoid_: preset path, upstream path
+
+**Upstream**:
+The tech-stack content a target is compared against, fetched from its source.
+_Avoid_: golden, expected file, preset
+
+**Target**:
+The thing being enforced: a file or directory in the project, a file or package on the machine, or a GitHub repo.
+_Avoid_: destination, output
+
+**Compare rule**:
+A manifest-declared adjustment to how one project file is compared, such as keys left to the project.
+_Avoid_: compare config, override
+
+**Template**:
+A project upstream with placeholder slots that each project must fill with its own values; every other part must match.
+_Avoid_: parameterized file, scaffold
+
+**File structure**:
+Project-manifest entries that require a file or directory to exist without checking its content.
+_Avoid_: required docs, required dirs
+
 **Link**:
-A machine `files[]` entry without `secrets` enforcing `target` as a symlink to `<target>.conform-src`; fix is `ln -sfn`, never a content write.
-_Avoid_: symlink entry
+A machine file enforced as a symlink to its upstream.
+_Avoid_: symlink entry, dotfile
+
+**Secrets template**:
+A machine file rendered from its upstream with values from the machine's encrypted secrets.
+_Avoid_: sops file
 
 **Extra**:
-An undeclared package found on the machine; skipped by check, fixable removal by switch.
-_Avoid_: untracked package
+A package installed on the machine that the machine manifest does not declare.
+_Avoid_: untracked package, orphan
 
 **Allowlist**:
-Machine-manifest names exempt from extra reporting (distro-base names).
+Machine-manifest package names that are never reported as extras.
 _Avoid_: ignore list
 
-**Kind**:
-The check-result taxonomy: project, machine, github, or internal for scope-throw failure only (domain-level machine failures stay `machine`).
-_Avoid_: preset
-
-**Drift**:
-Any non-skipped mismatch between reality and desired state, reported as a failed check; conform-mode extras are skipped, never drift.
-_Avoid_: diff, failure, mismatch
+**Strict**:
+A run that treats extras as drift instead of skipping them.
+_Avoid_: drift mode, switch
 
 ### Results
 
-**Check Result**:
-The outcome of one enforcement comparison, identified by scope, blueprint, and name, or as a scope internal error on scope failure.
+**Check result**:
+The outcome of one enforcement comparison for one target.
 _Avoid_: check, report item
 
+**Drift**:
+A non-skipped check result where reality does not match the desired state.
+_Avoid_: diff, failure, mismatch
+
 **Fixable**:
-A drifted result carrying a machine-appliable remedy.
+Drift that carries a remedy the CLI can apply.
 _Avoid_: auto-fixable, resolvable
 
 **Manual**:
-A drifted result with no machine remedy, carrying a hint for a human to act on instead.
+Drift with no remedy the CLI can apply, only a hint for a human.
 _Avoid_: unfixable, unactionable
 
-**Skipped**:
-A result carrying `ok: false` with `skipped: true` that was not enforced and never causes drift exit; it is not a pass.
-_Avoid_: ignored, passed
-
 **Hint**:
-The human remedy carried by a manual result, and sometimes alongside a fixable remedy.
+The human-readable remedy attached to a check result.
 _Avoid_: message, help text
 
-**Template**:
-A project manifest entry whose upstream holds `<...>` placeholder slots; each slot accepts any per-project value while every other field must match. A verbatim copy fails until placeholders are replaced, and a missing target is manual.
-_Avoid_: parameterized file
+**Skipped**:
+A check result that was not enforced; it is neither a pass nor drift.
+_Avoid_: ignored, passed
 
-**Secrets template**:
-A machine `files[]` entry with `secrets` rendering `@@NAME@@` slots from one shared `sops decrypt` per run; leftover placeholders are manual, a missing target is fixable, and the declared `mode` is enforced after writing.
-_Avoid_: sops file
+**Kind**:
+The category of a check result: project, machine, GitHub, or internal.
+_Avoid_: type
 
-**Internal**:
-A scope-level failure when the scoped run throws; reported as drift, not a desired-state error.
-_Avoid_: system error
+**Internal error**:
+The single check result standing in for a scope whose run failed outright; it counts as drift.
+_Avoid_: system error, crash
 
 ### Flow
 
 **Check**:
-Evaluating desired state in conform mode: extras are skipped, never drift.
-_Avoid_: audit
-
-**Switch**:
-Evaluating machine state in drift mode: extras are fixable removals; always re-runs full drift with no scope filters.
-_Avoid_: upgrade
+Comparing reality against the desired state across scopes.
+_Avoid_: audit, lint
 
 **Fix**:
-The act of running selected fixable remedies, then re-checking only those IDs.
-_Avoid_: repair, sync, apply
+Applying selected fixable remedies in any scope, then re-checking them.
+_Avoid_: repair, sync, apply, switch
 
 **Re-check**:
-Re-running only the selected fixed IDs after `fix` apply (falling back to full re-check on error); `switch` instead re-runs full drift.
+Checking again after a fix, limited to what was fixed.
 _Avoid_: re-run, refresh
 
 **Validate**:
-The act of checking the tech-stack source itself at the pinned repo and ref, not local drift.
+Checking the tech-stack source itself for broken blueprints, independent of any local state.
 _Avoid_: verify
 
 **Dry-run**:
-Previewing without writing or prompting; `fix --dry-run` renders diffs by default while `switch --dry-run` never does.
+Showing what a fix would do without changing anything.
 _Avoid_: preview mode, no-op
 
 **Diff preview**:
-The unified diff shown per fixable `fix` item before prompting (skipped past 200k chars, at most 20 shown); `run-command`/`github-api` show steps and `switch` shows none.
-_Avoid_: patch preview, change display
+The per-item view of what a fix would change, shown before the user selects.
+_Avoid_: patch preview
 
 **Backup**:
-The `.conform.bak` safety copy written next to a target by `overwrite-file` fixes only (numbered `.bak.N`, refusing past 99); link fixes carry a move-aside hint instead.
+The safety copy of a file kept next to it before a fix replaces it.
 _Avoid_: snapshot, orig copy

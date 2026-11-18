@@ -3,7 +3,7 @@ import type { Command } from "commander";
 import type { DesiredStateOption, ScopeOptions } from "#/core/config.js";
 import { machineStatesOf } from "#/core/config.js";
 import { unattendedRefusal } from "#/core/fix.js";
-import { applyMachineFixes } from "#/core/machine/fix.js";
+import { fixSelectedAcrossScopes } from "#/core/machine/fix.js";
 import {
 	formatDuration,
 	outroAllPassed,
@@ -17,7 +17,7 @@ import { prepareRun, recheckAfterFix } from "#/core/run.js";
 import { isInteractive, selectFixes } from "#/core/select.js";
 
 type FixOptions = DesiredStateOption &
-	ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean };
+	ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean; strict?: boolean };
 
 async function run(options: FixOptions): Promise<number> {
 	const start = performance.now();
@@ -66,7 +66,7 @@ async function run(options: FixOptions): Promise<number> {
 	if (options.diff !== false) {
 		renderFixDiffs(selection.selected);
 	}
-	const fixed = await applyMachineFixes({
+	const fixed = await fixSelectedAcrossScopes({
 		home: ctx.home,
 		registries: ctx.registries,
 		selected: selection.selected,
@@ -94,6 +94,7 @@ export const fixCommand = {
 			.option("--all", "Fix all fixable items without prompting.")
 			.option("--dry-run", "Show what would be fixed without writing.")
 			.option("--no-diff", "Hide the diff preview.")
+			.option("--strict", "Also remove undeclared machine packages (extras).")
 			.option("--project-only", "Only fix project checks.")
 			.option("--machine-only", "Only fix machine checks.")
 			.option("--github-only", "Only fix GitHub repo checks."),

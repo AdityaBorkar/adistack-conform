@@ -30,8 +30,6 @@ function manifest(overrides: Partial<MachineManifest> = {}): MachineManifest {
 		allowlist: {},
 		files: [],
 		packages: { bun: {}, pacman: { ripgrep: "latest" } },
-		params: [],
-		system: "x86_64-linux",
 		...overrides,
 	};
 }
@@ -49,13 +47,13 @@ function input(overrides: Partial<MachineCheckInput> = {}): MachineCheckInput {
 		home: "/home/ada",
 		live: fakeLive({ listPacman: () => Promise.resolve(installed(["ripgrep"])) }),
 		manifest: manifest(),
-		mode: "conform",
+		strict: false,
 		...overrides,
 	};
 }
 
 describe("checkMachine packages", () => {
-	test("conform mode: extras are skipped", async () => {
+	test("non-strict: extras are skipped", async () => {
 		const results = await checkMachine(
 			input({
 				live: fakeLive({ listPacman: () => Promise.resolve(installed(["ripgrep", "extra-pkg"])) }),
@@ -67,11 +65,11 @@ describe("checkMachine packages", () => {
 		expect(extra?.ok).toBe(false);
 	});
 
-	test("drift mode: extras are fixable", async () => {
+	test("strict: extras are fixable", async () => {
 		const results = await checkMachine(
 			input({
 				live: fakeLive({ listPacman: () => Promise.resolve(installed(["ripgrep", "extra-pkg"])) }),
-				mode: "drift",
+				strict: true,
 			}),
 		);
 		const extra = results.find((item) => item.id === "machine:main:pacman:extra-pkg");
@@ -85,11 +83,9 @@ describe("checkMachine packages", () => {
 		});
 	});
 
-	test("missing package is fixable in both modes", async () => {
+	test("missing package is fixable strict or not", async () => {
 		const runs = await Promise.all(
-			(["conform", "drift"] as const).map((mode) =>
-				checkMachine(input({ live: fakeLive(), mode })),
-			),
+			([false, true] as const).map((strict) => checkMachine(input({ live: fakeLive(), strict }))),
 		);
 		for (const results of runs) {
 			const missing = results.find((item) => item.id === "machine:main:pacman:ripgrep");
@@ -150,7 +146,12 @@ describe("checkMachine templates", () => {
 describe("recheckMachineSelected", () => {
 	test("empty selection short-circuits without network", async () => {
 		const state: MachineRunState = { blueprint: "main", id: "o/r", ref: "main" };
-		const results = await recheckMachineSelected(state, {} as RegistryDocument, new Set<string>());
+		const results = await recheckMachineSelected(
+			state,
+			{} as RegistryDocument,
+			new Set<string>(),
+			false,
+		);
 		expect(results).toEqual([]);
 	});
 });

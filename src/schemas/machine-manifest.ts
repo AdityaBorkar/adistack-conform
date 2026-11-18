@@ -59,8 +59,6 @@ export const MachineManifestSchema = z.compile(
 			allowlist: MachineAllowlistSchema.default({}),
 			files: z.array(MachineFileSchema).default([]),
 			packages: MachinePackagesSchema.default({ bun: {}, pacman: {} }),
-			params: z.array(z.string()).default([]),
-			system: z.string().min(1).default("x86_64-linux"),
 		})
 		.strict()
 		.superRefine((data, ctx) => {

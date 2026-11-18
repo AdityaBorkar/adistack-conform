@@ -2,8 +2,6 @@ import type { InstalledPackages, ManagerId, PackageRef } from "#/core/machine/ma
 import type { CheckBase, CheckResult, RunCommandFix } from "#/core/result.js";
 import { failFixable, pass, skipped } from "#/core/result.js";
 
-export type PackageMode = "conform" | "drift";
-
 export interface DeclaredPackage {
 	manager: ManagerId;
 	name: string;
@@ -20,7 +18,8 @@ export interface EvaluatePackagesArgs {
 	blueprint: string;
 	declared: DeclaredPackage[];
 	installed: Record<ManagerId, InstalledPackages>;
-	mode: PackageMode;
+	// Strict runs treat extras as drift (fixable removal) instead of skipping them.
+	strict: boolean;
 }
 
 const MANAGERS: ManagerId[] = ["bun", "pacman"];
@@ -74,9 +73,7 @@ function removeFix(manager: ManagerId, name: string): RunCommandFix {
 }
 
 // One result per declared package plus one per extra. Missing and version
-// drift fail both predicates (a declared requirement is unmet); extras pass
-// satisfies and fail inDrift. In conform mode extras are skipped results so
-// they never count as drift.
+// drift are always fixable; extras are skipped unless the run is strict.
 export function evaluatePackages(args: EvaluatePackagesArgs): CheckResult[] {
 	const upstream = `tech-stack:${args.blueprint}`;
 	const results: CheckResult[] = [];
@@ -135,7 +132,7 @@ export function evaluatePackages(args: EvaluatePackagesArgs): CheckResult[] {
 				target: `${manager}:${name}`,
 				upstream,
 			};
-			if (args.mode === "drift") {
+			if (args.strict) {
 				results.push(
 					failFixable(
 						base,

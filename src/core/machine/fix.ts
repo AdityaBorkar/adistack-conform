@@ -86,7 +86,7 @@ async function materializeLinkUpstreams(
 			linkCachePath(fix.targetAbs) !== fix.cachePath
 		) {
 			console.error(
-				`✗ not fixed ${item.id}: cannot find link upstream for ${fix.targetAbs}; skipping (re-check to refresh).`,
+				`✗ not fixed ${item.id}: cannot find link upstream for ${fix.targetAbs}; skipping (run check again first).`,
 			);
 			return { item, ready: false };
 		}
@@ -142,10 +142,10 @@ async function enforceTemplateModes(
 }
 
 // One call for the whole machine fix ritual: load manifests when a selected
-// fix needs them, materialize link upstreams before `ln` runs, apply fixes,
-// then chmod templated files to their declared modes. Shared by `fix` and
-// `switch` so 0600 secrets never land world-readable.
-export async function applyMachineFixes(args: {
+// fix needs them, materialize link upstreams before `ln` runs, run every fix,
+// then chmod templated files to their declared modes so 0600 secrets never
+// land world-readable.
+export async function fixSelectedAcrossScopes(args: {
 	home: string;
 	registries: Registries;
 	selected: CheckResult[];

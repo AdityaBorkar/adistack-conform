@@ -18,7 +18,7 @@ Each scope answers one question: is this thing the way the blueprint says it sho
 | `machine` | declared packages plus manifest `files[]` entries                                                                                                                                                           | `machine:<blueprint>:<section>:<name>` | Manifest fetched from the tech-stack repo, compared against installed packages and `$HOME` files (see skill prompt)                                      |
 | `github`  | fixed check list (`general`, `releases`, `codeowners`, `issue-templates`, `pr-checks`, `reviews`, `rulesets`, `actions-*`, `environments`, `security`, `secrets`, plus notes/fallbacks — see CLI reference) | `github:<blueprint>:<name>`            | Live repo settings compared against the upstream via the GitHub REST API (needs `GITHUB_TOKEN`)                                                          |
 
-Run one scope at a time with `--project-only` / `--machine-only` / `--github-only`. The machine check compares the manifest against installed packages and `$HOME` files; `check` treats undeclared extras as skipped while `switch` treats them as drift to remove.
+Run one scope at a time with `--project-only` / `--machine-only` / `--github-only`. The machine check compares the manifest against installed packages and `$HOME` files; undeclared packages (extras) are skipped unless `--strict` makes them drift that `fix --strict` removes.
 
 ## What a result means
 
@@ -26,7 +26,7 @@ Every check yields one `CheckResult`. Think of it as one of four buckets:
 
 - <Badge variant="success">ok</Badge> — the target matches the upstream (byte, semantic overrides-kept, or templated).
 - <Badge variant="muted">skipped</Badge> — not applicable here, and that is fine (still exit 0). Github items with no public API (social preview, archive toggles, Copilot Autofix, dependency auto-submit, agent suggestions, OIDC-only checks) skip with a UI hint; `actions-oidc` always skips; 404 OIDC and upstreams that do not require a check skip too — as do whole-scope or per-check 401/403 auth failures.
-- <Badge variant="info">fixable</Badge> — `fix` can handle it: a missing file or content drift (overwrite with the upstream, keeping your local `overrides` and adapted `package.json` fields), machine drift (missing/wrong links, template content, or packages — applied directly by `switch`), or github repo-setting drift (`github-api` multi-step REST calls). Fixable machine/github results may also carry a `hint` alongside the `fix`.
+- <Badge variant="info">fixable</Badge> — `fix` can handle it: a missing file or content drift (overwrite with the upstream, keeping your local `overrides` and adapted `package.json` fields), machine drift (missing/wrong links, template content, or packages ), or github repo-setting drift (`github-api` multi-step REST calls). Fixable machine/github results may also carry a `hint` alongside the `fix`.
 - <Badge variant="warning">manual</Badge> — needs you, with a `hint` and no `fix`: unreadable targets (e.g. `/etc/…` without sudo); missing blueprint files in the tech-stack repo; unfetchable machine `source` files; missing `file_structure[]` entries (generate hint for files, `mkdir -p` for dirs); undecryptable secrets (missing `sops`/age key) or leftover `@@SECRET@@` placeholders. Follow the `hint`. A `file_structure[]` entry whose `name` overlaps a `files[]` name is dropped with no result (the file check owns it).
 
 <Callout type="tip" title="Skips are good news">

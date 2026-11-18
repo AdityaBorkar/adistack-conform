@@ -7,7 +7,9 @@ const TechStackSourceSchema = z
 			.string()
 			.regex(/^[^/\s]+\/[^/\s]+$/u)
 			.describe("GitHub owner/repo holding blueprints."),
-		type: z.literal("github").describe("Tech-stack source; only github is supported."),
+		type: z
+			.literal("github")
+			.describe("Provider hosting the tech-stack source; only github is supported."),
 	})
 	.strict();
 
@@ -16,9 +18,7 @@ const ConformMachineSectionSchema = z
 		blueprint: z
 			.string()
 			.min(1)
-			.describe(
-				"Machine blueprint from the tech-stack registry (entry name or directory, e.g. main).",
-			),
+			.describe("Machine blueprint name from the tech-stack registry, e.g. main."),
 	})
 	.strict();
 
@@ -48,11 +48,13 @@ const ConformProjectSectionSchema = z
 export const ConformSchema = z.compile(
 	z
 		.object({
-			$schema: z.string().describe("JSON Schema reference, e.g. ./config/conform.json.").optional(),
+			$schema: z.string().describe("JSON Schema reference, e.g. ./config/schema.json.").optional(),
 			github: ConformGithubSectionSchema.describe("GitHub repo settings desired state.").optional(),
 			machine: ConformMachineSectionSchema.describe("Machine desired state.").optional(),
 			project: ConformProjectSectionSchema.describe("Project desired state.").optional(),
-			source: TechStackSourceSchema.describe("Tech-stack repo holding blueprints."),
+			source: TechStackSourceSchema.describe(
+				"Tech-stack source holding the registry and blueprints.",
+			),
 		})
 		.strict(),
 );

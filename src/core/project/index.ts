@@ -14,7 +14,7 @@ import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { errorMessage } from "#/utils/error.js";
 import { resolveTargetPath } from "#/utils/fs.js";
 
-export interface TechStackRunOptions {
+export interface ProjectCheckOptions {
 	baseDir: string;
 	home: string;
 	scope: CheckScope;
@@ -33,7 +33,7 @@ interface NeededFile {
 function collectNeeded(
 	blueprint: string,
 	files: ManifestFile[],
-	options: TechStackRunOptions,
+	options: ProjectCheckOptions,
 	onlyIds?: ReadonlySet<string>,
 ): NeededFile[] {
 	const needed: NeededFile[] = [];
@@ -122,7 +122,7 @@ function checkNeeded(
 
 async function runWithManifest(
 	state: ProjectRunState,
-	options: TechStackRunOptions,
+	options: ProjectCheckOptions,
 	registry: RegistryDocument,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
@@ -141,7 +141,7 @@ async function runWithManifest(
 
 export function runProjectChecks(
 	state: ProjectRunState,
-	options: TechStackRunOptions,
+	options: ProjectCheckOptions,
 	registry: RegistryDocument,
 ): Promise<CheckResult[]> {
 	return runWithManifest(state, options, registry);
@@ -149,7 +149,7 @@ export function runProjectChecks(
 
 export function recheckProjectSelected(
 	state: ProjectRunState,
-	options: TechStackRunOptions,
+	options: ProjectCheckOptions,
 	registry: RegistryDocument,
 	selectedIds: ReadonlySet<string>,
 ): Promise<CheckResult[]> {

@@ -3,7 +3,6 @@ import { checkLinks } from "#/core/machine/links.js";
 import { defaultLive } from "#/core/machine/live.js";
 import type { MachineLive } from "#/core/machine/live.js";
 import { declaredFromManifest, evaluatePackages } from "#/core/machine/packages.js";
-import type { PackageMode } from "#/core/machine/packages.js";
 import { resolveTarget } from "#/core/machine/paths.js";
 import { checkTemplates } from "#/core/machine/templates.js";
 import type { CheckResult } from "#/core/result.js";
@@ -22,7 +21,7 @@ export interface MachineCheckInput {
 	home: string;
 	live: MachineLive;
 	manifest: MachineManifest;
-	mode: PackageMode;
+	strict: boolean;
 }
 
 function errorResult(blueprint: string, domain: string, error: unknown): CheckResult[] {
@@ -54,11 +53,9 @@ async function guard(
 	}
 }
 
-// One reality, two predicates: conform mode reports undeclared extras as
-// skipped (satisfies), drift mode reports them as fixable removals (inDrift).
-// Links and templates coincide in both modes.
+// Extras are skipped unless the run is strict; links and templates ignore strictness.
 export async function checkMachine(input: MachineCheckInput): Promise<CheckResult[]> {
-	const { blueprint, home, live, manifest, mode } = input;
+	const { blueprint, home, live, manifest, strict } = input;
 	const packagesTask = guard(blueprint, "packages", async () => {
 		const [pacman, bun] = await Promise.all([live.listPacman(), live.listBun()]);
 		return evaluatePackages({
@@ -69,7 +66,7 @@ export async function checkMachine(input: MachineCheckInput): Promise<CheckResul
 			blueprint,
 			declared: declaredFromManifest(manifest.packages),
 			installed: { bun, pacman },
-			mode,
+			strict,
 		});
 	});
 	// Manifest entries are per-run temporaries: resolve targets in place
@@ -111,7 +108,7 @@ export async function checkMachine(input: MachineCheckInput): Promise<CheckResul
 export async function runMachine(
 	state: MachineRunState,
 	registry: RegistryDocument,
-	mode: PackageMode,
+	strict: boolean,
 	live?: MachineLive,
 ): Promise<CheckResult[]> {
 	const { manifest, manifestRel } = await fetchMachineManifest(
@@ -126,7 +123,7 @@ export async function runMachine(
 		home,
 		live: live ?? defaultLive(state, manifestRel),
 		manifest,
-		mode,
+		strict,
 	});
 }
 
@@ -134,6 +131,7 @@ export function recheckMachineSelected(
 	state: MachineRunState,
 	registry: RegistryDocument,
 	selectedIds: ReadonlySet<string>,
+	strict: boolean,
 	live?: MachineLive,
 ): Promise<CheckResult[]> {
 	if (selectedIds.size === 0) {
@@ -151,8 +149,10 @@ export function recheckMachineSelected(
 		return Promise.resolve([]);
 	}
 	// The full domain run is cheap (~2s): re-check everything, then keep the
-	// selected IDs.
-	return runMachine(state, registry, "conform", live).then((results) =>
-		results.filter((item) => selectedIds.has(item.id)),
+	// selected IDs plus any domain error, so a failed re-check never reads as
+	// a resolved (vanished) ID.
+	const domainErrors = new Set(["packages", "links", "templates"].map((domain) => prefix + domain));
+	return runMachine(state, registry, strict, live).then((results) =>
+		results.filter((item) => selectedIds.has(item.id) || domainErrors.has(item.id)),
 	);
 }

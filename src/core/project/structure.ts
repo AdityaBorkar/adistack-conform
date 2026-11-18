@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 
 import { projectBase } from "#/core/project/compare.js";
-import type { TechStackRunOptions } from "#/core/project/index.js";
+import type { ProjectCheckOptions } from "#/core/project/index.js";
 import type { CheckResult, CheckScope } from "#/core/result.js";
 import { failManual, pass, skipped } from "#/core/result.js";
 import type { ManifestFile, ManifestFileStructure } from "#/core/upstream/registry.js";
@@ -76,7 +76,7 @@ export async function checkFileStructure(
 	blueprint: string,
 	files: ManifestFile[],
 	structure: ManifestFileStructure[],
-	options: TechStackRunOptions,
+	options: ProjectCheckOptions,
 	onlyIds?: ReadonlySet<string>,
 ): Promise<CheckResult[]> {
 	const enforcedTargets = new Set(

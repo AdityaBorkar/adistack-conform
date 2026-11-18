@@ -4,7 +4,12 @@ import type { DesiredStateOption, ScopeOptions } from "#/core/config.js";
 import { printJsonSummary, printResults } from "#/core/report.js";
 import { prepareRun } from "#/core/run.js";
 
-type CheckOptions = DesiredStateOption & ScopeOptions & { json?: boolean; verbose?: boolean };
+type CheckOptions = DesiredStateOption &
+	ScopeOptions & {
+		json?: boolean;
+		strict?: boolean;
+		verbose?: boolean;
+	};
 
 async function run(options: CheckOptions): Promise<number> {
 	const { desiredStates, githubElapsedMs, machineElapsedMs, projectElapsedMs, results } =
@@ -36,6 +41,7 @@ export const checkCommand = {
 			)
 			.option("--json", "Print machine-readable JSON.")
 			.option("--verbose", "Show passing results too.")
+			.option("--strict", "Report undeclared machine packages (extras) as drift.")
 			.option("--project-only", "Only run project checks.")
 			.option("--machine-only", "Only run machine checks.")
 			.option("--github-only", "Only run GitHub repo checks."),

@@ -1,7 +1,7 @@
 # Zod schemas are the source of truth for configuration
 
-`src/schemas/` declares `conform.json`, registry, and manifest shapes in Zod (`import * as z from "zod"`, finals wrapped in `z.compile()`), and `config/*.json` is regenerated from them via `scripts/generate-json-schema.ts` (run inside `bun run build`), so validation, editor schemas, and runtime parsing can never diverge. (Migrated from Valibot; numbered 0001 for history.)
+`src/schemas/` declares every shape the CLI reads (`conform.json`, `registry.json`, project manifests, machine manifests, GitHub settings) in Zod, and the published JSON Schemas in `config/` are generated from them at build time. Validation, editor completion, and runtime parsing therefore can never disagree. Hand-written JSON Schemas (and the earlier Valibot schemas) drifted from the parser.
 
 ## Consequences
 
-`check`/`fix` exit 2 on desired-state errors (missing scope, invalid JSON/schema); unknown blueprints and fetch failures are drift reported as `<scope>:internal-error` (exit 1), never exit 2. Never hand-edit `config/*.json` since `build` overwrites it.
+`config/*.json` is build output and is never hand-edited. A schema violation in local desired state is a desired-state error (exit 2); a violation in a fetched blueprint is drift in that scope, because the blueprint author owns it, not the user.

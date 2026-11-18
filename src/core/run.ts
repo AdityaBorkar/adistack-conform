@@ -14,7 +14,6 @@ import {
 } from "#/core/config.js";
 import { recheckGithubSelected, runGithubChecks } from "#/core/github/index.js";
 import { recheckMachineSelected, runMachine } from "#/core/machine/index.js";
-import type { PackageMode } from "#/core/machine/packages.js";
 import { recheckProjectSelected, runProjectChecks } from "#/core/project/index.js";
 import type { CheckResult, CheckScope } from "#/core/result.js";
 import type { Registries } from "#/core/upstream/registries.js";
@@ -29,6 +28,7 @@ export interface RunContext {
 	home: string;
 	only: CheckScope | undefined;
 	registries: Registries;
+	strict: boolean;
 }
 
 export function toSafeResults(
@@ -59,13 +59,13 @@ async function timed<T>(task: Promise<T>): Promise<{ elapsedMs: number; value: T
 export async function runMachineStates(
 	states: readonly MachineRunState[],
 	registries: Registries,
-	mode: PackageMode,
+	strict: boolean,
 ): Promise<CheckResult[]> {
 	const out: CheckResult[][] = [];
 	for (const state of states) {
 		out.push(
 			await toSafeResults(
-				runMachine(state, requireRegistry(registries, state.id, state.ref), mode),
+				runMachine(state, requireRegistry(registries, state.id, state.ref), strict),
 				"machine",
 			),
 		);
@@ -117,7 +117,7 @@ export async function runAllChecks(args: RunContext): Promise<{
 		timed(Promise.all(projectTasks)),
 		// Machine runs share live system state, so they run sequentially
 		// while the other scopes run concurrently.
-		timed(runMachineStates(machineStates, args.registries, "conform")),
+		timed(runMachineStates(machineStates, args.registries, args.strict)),
 		timed(Promise.all(githubTasks)),
 	]);
 	return {
@@ -167,6 +167,7 @@ export async function recheckSelected(
 								state,
 								requireRegistry(args.registries, state.id, state.ref),
 								scopedIds,
+								args.strict,
 							),
 						);
 					}
@@ -195,7 +196,25 @@ export async function recheckSelected(
 	return rechecked.flat();
 }
 
-// Re-run only the selected items; fall back to a full run if the narrow pass fails.
+// A selected ID missing from the re-check no longer exists (e.g. a removed
+// extra), so it is resolved; re-check results new to the run (e.g. a scope
+// error) are appended.
+export function mergeRecheck(
+	previous: readonly CheckResult[],
+	rechecked: readonly CheckResult[],
+	selectedIds: ReadonlySet<string>,
+): CheckResult[] {
+	const byId = new Map(rechecked.map((item) => [item.id, item]));
+	const previousIds = new Set(previous.map((item) => item.id));
+	return [
+		...previous
+			.filter((item) => byId.has(item.id) || !selectedIds.has(item.id))
+			.map((item) => byId.get(item.id) ?? item),
+		...rechecked.filter((item) => !previousIds.has(item.id)),
+	];
+}
+
+// Re-check only the selected IDs; fall back to a full check if the narrow pass fails.
 export async function recheckAfterFix(
 	ctx: RunContext,
 	previous: CheckResult[],
@@ -204,20 +223,22 @@ export async function recheckAfterFix(
 	try {
 		const selectedIds = new Set(selected.map((item) => item.id));
 		const rechecked = await recheckSelected({ ...ctx, selectedIds });
-		const byId = new Map(rechecked.map((item) => [item.id, item]));
-		return previous.map((item) => byId.get(item.id) ?? item);
+		return mergeRecheck(previous, rechecked, selectedIds);
 	} catch (error) {
 		console.error(`Selective re-check failed, running a full re-check: ${errorMessage(error)}`);
 		return (await runAllChecks(ctx)).results;
 	}
 }
 
-export async function prepareRun(options: DesiredStateOption & ScopeOptions) {
+export async function prepareRun(
+	options: DesiredStateOption & ScopeOptions & { strict?: boolean },
+) {
 	const only = scopeOf(options);
 	const desiredStates = await loadDesiredStates(options.desiredState);
 	const cwd = process.cwd();
 	const home = defaultHome();
 	const registries = await fetchRegistries(desiredStates, only);
-	const run = await runAllChecks({ cwd, desiredStates, home, only, registries });
-	return { cwd, desiredStates, home, only, registries, ...run };
+	const strict = options.strict === true;
+	const run = await runAllChecks({ cwd, desiredStates, home, only, registries, strict });
+	return { cwd, desiredStates, home, only, registries, strict, ...run };
 }

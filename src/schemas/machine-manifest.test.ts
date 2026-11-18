@@ -9,8 +9,6 @@ describe("MachineManifestSchema", () => {
 		});
 		expect(result.success).toBe(true);
 		if (result.success) {
-			expect(result.data.system).toBe("x86_64-linux");
-			expect(result.data.params).toEqual([]);
 			expect(result.data.allowlist).toEqual({});
 		}
 	});

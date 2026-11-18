@@ -6,7 +6,6 @@ import { Command, type OptionValues } from "commander";
 
 import { checkCommand } from "#/commands/check.js";
 import { fixCommand } from "#/commands/fix.js";
-import { switchCommand } from "#/commands/switch.js";
 import { validateCommand } from "#/commands/validate.js";
 import { errorMessage } from "#/utils/error.js";
 
@@ -65,7 +64,6 @@ function register<Options extends OptionValues>(definition: {
 
 register(checkCommand);
 register(fixCommand);
-register(switchCommand);
 register(validateCommand);
 
 void program.parseAsync(process.argv).catch((error: unknown) => {
