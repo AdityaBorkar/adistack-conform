@@ -66,64 +66,70 @@ export async function checkGeneral(
 	}
 	const state: GeneralState = { actual: {}, body: {}, diffs: [], target };
 	compareField(state, actual, "default_branch", upstream.defaultBranch, "default_branch");
-	compareField(state, actual, "has_issues", upstream.features.issues, "has_issues");
+	compareField(state, actual, "has_issues", upstream.features.issues.enabled, "has_issues");
 	compareField(state, actual, "has_wiki", upstream.features.wiki, "has_wiki");
 	compareField(state, actual, "has_projects", upstream.features.projects, "has_projects");
 	compareField(
 		state,
 		actual,
 		"allow_merge_commit",
-		upstream.merge.mergeCommit,
+		upstream.pullRequests.mergeCommit,
 		"allow_merge_commit",
 	);
 	compareField(
 		state,
 		actual,
 		"allow_squash_merge",
-		upstream.merge.squashMerge,
+		upstream.pullRequests.squashMerge,
 		"allow_squash_merge",
 	);
 	compareField(
 		state,
 		actual,
 		"allow_rebase_merge",
-		upstream.merge.rebaseMerge,
+		upstream.pullRequests.rebaseMerge,
 		"allow_rebase_merge",
 	);
-	compareField(state, actual, "allow_auto_merge", upstream.merge.autoMerge, "allow_auto_merge");
+	compareField(
+		state,
+		actual,
+		"allow_auto_merge",
+		upstream.pullRequests.autoMerge,
+		"allow_auto_merge",
+	);
 	compareField(
 		state,
 		actual,
 		"delete_branch_on_merge",
-		upstream.merge.deleteHeadBranches,
+		upstream.pullRequests.deleteHeadBranches,
 		"delete_branch_on_merge",
 	);
 	compareField(
 		state,
 		actual,
 		"merge_commit_title",
-		MERGE_TITLE_TO_API[upstream.merge.mergeTitle],
+		MERGE_TITLE_TO_API[upstream.pullRequests.mergeTitle],
 		"merge_commit_title",
 	);
 	compareField(
 		state,
 		actual,
 		"merge_commit_message",
-		MERGE_MESSAGE_TO_API[upstream.merge.mergeMessage],
+		MERGE_MESSAGE_TO_API[upstream.pullRequests.mergeMessage],
 		"merge_commit_message",
 	);
 	compareField(
 		state,
 		actual,
 		"squash_merge_commit_title",
-		SQUASH_TITLE_TO_API[upstream.merge.squashTitle],
+		SQUASH_TITLE_TO_API[upstream.pullRequests.squashTitle],
 		"squash_merge_commit_title",
 	);
 	compareField(
 		state,
 		actual,
 		"squash_merge_commit_message",
-		SQUASH_MESSAGE_TO_API[upstream.merge.squashMessage],
+		SQUASH_MESSAGE_TO_API[upstream.pullRequests.squashMessage],
 		"squash_merge_commit_message",
 	);
 	compareField(
@@ -133,6 +139,59 @@ export async function checkGeneral(
 		upstream.signoffRequired,
 		"web_commit_signoff_required",
 	);
+	if (upstream.description !== undefined) {
+		compareField(state, actual, "description", upstream.description, "description");
+	}
+	if (upstream.homepage !== undefined) {
+		compareField(state, actual, "homepage", upstream.homepage, "homepage");
+	}
+	if (upstream.isTemplateRepo !== undefined) {
+		compareField(state, actual, "is_template", upstream.isTemplateRepo, "is_template");
+	}
+	if (upstream.allowForking !== undefined) {
+		compareField(state, actual, "allow_forking", upstream.allowForking, "allow_forking");
+	}
+	if (upstream.pullRequests.suggestUpdatingBranches !== undefined) {
+		compareField(
+			state,
+			actual,
+			"allow_update_branch",
+			upstream.pullRequests.suggestUpdatingBranches,
+			"allow_update_branch",
+		);
+	}
+	if (upstream.visibility !== undefined) {
+		compareField(state, actual, "private", upstream.visibility === "private", "private");
+	}
+	if (upstream.archived !== undefined) {
+		compareField(state, actual, "archived", upstream.archived, "archived");
+	}
+	if (upstream.pullRequests.enabled !== undefined) {
+		compareField(
+			state,
+			actual,
+			"has_pull_requests",
+			upstream.pullRequests.enabled,
+			"has_pull_requests",
+		);
+	}
+	let topicsDiff = false;
+	if (upstream.topics !== undefined) {
+		try {
+			const topicsRes = (await apiJson(repoPath(repo, "/topics"))) as { names?: unknown };
+			const have = Array.isArray(topicsRes.names) ? topicsRes.names.map(String).toSorted() : [];
+			const want = [...upstream.topics].toSorted();
+			if (JSON.stringify(have) !== JSON.stringify(want)) {
+				state.diffs.push(`topics: ${have.join(", ") || "<none>"} → ${want.join(", ") || "<none>"}`);
+				topicsDiff = true;
+			}
+		} catch (error) {
+			if (isAuthError(error)) {
+				return skipped(base, "cannot read topics", "set GITHUB_TOKEN (private repo or rate limit)");
+			}
+			throw error;
+		}
+	}
 	let discussionsNote = "";
 	if (!Object.is(actual["has_discussions"], upstream.features.discussions)) {
 		discussionsNote = `has_discussions: ${String(actual["has_discussions"])} → ${String(upstream.features.discussions)} (set in Settings → General → Features)`;
@@ -148,8 +207,18 @@ export async function checkGeneral(
 			"Toggle Discussions in Settings → General → Features, then re-check.",
 		);
 	}
-	const step: GithubApiStep = { body: state.body, method: "PATCH", path: repoPath(repo, "") };
-	const fix: GithubApiFix = { kind: "github-api", label: `github PATCH ${repo}`, steps: [step] };
+	const steps: GithubApiStep[] = [];
+	if (Object.keys(state.body).length > 0) {
+		steps.push({ body: state.body, method: "PATCH", path: repoPath(repo, "") });
+	}
+	if (topicsDiff && upstream.topics !== undefined) {
+		steps.push({
+			body: { names: upstream.topics },
+			method: "PUT",
+			path: repoPath(repo, "/topics"),
+		});
+	}
+	const fix: GithubApiFix = { kind: "github-api", label: `github PATCH ${repo}`, steps };
 	const result = failFixable(
 		base,
 		discussionsNote === ""
@@ -187,15 +256,15 @@ export async function checkReleases(
 		}
 		throw error;
 	}
-	if (enabled === upstream.releasesImmutable) {
+	if (enabled === upstream.releases.immutable) {
 		return pass(base, `immutable releases ${enabled ? "on" : "off"}`, "immutable releases match");
 	}
 	const fix: GithubApiFix = {
 		kind: "github-api",
-		label: `github ${upstream.releasesImmutable ? "PUT" : "DELETE"} ${repo} immutable-releases`,
+		label: `github ${upstream.releases.immutable ? "PUT" : "DELETE"} ${repo} immutable-releases`,
 		steps: [
 			{
-				method: upstream.releasesImmutable ? "PUT" : "DELETE",
+				method: upstream.releases.immutable ? "PUT" : "DELETE",
 				path: repoPath(repo, "/immutable-releases"),
 			},
 		],
@@ -203,7 +272,7 @@ export async function checkReleases(
 	return failFixable(
 		base,
 		`immutable releases ${enabled ? "on" : "off"}`,
-		`immutable releases ${upstream.releasesImmutable ? "on" : "off"}`,
+		`immutable releases ${upstream.releases.immutable ? "on" : "off"}`,
 		fix,
 	);
 }
@@ -332,5 +401,128 @@ export async function checkRulesets(
 		`missing or inactive: ${missing.join(", ")}`,
 		`active: ${upstream.rulesets.join(", ")}`,
 		`Create/activate ruleset(s) ${missing.join(", ")} in Settings → Rules, then re-check.`,
+	);
+}
+
+// General → repository custom properties. Schemata are org-level (manage them
+// in the org UI); values fix via PATCH /properties/values (replace-all).
+export async function checkCustomProperties(
+	blueprint: string,
+	repo: string,
+	upstream: GithubSettings,
+	target: string,
+): Promise<CheckResult> {
+	const base = checkBase("github", blueprint, "custom-properties", target);
+	const want = upstream.customProperties ?? {};
+	const keys = Object.keys(want);
+	if (keys.length === 0) {
+		return pass(base, "no custom properties required", "custom properties match");
+	}
+	let have: Record<string, unknown> = {};
+	try {
+		const current = (await apiJson(repoPath(repo, "/properties/values"), {
+			allowStatuses: [404],
+		})) as { properties?: Array<{ property_name?: unknown; value?: unknown }> } | undefined;
+		const items = Array.isArray(current) ? current : (current?.properties ?? []);
+		for (const item of items as Array<{ property_name?: unknown; value?: unknown }>) {
+			have[String(item.property_name)] = item.value;
+		}
+	} catch (error) {
+		if (isAuthError(error)) {
+			return skipped(
+				base,
+				"cannot read custom properties",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
+		}
+		throw error;
+	}
+	const diffs = keys.filter(
+		(key) => JSON.stringify(have[key] ?? null) !== JSON.stringify(want[key] ?? null),
+	);
+	if (diffs.length === 0) {
+		return pass(base, "custom properties match", "custom properties match");
+	}
+	const fix: GithubApiFix = {
+		kind: "github-api",
+		label: `github PATCH ${repo} custom properties`,
+		steps: [
+			{
+				body: { properties: keys.map((key) => ({ property_name: key, value: want[key] })) },
+				method: "PATCH",
+				path: repoPath(repo, "/properties/values"),
+			},
+		],
+	};
+	return failFixable(base, `drifted: ${diffs.join(", ")}`, "custom properties match", fix);
+}
+
+// Rules → merge queue policy (rulesets only; there is no repo PATCH field).
+// Check reads rulesets for a merge_queue rule; authoring stays manual in
+// Settings → Rules, like the rulesets check itself.
+export async function checkMergeQueue(
+	blueprint: string,
+	repo: string,
+	upstream: GithubSettings,
+	target: string,
+): Promise<CheckResult> {
+	const base = checkBase("github", blueprint, "merge-queue", target);
+	const want = upstream.mergeQueue;
+	if (want === undefined) {
+		return pass(base, "merge queue not managed", "merge queue match");
+	}
+	let rules: Array<{ parameters?: Record<string, unknown>; type?: unknown }>;
+	try {
+		const items = (await apiJsonPaged(
+			repoPath(repo, "/rulesets?includes_parents=true&per_page=100"),
+		)) as Array<{ rules?: Array<{ parameters?: Record<string, unknown>; type?: unknown }> }>;
+		rules = items.flatMap((entry) => entry.rules ?? []);
+	} catch (error) {
+		if (isAuthError(error)) {
+			return skipped(base, "cannot list rulesets", "set GITHUB_TOKEN (private repo or rate limit)");
+		}
+		throw error;
+	}
+	const found = rules.find((rule) => rule.type === "merge_queue")?.parameters ?? undefined;
+	if (!want.enabled) {
+		if (found === undefined) {
+			return pass(base, "merge queue disabled", "merge queue match");
+		}
+		return failManual(
+			base,
+			"merge queue rule present",
+			"merge queue disabled",
+			"Remove the merge_queue rule from the ruleset in Settings → Rules, then re-check.",
+		);
+	}
+	if (found === undefined) {
+		return failManual(
+			base,
+			"merge queue: <no rule>",
+			"merge queue enabled",
+			"Add a merge_queue rule to a ruleset in Settings → Rules, then re-check.",
+		);
+	}
+	const diffs: string[] = [];
+	if (want.method !== undefined) {
+		const have = String(found["merge_method"] ?? "").toLowerCase();
+		if (have !== want.method) {
+			diffs.push(`method: ${have || "<unset>"} → ${want.method}`);
+		}
+	}
+	if (want.maxEntriesToMerge !== undefined) {
+		const have = found["max_entries_to_merge"];
+		if (have !== want.maxEntriesToMerge) {
+			diffs.push(`max_entries: ${String(have)} → ${String(want.maxEntriesToMerge)}`);
+		}
+	}
+	if (diffs.length === 0) {
+		return pass(base, "merge queue match", "merge queue match");
+	}
+	return failManual(
+		base,
+		diffs.join("; "),
+		"merge queue match",
+		`Edit the merge_queue rule (${diffs.join("; ")}) in Settings → Rules, then re-check.`,
 	);
 }

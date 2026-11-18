@@ -52,6 +52,12 @@ export async function checkSecurity(
 	};
 	compareSecurity("secret_scanning", upstream.security.secretProtection);
 	compareSecurity("secret_scanning_push_protection", upstream.security.pushProtection);
+	if (upstream.security.nonProviderPatterns !== undefined) {
+		compareSecurity("secret_scanning_non_provider_patterns", upstream.security.nonProviderPatterns);
+	}
+	if (upstream.security.aiDetection !== undefined) {
+		compareSecurity("secret_scanning_ai_detection", upstream.security.aiDetection);
+	}
 	const steps: GithubApiStep[] = [];
 	if (Object.keys(patch).length > 0) {
 		steps.push({
@@ -163,18 +169,80 @@ export async function checkSecrets(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "secrets", target);
-	if (upstream.secrets.length === 0 && upstream.variables.length === 0) {
+	const wantCodespaces = upstream.codespacesSecrets ?? [];
+	const wantDependabot = upstream.dependabotSecrets ?? [];
+	const wantAgentsSecrets = upstream.agentsSecrets ?? [];
+	const wantAgentsVariables = upstream.agentsVariables ?? [];
+	const wantEnvSecrets = upstream.environmentSecrets ?? {};
+	const wantEnvEnvs = Object.keys(wantEnvSecrets);
+	if (
+		upstream.secrets.length === 0 &&
+		upstream.variables.length === 0 &&
+		wantCodespaces.length === 0 &&
+		wantDependabot.length === 0 &&
+		wantAgentsSecrets.length === 0 &&
+		wantAgentsVariables.length === 0 &&
+		wantEnvEnvs.length === 0
+	) {
 		return pass(base, "no secrets/variables required", "secrets/variables match");
 	}
 	let haveSecrets: string[] = [];
 	let haveVariables: string[] = [];
+	let haveCodespaces: string[] = [];
+	let haveDependabot: string[] = [];
+	let haveAgentsSecrets: string[] = [];
+	let haveAgentsVariables: string[] = [];
+	const haveEnv: Record<string, string[]> = {};
 	try {
-		const [secretItems, variableItems] = await Promise.all([
+		const [
+			secretItems,
+			variableItems,
+			codespacesItems,
+			dependabotItems,
+			agentsSecretItems,
+			agentsVariableItems,
+		] = await Promise.all([
 			apiJsonPaged(repoPath(repo, "/actions/secrets"), "secrets"),
 			apiJsonPaged(repoPath(repo, "/actions/variables"), "variables"),
+			wantCodespaces.length > 0
+				? apiJsonPaged(repoPath(repo, "/codespaces/secrets"), "secrets")
+				: Promise.resolve([]),
+			wantDependabot.length > 0
+				? apiJsonPaged(repoPath(repo, "/dependabot/secrets"), "secrets")
+				: Promise.resolve([]),
+			wantAgentsSecrets.length > 0
+				? apiJsonPaged(repoPath(repo, "/agents/secrets"), "secrets")
+				: Promise.resolve([]),
+			wantAgentsVariables.length > 0
+				? apiJsonPaged(repoPath(repo, "/agents/variables"), "variables")
+				: Promise.resolve([]),
 		]);
 		haveSecrets = (secretItems as Array<{ name?: unknown }>).map((entry) => String(entry.name));
 		haveVariables = (variableItems as Array<{ name?: unknown }>).map((entry) => String(entry.name));
+		haveCodespaces = (codespacesItems as Array<{ name?: unknown }>).map((entry) =>
+			String(entry.name),
+		);
+		haveDependabot = (dependabotItems as Array<{ name?: unknown }>).map((entry) =>
+			String(entry.name),
+		);
+		haveAgentsSecrets = (agentsSecretItems as Array<{ name?: unknown }>).map((entry) =>
+			String(entry.name),
+		);
+		haveAgentsVariables = (agentsVariableItems as Array<{ name?: unknown }>).map((entry) =>
+			String(entry.name),
+		);
+		const envSecrets = await Promise.all(
+			wantEnvEnvs.map(async (env) => ({
+				env,
+				items: (await apiJsonPaged(
+					repoPath(repo, `/environments/${encodeURIComponent(env)}/secrets`),
+					"secrets",
+				)) as Array<{ name?: unknown }>,
+			})),
+		);
+		for (const { env, items } of envSecrets) {
+			haveEnv[env] = items.map((entry) => String(entry.name));
+		}
 	} catch (error) {
 		if (isAuthError(error)) {
 			return skipped(base, "cannot list secrets", "set GITHUB_TOKEN (private repo or rate limit)");
@@ -183,19 +251,56 @@ export async function checkSecrets(
 	}
 	const missingSecrets = upstream.secrets.filter((name) => !haveSecrets.includes(name));
 	const missingVariables = upstream.variables.filter((name) => !haveVariables.includes(name));
-	if (missingSecrets.length === 0 && missingVariables.length === 0) {
+	const missingCodespaces = wantCodespaces.filter((name) => !haveCodespaces.includes(name));
+	const missingDependabot = wantDependabot.filter((name) => !haveDependabot.includes(name));
+	const missingAgentsSecrets = wantAgentsSecrets.filter(
+		(name) => !haveAgentsSecrets.includes(name),
+	);
+	const missingAgentsVariables = wantAgentsVariables.filter(
+		(name) => !haveAgentsVariables.includes(name),
+	);
+	const missingEnv = wantEnvEnvs.flatMap((env) =>
+		(wantEnvSecrets[env] ?? [])
+			.filter((name) => !(haveEnv[env] ?? []).includes(name))
+			.map((name) => `${env}:${name}`),
+	);
+	if (
+		missingSecrets.length === 0 &&
+		missingVariables.length === 0 &&
+		missingCodespaces.length === 0 &&
+		missingDependabot.length === 0 &&
+		missingAgentsSecrets.length === 0 &&
+		missingAgentsVariables.length === 0 &&
+		missingEnv.length === 0
+	) {
 		return pass(base, "secrets/variables present", "secrets/variables match");
 	}
 	const missing = [
 		...missingSecrets.map((name) => `secret:${name}`),
 		...missingVariables.map((name) => `variable:${name}`),
+		...missingCodespaces.map((name) => `codespaces:${name}`),
+		...missingDependabot.map((name) => `dependabot:${name}`),
+		...missingAgentsSecrets.map((name) => `agents-secret:${name}`),
+		...missingAgentsVariables.map((name) => `agents-variable:${name}`),
+		...missingEnv.map((name) => `env:${name}`),
 	];
+	const firstEnv = missingEnv[0]?.split(":")[0] ?? "ENV";
 	return failManual(
 		base,
 		`missing: ${missing.join(", ")}`,
 		"secrets/variables present",
-		missingSecrets.length > 0
-			? `Add values with e.g. gh secret set ${missingSecrets[0] ?? "NAME"} --repo ${repo}, then re-check.`
-			: `Add values with e.g. gh variable set ${missingVariables[0] ?? "NAME"} --repo ${repo}, then re-check.`,
+		missingAgentsSecrets.length > 0
+			? `Add values with e.g. gh secret set ${missingAgentsSecrets[0] ?? "NAME"} --app agents --repo ${repo}, then re-check.`
+			: missingAgentsVariables.length > 0
+				? `Add values in Settings → Secrets → Agents (${missingAgentsVariables[0] ?? "NAME"}) or via the agents variables API, then re-check.`
+				: missingCodespaces.length > 0
+					? `Add values with e.g. gh secret set ${missingCodespaces[0] ?? "NAME"} --app codespaces --repo ${repo}, then re-check.`
+					: missingDependabot.length > 0
+						? `Add values with e.g. gh secret set ${missingDependabot[0] ?? "NAME"} --app dependabot --repo ${repo}, then re-check.`
+						: missingEnv.length > 0
+							? `Add values with e.g. gh secret set NAME --env ${firstEnv} --repo ${repo}, then re-check.`
+							: missingSecrets.length > 0
+								? `Add values with e.g. gh secret set ${missingSecrets[0] ?? "NAME"} --repo ${repo}, then re-check.`
+								: `Add values with e.g. gh variable set ${missingVariables[0] ?? "NAME"} --repo ${repo}, then re-check.`,
 	);
 }

@@ -32,6 +32,12 @@
 			"rules": {
 				"prefer-top-level-await": "off"
 			}
+		},
+		{
+			"files": ["src/schemas/github-settings.ts"],
+			"rules": {
+				"sort-keys": "off"
+			}
 		}
 	],
 	"plugins": ["eslint", "import", "node", "oxc", "promise", "typescript", "unicorn"],

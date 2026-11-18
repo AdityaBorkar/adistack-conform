@@ -1,0 +1,7 @@
+# Full GitHub Settings coverage follows the Settings sidebar, fixable where the REST API allows
+
+The `github` scope manages every Settings section in sidebar nesting order (General → Access → Code and automation → Security → Integrations). New blueprint fields are optional so old blueprints still parse; when set, they extend the matching check. Checks are fixable (`github-api`) wherever the REST API has a documented write path (PATCH /repos, PUT /topics, collaborators/teams, Pages, autolinks, selected-actions, security_and_analysis, environment wait timers/branch policies/reviewer IDs, custom property values; secrets presence stays manual because values are write-only).
+
+## Consequences
+
+No public write API (or a closing-down, time-boxed, or high-risk one) means manual or skipped with a UI hint, never guessed: community files, deploy keys, tag protection (legacy API closing down — use rulesets), required workflows, merge-queue details (ruleset authoring), runners (ephemeral hosts; presence audit only), interaction limits, notification email, unresolvable environment reviewers. Repo name/transfer/delete are not fields (rename breaks the target; transfer/delete are destructive). Artifact attestations are per-artifact provenance with no repo-level toggle — no field. Codespaces machine types and access/spending policies are org-level or UI-only — only the devcontainer file is a field.

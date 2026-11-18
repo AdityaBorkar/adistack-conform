@@ -28,8 +28,9 @@ function validGithubJson(overrides: Record<string, unknown> = {}): Record<string
 		features: {
 			discussions: false,
 			issueTemplates: true,
-			issues: true,
+			issues: { enabled: true },
 			projects: false,
+			sponsorships: false,
 			wiki: false,
 		},
 		merge: {
@@ -44,7 +45,7 @@ function validGithubJson(overrides: Record<string, unknown> = {}): Record<string
 			squashTitle: "pr-title",
 		},
 		planning: { agentSuggestions: "full-control" },
-		releasesImmutable: true,
+		releases: { immutable: true },
 		reviews: {
 			dismissStale: true,
 			requireCodeOwner: true,
@@ -87,6 +88,46 @@ describe("github IaC mappings", () => {
 		const hyphen = GithubSchema.safeParse({ actions: { allowed: "local-only" } });
 		expect(hyphen.success).toBe(false);
 		expect(GithubSchema.safeParse(validGithubJson()).success).toBe(true);
+		expect(
+			GithubSchema.safeParse(
+				validGithubJson({
+					access: { collaborators: [{ login: "octocat", permission: "push" }], teams: [] },
+					actionsPolicies: ["deploy-review"],
+					autolinks: [{ prefix: "TICKET-", urlTemplate: "https://jira.example.com/<num>" }],
+					codespaces: { devcontainerRequired: false },
+					codespacesSecrets: ["CODESPACE_TOKEN"],
+					community: { funding: true, readme: true },
+					copilot: { codeReview: true },
+					customProperties: { tier: "gold" },
+					dependabotSecrets: ["DEP_TOKEN"],
+					deployKeys: ["ci-key"],
+					description: "Test repo",
+					environmentProtection: { production: { waitMinutes: 30 } },
+					environmentSecrets: { production: ["TOKEN"] },
+					features: {
+						discussions: false,
+						issueTemplates: true,
+						issues: { autoClose: true, enabled: true, permissions: "collaborators-only" },
+						projects: false,
+						pullRequests: { permissions: "collaborators-only" },
+						sponsorships: false,
+						wiki: false,
+					},
+					githubApps: ["octoapp"],
+					homepage: "https://example.com",
+					interactionLimits: { limit: "off" },
+					mergeQueue: { enabled: false },
+					notificationEmail: "notify@example.com",
+					pages: { branch: "gh-pages", enabled: true, path: "/" },
+					pullRequestLimits: { maxOpen: 5 },
+					requiredWorkflows: [],
+					runners: ["self-hosted"],
+					tagProtection: ["v*"],
+					topics: ["cli", "conform"],
+					visibility: "private",
+				}),
+			).success,
+		).toBe(true);
 	});
 
 	test("missing security status reads as disabled", async () => {
@@ -228,8 +269,9 @@ describe("github IaC mappings", () => {
 				features: {
 					discussions: false,
 					issueTemplates: false,
-					issues: true,
+					issues: { enabled: true },
 					projects: false,
+					sponsorships: false,
 					wiki: false,
 				},
 				planning: { agentSuggestions: "disabled" },
@@ -330,5 +372,152 @@ describe("github IaC mappings", () => {
 		}
 		expect(ConformSchema.safeParse({ github: {}, source }).success).toBe(false);
 		expect(ConformSchema.safeParse({ github: { blueprint: "" }, source }).success).toBe(false);
+	});
+
+	test("new optional settings default to skipped or pass without API calls", async () => {
+		const { checkAccess, checkInteractionLimits, checkRequiredWorkflows } =
+			await import("#/core/github/access.js");
+		const { checkAutolinks } = await import("#/core/github/autolinks.js");
+		const { checkCodespaces, checkCommunity, checkDeployKeys, checkTagProtection } =
+			await import("#/core/github/community.js");
+		const { checkPages } = await import("#/core/github/pages.js");
+		const { checkCustomProperties, checkMergeQueue } = await import("#/core/github/repo.js");
+		const { checkEnvironmentProtection, checkRunners } = await import("#/core/github/actions.js");
+		const empty = GithubSchema.parse(validGithubJson());
+		expect((await checkAccess("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkInteractionLimits("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkRequiredWorkflows("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkAutolinks("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkCommunity("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkDeployKeys("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkTagProtection("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkMergeQueue("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkRunners("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkEnvironmentProtection("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkCustomProperties("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkCodespaces("bp", "o/r", empty, "t")).ok).toBe(true);
+		expect((await checkPages("bp", "o/r", empty, "t")).ok).toBe(true);
+	});
+
+	test("new agent suggestion levels parse and pull-request limits skip with UI hint", async () => {
+		for (const level of ["full-control", "cautious", "balanced", "full-automation", "disabled"]) {
+			const parsed = GithubSchema.safeParse(
+				validGithubJson({ planning: { agentSuggestions: level } }),
+			);
+			expect(parsed.success).toBe(true);
+		}
+		expect(
+			GithubSchema.safeParse(validGithubJson({ planning: { agentSuggestions: "auto" } })).success,
+		).toBe(false);
+		const withLimits = GithubSchema.parse(
+			validGithubJson({
+				actionsPolicies: ["deploy-review"],
+				copilot: { codeReview: true, codingAgent: false },
+				features: {
+					discussions: false,
+					issueTemplates: false,
+					issues: { autoClose: true, enabled: true, permissions: "collaborators-only" },
+					projects: false,
+					pullRequests: { permissions: "collaborators-only" },
+					sponsorships: true,
+					wiki: false,
+				},
+				githubApps: ["octoapp"],
+				pullRequestLimits: { countDrafts: true, maxOpen: 5 },
+			}),
+		);
+		const { runGithubChecks } = await import("#/core/github/index.js");
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = ((url: string | URL | Request) => {
+			const path = String(url);
+			if (path.includes("/repos/o/r/environments") && !path.includes("/environments/")) {
+				return Promise.resolve(stubGithubBody({ environments: [] }));
+			}
+			return Promise.resolve(stubGithubBody({}));
+		}) as unknown as typeof fetch;
+		try {
+			const techStack = {
+				blueprint: (_scope: string, _name: string) =>
+					Promise.resolve({ data: withLimits, rel: "github-configs/x.json" }),
+			} as unknown as Parameters<typeof runGithubChecks>[0]["techStack"];
+			const results = await runGithubChecks({
+				state: { blueprint: "bp", repo: "o/r" },
+				techStack,
+			} as unknown as Parameters<typeof runGithubChecks>[0]);
+			const pr = results.find((r) => r.id === "github:bp:pull-request-limits");
+			expect(pr?.skipped).toBe(true);
+			expect(pr?.actual).toContain("Pull request limits");
+			for (const id of [
+				"github:bp:auto-close",
+				"github:bp:issue-permissions",
+				"github:bp:pr-permissions",
+				"github:bp:actions-policies",
+				"github:bp:copilot",
+				"github:bp:github-apps",
+				"github:bp:sponsorships",
+			]) {
+				expect(results.find((r) => r.id === id)?.skipped).toBe(true);
+			}
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test("agents secrets and variables are presence-checked manually", async () => {
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = ((url: string | URL | Request) => {
+			const path = String(url);
+			if (path.includes("/agents/secrets")) {
+				return Promise.resolve(stubGithubBody({ secrets: [{ name: "HAVE_SECRET" }] }));
+			}
+			if (path.includes("/agents/variables")) {
+				return Promise.resolve(stubGithubBody({ variables: [{ name: "HAVE_VAR" }] }));
+			}
+			if (path.includes("/actions/secrets")) {
+				return Promise.resolve(stubGithubBody({ secrets: [] }));
+			}
+			return Promise.resolve(stubGithubBody({ variables: [] }));
+		}) as unknown as typeof fetch;
+		try {
+			const present = GithubSchema.parse(
+				validGithubJson({ agentsSecrets: ["HAVE_SECRET"], agentsVariables: ["HAVE_VAR"] }),
+			);
+			expect((await checkSecrets("bp", "o/r", present, "t")).ok).toBe(true);
+			const missing = GithubSchema.parse(
+				validGithubJson({ agentsSecrets: ["NEED_SECRET"], agentsVariables: ["NEED_VAR"] }),
+			);
+			const result = await checkSecrets("bp", "o/r", missing, "t");
+			expect(result.ok).toBe(false);
+			expect(result.fix).toBeUndefined();
+			expect(result.hint).toContain("--app agents");
+			expect(result.actual).toContain("agents-secret:NEED_SECRET");
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+	});
+
+	test("sponsorships off passes instead of skipping", async () => {
+		const { runGithubChecks } = await import("#/core/github/index.js");
+		const originalFetch = globalThis.fetch;
+		globalThis.fetch = ((url: string | URL | Request) => {
+			const path = String(url);
+			if (path.includes("/repos/o/r/environments") && !path.includes("/environments/")) {
+				return Promise.resolve(stubGithubBody({ environments: [] }));
+			}
+			return Promise.resolve(stubGithubBody({}));
+		}) as unknown as typeof fetch;
+		try {
+			const techStack = {
+				blueprint: (_scope: string, _name: string) =>
+					Promise.resolve({ data: GithubSchema.parse(validGithubJson()), rel: "x.json" }),
+			} as unknown as Parameters<typeof runGithubChecks>[0]["techStack"];
+			const results = await runGithubChecks({
+				state: { blueprint: "bp", repo: "o/r" },
+				techStack,
+			} as unknown as Parameters<typeof runGithubChecks>[0]);
+			expect(results.find((r) => r.id === "github:bp:sponsorships")?.ok).toBe(true);
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
 	});
 });

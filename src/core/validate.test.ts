@@ -60,8 +60,9 @@ const githubManifest = () =>
 		features: {
 			discussions: false,
 			issueTemplates: true,
-			issues: true,
+			issues: { enabled: true },
 			projects: false,
+			sponsorships: false,
 			wiki: false,
 		},
 		merge: {
@@ -76,7 +77,7 @@ const githubManifest = () =>
 			squashTitle: "pr-title",
 		},
 		planning: { agentSuggestions: "full-control" },
-		releasesImmutable: true,
+		releases: { immutable: true },
 		reviews: {
 			dismissStale: true,
 			requireCodeOwner: true,
