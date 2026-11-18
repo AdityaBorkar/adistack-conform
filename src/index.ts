@@ -2,13 +2,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { Command } from "commander";
+import { Command, type OptionValues } from "commander";
 
-import { runCheckCommand, type CheckCmdOptions } from "#/commands/check.js";
-import { runFixCommand, type FixCmdOptions } from "#/commands/fix/command.js";
-import { runSwitchCommand, type SwitchCmdOptions } from "#/commands/switch.js";
-import { runValidateCommand } from "#/commands/validate.js";
-import { errorMessage } from "#/utils/fs.js";
+import { checkCommand } from "#/commands/check.js";
+import { fixCommand } from "#/commands/fix.js";
+import { switchCommand } from "#/commands/switch.js";
+import { validateCommand } from "#/commands/validate.js";
+import { errorMessage } from "#/utils/error.js";
 
 declare const CONFORM_VERSION: string | undefined;
 
@@ -45,63 +45,28 @@ program
 	.option("--desired-state <path>", "Path to conform.json (default: walks up from the cwd)")
 	.version(VERSION);
 
-program
-	.command("check")
-	.description(
-		"Check the desired state in the current directory against the current project/machine/repo.",
-	)
-	.option("--json", "Print machine-readable JSON.")
-	.option("--verbose", "Show passing results too.")
-	.option("--project-only", "Only run project checks.")
-	.option("--machine-only", "Only run machine checks.")
-	.option("--github-only", "Only run GitHub repo checks.")
-	.action(async (cmdOptions: CheckCmdOptions, cmd: Command) => {
-		try {
-			process.exit(await runCheckCommand(cmd, cmdOptions));
-		} catch (error) {
-			failWith(error);
-		}
-	});
+// Each command module owns its flags (`configure`) and logic (`run`, which
+// returns the exit code); this file only wires them and maps throws to exit 2.
+function register<Options extends OptionValues>(definition: {
+	configure: (cmd: Command) => Command;
+	name: string;
+	run: (options: Options) => Promise<number>;
+}): void {
+	definition
+		.configure(program.command(definition.name))
+		.action(async (_options: unknown, cmd: Command) => {
+			try {
+				process.exit(await definition.run(cmd.optsWithGlobals<Options>()));
+			} catch (error) {
+				failWith(error);
+			}
+		});
+}
 
-program
-	.command("fix")
-	.description("Interactively fix drift (space to select, enter to confirm).")
-	.option("--all", "Fix all fixable items without prompting.")
-	.option("--dry-run", "Show what would be fixed without writing.")
-	.option("--no-diff", "Hide the diff preview.")
-	.option("--project-only", "Only fix project checks.")
-	.option("--machine-only", "Only fix machine checks.")
-	.option("--github-only", "Only fix GitHub repo checks.")
-	.action(async (cmdOptions: FixCmdOptions, cmd: Command) => {
-		try {
-			process.exit(await runFixCommand(cmd, cmdOptions));
-		} catch (error) {
-			failWith(error);
-		}
-	});
-
-program
-	.command("switch")
-	.description("Enforce the machine blueprint state (drift mode).")
-	.option("--dry-run", "Show drift without writing.")
-	.action(async (cmdOptions: SwitchCmdOptions, cmd: Command) => {
-		try {
-			process.exit(await runSwitchCommand(cmd, cmdOptions));
-		} catch (error) {
-			failWith(error);
-		}
-	});
-
-program
-	.command("validate")
-	.description("Validate the tech-stack registry.json and blueprint files.")
-	.action(async (_cmdOptions: Record<string, never>, cmd: Command) => {
-		try {
-			process.exit(await runValidateCommand(cmd));
-		} catch (error) {
-			failWith(error);
-		}
-	});
+register(checkCommand);
+register(fixCommand);
+register(switchCommand);
+register(validateCommand);
 
 void program.parseAsync(process.argv).catch((error: unknown) => {
 	failWith(error);

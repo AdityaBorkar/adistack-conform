@@ -1,6 +1,6 @@
 # JSONC-tolerant compare with indent-preserving fix
 
-Project file compare parses JSONC (comments and trailing commas allowed) and `fix` serializes back preserving the local indent style (`stripJsonc`/`serializeJson`/`overlayResult` in `src/stack/project-compare.ts`), because blueprints ship canonical JSON while repos carry comments. Non-object or unparsable upstreams fall back to byte compare (or manual when templated but uncomparable).
+Project file compare parses JSONC (comments and trailing commas allowed) and `fix` serializes back preserving the local indent style (`stripJsonc` in `src/utils/jsonc.ts`, `serializeJson` in `src/utils/json.ts`, `overlayResult` in `src/core/project/compare.ts`), because blueprints ship canonical JSON while repos carry comments. Non-object or unparsable upstreams fall back to byte compare (or manual when templated but uncomparable).
 
 ## Consequences
 

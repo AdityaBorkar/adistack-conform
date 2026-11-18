@@ -25,3 +25,11 @@ At least one of `project` / `machine` / `github` is required. Add `--project-onl
 Full docs: [`docs/www/`](docs/www/README.md) — start with [quick-start](docs/www/quick-start.md), then [concepts](docs/www/concepts.md), [configuration](docs/www/configuration.md), and [CLI](docs/www/cli.md).
 
 Requires [Bun](https://bun.sh) to run from source (`bun ./src/index.ts check`); `bun run build` produces the compiled binary in `.output/`.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, repository layout, and the PR checklist. Report vulnerabilities per [`SECURITY.md`](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)

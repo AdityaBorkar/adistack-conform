@@ -83,9 +83,9 @@ GitHub (fixed check list, id `github:<blueprint>:<name>`, kind `github`):
 ```bash
 bun install
 bun run dev              # bun ./src/index.ts
-bun run verify           # format + check:lint + check:types + test + check:knip + check:conform in parallel (gate before pushing)
+bun run verify           # format + check:lint + check:types + test + check:knip in parallel (gate before pushing; check:conform runs separately)
 ```
 
-- `src/index.ts` is Commander wiring only; `src/commands/` (`check`, `fix/` (`command`/`select`/`run`), `switch`, `validate`), `src/utils/config.ts`, `src/utils/` (`run`/`result`/`diff`/`jsonc` plus generic helpers), `src/stack/` (`project`/`project-compare`/`machine`/`machine-live`/`machine-files`/`machine-packages`/`managers` (`types`/`parse`/`bun`/`pacman`)/`github`/`github-api`/`registry`/`remote`), `src/schemas/` (`github-settings.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
+- `src/index.ts` registers commands only; `src/commands/` one file per command (`check`/`fix`/`switch`/`validate`); `src/core/` domain logic: pipeline (`config`/`run`/`result`/`fix`/`select`/`validate`/`report`), `upstream/` (`registry`/`remote`/`registries`), and one folder per scope (`project/` (`index`/`compare`/`template`/`structure`), `machine/` (`index`/`links`/`templates`/`packages`/`managers/`/`live`/`paths`/`fix`), `github/` (`index`/`api`/`target-repo` + per-area checks)); `src/utils/` generic helpers; `src/schemas/` (`github-settings.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
 - `config/*.json` is generated — never hand-edit (regen via `bun run build`). Compiled binary lands in `.output/`.
 - Conventions: `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` where type-only, tabs + width 100, no `npm`/`npx` (always `bun run <script>`). Reference blueprints live at `~/repo/tech-stack` — read `registry.json`/blueprint files directly instead of guessing.

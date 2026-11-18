@@ -1,6 +1,6 @@
 # Compare rules live in the manifest, never in code
 
-Per-file `compare` semantics (`ignore[]` only) are declared by each manifest `files[]` entry and interpreted generically by `src/stack/project-compare.ts`, so the CLI holds no per-file or tool-to-package tables and new blueprints change enforcement without a CLI release. Template detection is not a compare flag: any upstream holding `<...>` placeholders is a template by content.
+Per-file `compare` semantics (`ignore[]` only) are declared by each manifest `files[]` entry and interpreted generically by `src/core/project/compare.ts`, so the CLI holds no per-file or tool-to-package tables and new blueprints change enforcement without a CLI release. Template detection is not a compare flag: any upstream holding `<...>` placeholders is a template by content.
 
 ## Consequences
 

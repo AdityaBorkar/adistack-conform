@@ -1,15 +1,15 @@
 import type { Command } from "commander";
 
-import { printJsonSummary, printResults } from "#/utils/output.js";
-import type { ScopeOptions } from "#/utils/run.js";
-import { prepareRun } from "#/utils/run.js";
+import type { DesiredStateOption, ScopeOptions } from "#/core/config.js";
+import { printJsonSummary, printResults } from "#/core/report.js";
+import { prepareRun } from "#/core/run.js";
 
-export type CheckCmdOptions = ScopeOptions & { json?: boolean; verbose?: boolean };
+type CheckOptions = DesiredStateOption & ScopeOptions & { json?: boolean; verbose?: boolean };
 
-export async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions): Promise<number> {
+async function run(options: CheckOptions): Promise<number> {
 	const { desiredStates, githubElapsedMs, machineElapsedMs, projectElapsedMs, results } =
-		await prepareRun(cmd, cmdOptions);
-	if (cmdOptions.json) {
+		await prepareRun(options);
+	if (options.json) {
 		printJsonSummary(
 			desiredStates.map((entry) => entry.path),
 			results,
@@ -22,8 +22,23 @@ export async function runCheckCommand(cmd: Command, cmdOptions: CheckCmdOptions)
 				machine: machineElapsedMs,
 				project: projectElapsedMs,
 			},
-			{ verbose: cmdOptions.verbose === true },
+			{ verbose: options.verbose === true },
 		);
 	}
 	return results.some((item) => !item.ok && item.skipped !== true) ? 1 : 0;
 }
+
+export const checkCommand = {
+	configure: (cmd: Command): Command =>
+		cmd
+			.description(
+				"Check the desired state in the current directory against the current project/machine/repo.",
+			)
+			.option("--json", "Print machine-readable JSON.")
+			.option("--verbose", "Show passing results too.")
+			.option("--project-only", "Only run project checks.")
+			.option("--machine-only", "Only run machine checks.")
+			.option("--github-only", "Only run GitHub repo checks."),
+	name: "check",
+	run,
+};

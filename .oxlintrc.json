@@ -13,15 +13,14 @@
 	"overrides": [
 		{
 			"files": [
-				"src/commands/switch.ts",
-				"src/stack/github-api.ts",
-				"src/stack/remote.ts",
-				"src/commands/fix/run.ts",
-				"src/stack/managers/bun.ts",
-				"src/utils/config.ts",
+				"src/core/github/api.ts",
+				"src/core/upstream/remote.ts",
+				"src/core/fix.ts",
+				"src/core/machine/managers/bun.ts",
+				"src/core/config.ts",
 				"src/utils/concurrency.ts",
 				"src/utils/net.ts",
-				"src/utils/run.ts"
+				"src/core/run.ts"
 			],
 			"rules": {
 				"no-await-in-loop": "off"

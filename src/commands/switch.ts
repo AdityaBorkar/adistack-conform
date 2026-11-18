@@ -1,25 +1,21 @@
 import type { Command } from "commander";
 
-import { applyMachineFixes } from "#/commands/fix/run.js";
-import { machineStateOf } from "#/utils/config.js";
+import type { DesiredStateOption } from "#/core/config.js";
+import { loadDesiredStates, machineStatesOf } from "#/core/config.js";
+import { applyMachineFixes } from "#/core/machine/fix.js";
+import { formatDuration, printDryRun, printResults, reportManual } from "#/core/report.js";
+import type { CheckResult } from "#/core/result.js";
+import { partitionResults } from "#/core/result.js";
+import { runMachineStates } from "#/core/run.js";
+import { fetchRegistries } from "#/core/upstream/registries.js";
 import { defaultHome } from "#/utils/fs.js";
-import { formatDuration, printDryRun, printResults, reportManual } from "#/utils/output.js";
-import type { CheckResult } from "#/utils/result.js";
-import { partitionResults } from "#/utils/result.js";
-import { fetchRegistries, loadDesiredStatesFromCommand, runMachineStates } from "#/utils/run.js";
 
-export type SwitchCmdOptions = { dryRun?: boolean };
+type SwitchOptions = DesiredStateOption & { dryRun?: boolean };
 
-export async function runSwitchCommand(
-	cmd: Command,
-	cmdOptions: SwitchCmdOptions,
-): Promise<number> {
+async function run(options: SwitchOptions): Promise<number> {
 	const start = performance.now();
-	const desiredStates = await loadDesiredStatesFromCommand(cmd);
-	const states = desiredStates.flatMap((loaded) => {
-		const state = machineStateOf(loaded);
-		return state === undefined ? [] : [state];
-	});
+	const desiredStates = await loadDesiredStates(options.desiredState);
+	const states = machineStatesOf(desiredStates);
 	if (states.length === 0) {
 		console.error("Switch: no machine desired state configured.");
 		return 2;
@@ -42,7 +38,7 @@ export async function runSwitchCommand(
 	}
 	reportManual(manual);
 
-	if (cmdOptions.dryRun) {
+	if (options.dryRun) {
 		printDryRun(fixable, performance.now() - start);
 		return 1;
 	}
@@ -61,3 +57,12 @@ export async function runSwitchCommand(
 	console.log("Machine in sync.");
 	return 0;
 }
+
+export const switchCommand = {
+	configure: (cmd: Command): Command =>
+		cmd
+			.description("Enforce the machine blueprint state (drift mode).")
+			.option("--dry-run", "Show drift without writing."),
+	name: "switch",
+	run,
+};

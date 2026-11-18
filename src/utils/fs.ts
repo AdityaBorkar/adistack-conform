@@ -4,9 +4,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import untildify from "untildify";
 
-export function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+import { errorMessage } from "#/utils/error.js";
 
 export async function readJsonFile(path: string, label: string): Promise<unknown> {
 	try {
