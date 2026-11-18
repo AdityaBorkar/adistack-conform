@@ -1,15 +1,11 @@
 import type { ScopeCheck } from "#/core/config.js";
-import { checkProjectFileWithUpstream, projectBase, projectId } from "#/core/project/compare.js";
+import { checkProjectFileWithUpstream } from "#/core/project/compare.js";
 import { checkFileStructure } from "#/core/project/structure.js";
-import { failManual, type CheckResult } from "#/core/result.js";
+import { checkBase, checkId, failManual, type CheckResult } from "#/core/result.js";
 import type { ManifestCompare, ManifestFile } from "#/core/upstream/registry.js";
-import {
-	UPSTREAM_FETCH_CONCURRENCY,
-	fetchBlueprint,
-	fetchTextOrThrow,
-	isNotFoundError,
-	rawUrl,
-} from "#/core/upstream/remote.js";
+import { UPSTREAM_FETCH_CONCURRENCY } from "#/core/upstream/remote.js";
+import type { TechStack } from "#/core/upstream/tech-stack.js";
+import { UpstreamMissingError } from "#/core/upstream/tech-stack.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { errorMessage } from "#/utils/error.js";
 import { resolveTargetPath } from "#/utils/fs.js";
@@ -37,7 +33,7 @@ function collectNeeded(
 ): NeededFile[] {
 	const needed: NeededFile[] = [];
 	for (const file of files) {
-		if (onlyIds !== undefined && !onlyIds.has(projectId(blueprint, file.name))) {
+		if (onlyIds !== undefined && !onlyIds.has(checkId("project", blueprint, file.name))) {
 			continue;
 		}
 		needed.push({
@@ -52,8 +48,7 @@ function collectNeeded(
 }
 
 async function fetchUpstreams(
-	id: string,
-	ref: string,
+	techStack: TechStack,
 	needed: readonly NeededFile[],
 ): Promise<Map<string, Upstream>> {
 	const upstreams = new Map<string, Upstream>();
@@ -61,10 +56,13 @@ async function fetchUpstreams(
 	await mapWithConcurrency(toFetch, UPSTREAM_FETCH_CONCURRENCY, async (rel) => {
 		try {
 			upstreams.set(rel, {
-				text: await fetchTextOrThrow(rawUrl(id, ref, rel), `blueprint file ${rel}`),
+				text: await techStack.text(rel, `blueprint file ${rel}`),
 			});
 		} catch (error) {
-			upstreams.set(rel, { error: errorMessage(error), notFound: isNotFoundError(error) });
+			upstreams.set(rel, {
+				error: errorMessage(error),
+				notFound: error instanceof UpstreamMissingError,
+			});
 		}
 	});
 	return upstreams;
@@ -79,7 +77,7 @@ function checkNeeded(
 		needed.map((item): Promise<CheckResult> => {
 			const upstream = upstreams.get(item.sourceRel);
 			if (upstream?.text === undefined) {
-				const base = projectBase(blueprint, item.fileName, item.fileTarget);
+				const base = checkBase("project", blueprint, item.fileName, item.fileTarget);
 				if (upstream !== undefined && !upstream.notFound) {
 					return Promise.resolve(
 						failManual(
@@ -114,12 +112,12 @@ function checkNeeded(
 
 // The only scope that narrows a re-check after fix to the selected results.
 export const runProjectChecks: ScopeCheck = async (ctx, onlyIds) => {
-	const { state } = ctx;
+	const { state, techStack } = ctx;
 	const options: ProjectCheckOptions = { baseDir: ctx.baseDir, home: ctx.home };
-	const { data } = await fetchBlueprint(state, ctx.registry, "projects");
+	const { data } = await techStack.blueprint("projects", state.blueprint);
 	const { files, file_structure: structure } = data;
 	const needed = collectNeeded(state.blueprint, files, options, onlyIds);
-	const upstreams = await fetchUpstreams(state.id, state.ref, needed);
+	const upstreams = await fetchUpstreams(techStack, needed);
 	const enforced = await checkNeeded(state.blueprint, needed, upstreams);
 	const structured = await checkFileStructure(state.blueprint, files, structure, options, onlyIds);
 	return [...enforced, ...structured];

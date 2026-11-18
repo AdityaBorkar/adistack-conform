@@ -2,13 +2,12 @@ import { lstat, mkdtemp, readlink, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { RunState } from "#/core/config.js";
 import type { LinkStat } from "#/core/machine/links.js";
 import type { InstalledPackages, ManagerId } from "#/core/machine/managers/types.js";
 import { MANAGERS } from "#/core/machine/packages.js";
 import type { SecretsTemplateTarget } from "#/core/machine/templates.js";
 import { machineSecretsRel } from "#/core/upstream/blueprint.js";
-import { fetchBytesOrThrow, fetchTextOrThrow, rawUrl } from "#/core/upstream/remote.js";
+import type { TechStack } from "#/core/upstream/tech-stack.js";
 import { errorMessage } from "#/utils/error.js";
 import { isMissingError } from "#/utils/fs.js";
 import { setOwn } from "#/utils/json.js";
@@ -115,13 +114,12 @@ async function withTempDir<T>(run: (dir: string) => Promise<T>): Promise<T> {
 }
 
 async function decryptSecretsLive(
-	id: string,
-	ref: string,
+	techStack: TechStack,
 	secretsRel: string,
 ): Promise<Record<string, string>> {
 	let encrypted: string;
 	try {
-		encrypted = await fetchTextOrThrow(rawUrl(id, ref, secretsRel), `secrets file ${secretsRel}`);
+		encrypted = await techStack.text(secretsRel, `secrets file ${secretsRel}`);
 	} catch (error) {
 		throw new Error(`Cannot fetch secrets file ${secretsRel}: ${errorMessage(error)}`, {
 			cause: error,
@@ -143,14 +141,12 @@ async function decryptSecretsLive(
 	});
 }
 
-export function defaultLive(state: RunState, manifestRel: string): MachineLive {
+export function defaultLive(techStack: TechStack, manifestRel: string): MachineLive {
 	const secretsRel = machineSecretsRel(manifestRel);
 	return {
-		decryptSecrets: () => decryptSecretsLive(state.id, state.ref, secretsRel),
-		fetchSource: (rel: string) =>
-			fetchBytesOrThrow(rawUrl(state.id, state.ref, rel), `blueprint file ${rel}`),
-		fetchText: (rel: string) =>
-			fetchTextOrThrow(rawUrl(state.id, state.ref, rel), `blueprint file ${rel}`),
+		decryptSecrets: () => decryptSecretsLive(techStack, secretsRel),
+		fetchSource: (rel: string) => techStack.bytes(rel, `blueprint file ${rel}`),
+		fetchText: (rel: string) => techStack.text(rel, `blueprint file ${rel}`),
 		listPackages: (manager) => MANAGERS[manager].list(),
 		readSecretsTemplateTarget,
 		statLink: statLinkPath,

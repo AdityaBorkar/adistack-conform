@@ -5,7 +5,7 @@ description: Use when writing a changelog entry, release notes, or a "what shipp
 
 # Writing changelogs
 
-**REQUIRED BACKGROUND:** the `technical-writing` skill (hard rules, truth rules, style).
+**REQUIRED BACKGROUND:** the `technical-writer` skill (hard rules, truth rules, style).
 
 ## Overview
 

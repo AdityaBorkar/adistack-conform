@@ -1,12 +1,12 @@
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
-import { blueprintLabels, blueprintSources, parseBlueprint } from "#/core/upstream/blueprint.js";
-import type { BlueprintKind, RegistryDocument } from "#/core/upstream/registry.js";
+import { blueprintSources } from "#/core/upstream/blueprint.js";
+import type { BlueprintKind } from "#/core/upstream/registry.js";
 import { blueprintNames, blueprintRel } from "#/core/upstream/registry.js";
-import { RegistrySchema } from "#/schemas/registry.js";
+import type { TechStack } from "#/core/upstream/tech-stack.js";
+import { UpstreamMissingError, localReader, openTechStack } from "#/core/upstream/tech-stack.js";
 import { errorMessage } from "#/utils/error.js";
-import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
-import { parseOrThrow } from "#/utils/schema.js";
+import { resolveConfigPath } from "#/utils/fs.js";
 
 interface ValidateResult {
 	error?: string;
@@ -46,17 +46,25 @@ async function resolveRegistryPath(target: string | undefined): Promise<string> 
 	);
 }
 
-async function missingSources(repoRoot: string, sources: readonly string[]): Promise<string[]> {
+async function missingSources(techStack: TechStack, sources: readonly string[]): Promise<string[]> {
 	const found = await Promise.all(
-		sources.map(async (source) =>
-			(await Bun.file(join(repoRoot, source)).exists()) ? undefined : source,
-		),
+		sources.map(async (source) => {
+			try {
+				await techStack.bytes(source, `blueprint source ${source}`);
+				return [];
+			} catch (error) {
+				if (error instanceof UpstreamMissingError) {
+					return [source];
+				}
+				throw error;
+			}
+		}),
 	);
-	return found.filter((item) => item !== undefined);
+	return found.flat();
 }
 
 async function validateBlueprint(
-	repoRoot: string,
+	techStack: TechStack,
 	kind: BlueprintKind,
 	name: string,
 	entryPath: string,
@@ -67,10 +75,9 @@ async function validateBlueprint(
 	} catch (error) {
 		return { error: errorMessage(error), file: `${kind} "${name}"`, ok: false };
 	}
-	const abs = join(repoRoot, rel);
 	try {
-		const data = parseBlueprint(kind, await readJsonFile(abs, blueprintLabels(kind).label), abs);
-		const missing = await missingSources(repoRoot, blueprintSources(kind, data, rel));
+		const { data } = await techStack.blueprint(kind, name);
+		const missing = await missingSources(techStack, blueprintSources(kind, data, rel));
 		if (missing.length > 0) {
 			return { error: `Missing blueprint sources: ${missing.join(", ")}`, file: rel, ok: false };
 		}
@@ -80,27 +87,23 @@ async function validateBlueprint(
 	return { file: rel, ok: true };
 }
 
-// The registry first, then one result per blueprint in every section.
+// The registry first, then one result per blueprint in every section. Reads go
+// through the same tech-stack module `check` uses, so the two parse identically.
 export async function validateTechStack(target?: string): Promise<ValidateResult[]> {
 	const registryPath = await resolveRegistryPath(target);
-	const repoRoot = dirname(registryPath);
-	let registry: RegistryDocument;
+	let techStack: TechStack;
 	try {
-		registry = parseOrThrow(
-			RegistrySchema,
-			registryPath,
-			await readJsonFile(registryPath, "Tech-stack registry"),
-			"tech-stack registry",
-		);
+		techStack = await openTechStack(localReader(dirname(registryPath)), basename(registryPath));
 	} catch (error) {
 		return [{ error: errorMessage(error), file: REGISTRY_FILENAME, ok: false }];
 	}
+	const { registry } = techStack;
 	const blueprints = (["projects", "machines", "github_configs"] as const).flatMap((kind) =>
 		blueprintNames(registry, kind).map((name) => ({ entryPath: registry[kind][name], kind, name })),
 	);
 	const checked = await Promise.all(
 		blueprints.map(({ entryPath, kind, name }) =>
-			validateBlueprint(repoRoot, kind, name, entryPath),
+			validateBlueprint(techStack, kind, name, entryPath),
 		),
 	);
 	return [{ file: REGISTRY_FILENAME, ok: true }, ...checked];

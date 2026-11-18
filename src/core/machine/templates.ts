@@ -1,5 +1,5 @@
 import type { CheckBase, CheckResult, OverwriteFileFix } from "#/core/result.js";
-import { failFixable, failManual, pass } from "#/core/result.js";
+import { checkBase, failFixable, failManual, pass } from "#/core/result.js";
 import { UPSTREAM_FETCH_CONCURRENCY } from "#/core/upstream/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { errorMessage } from "#/utils/error.js";
@@ -56,13 +56,7 @@ type Observed =
 	| { kind: "ok"; live: SecretsTemplateTarget; sourceText: string };
 
 function templateBase(blueprint: string, template: SecretsTemplate): CheckBase {
-	return {
-		id: `machine:${blueprint}:secrets-template:${template.name}`,
-		kind: "machine",
-		scope: "machine",
-		target: template.target,
-		upstream: `tech-stack:${blueprint}`,
-	};
+	return checkBase("machine", blueprint, `secrets-template:${template.name}`, template.target);
 }
 
 // Live modes come from stat as "600", blueprints say "0600": compare the

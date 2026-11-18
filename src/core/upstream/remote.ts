@@ -1,16 +1,6 @@
-import type { RunState } from "#/core/config.js";
-import type { BlueprintData } from "#/core/upstream/blueprint.js";
-import { blueprintLabels, parseBlueprint } from "#/core/upstream/blueprint.js";
-import type { BlueprintKind, RegistryDocument } from "#/core/upstream/registry.js";
-import {
-	availableHint,
-	blueprintNames,
-	blueprintRel,
-	findEntry,
-} from "#/core/upstream/registry.js";
-import { RegistrySchema } from "#/schemas/registry.js";
+import type { TechStackReader } from "#/core/upstream/tech-stack.js";
+import { UpstreamMissingError } from "#/core/upstream/tech-stack.js";
 import { errorMessage } from "#/utils/error.js";
-import { parseJsonc } from "#/utils/jsonc.js";
 import {
 	FETCH_TIMEOUT_MS,
 	assertRef,
@@ -20,12 +10,11 @@ import {
 	userAgentHeaders,
 	withRetry,
 } from "#/utils/net.js";
-import { parseOrThrow } from "#/utils/schema.js";
 
 // Upstream file fetches per scope run; see ADR 0004 and 0013.
 export const UPSTREAM_FETCH_CONCURRENCY = 16;
 
-export function rawUrl(id: string, ref: string, relPath: string): string {
+function rawUrl(id: string, ref: string, relPath: string): string {
 	assertRepoId(id, "pin");
 	assertRef(ref, "pin");
 	return `https://raw.githubusercontent.com/${id}/${ref}/${encodePathSegments(relPath)}`;
@@ -88,10 +77,6 @@ export async function fetchOkResponse(url: string, label: string): Promise<Respo
 	throw new Error(`${label} fetch failed (${url}): too many redirects.`);
 }
 
-export function isNotFoundError(error: unknown): boolean {
-	return error instanceof FetchError && error.status === 404;
-}
-
 function isFetchRetryable(error: unknown): boolean {
 	return (
 		error instanceof FetchError &&
@@ -99,49 +84,35 @@ function isFetchRetryable(error: unknown): boolean {
 	);
 }
 
-export function fetchTextOrThrow(url: string, label: string): Promise<string> {
+function fetchTextOrThrow(url: string, label: string): Promise<string> {
 	return withRetry(async () => (await fetchOkResponse(url, label)).text(), isFetchRetryable);
 }
 
 // Byte-exact fetch for link upstreams: response.text() would corrupt binary
 // dotfiles, so materialize and compare on raw bytes instead.
-export function fetchBytesOrThrow(url: string, label: string): Promise<Uint8Array> {
+function fetchBytesOrThrow(url: string, label: string): Promise<Uint8Array> {
 	return withRetry(
 		async () => new Uint8Array(await (await fetchOkResponse(url, label)).arrayBuffer()),
 		isFetchRetryable,
 	);
 }
 
-// JSONC is a superset of JSON, so every upstream document parses the same way.
-async function fetchJsonc(url: string, label: string): Promise<unknown> {
-	const text = await fetchTextOrThrow(url, label);
+async function readPinned<T>(fetchRel: () => Promise<T>, rel: string): Promise<T> {
 	try {
-		return parseJsonc(text);
+		return await fetchRel();
 	} catch (error) {
-		throw new Error(`${label} has invalid JSON in ${url}: ${errorMessage(error)}`, {
-			cause: error,
-		});
+		if (error instanceof FetchError && error.status === 404) {
+			throw new UpstreamMissingError(error.message, "file", rel, { cause: error });
+		}
+		throw error;
 	}
 }
 
-export async function fetchRegistry(id: string, ref: string): Promise<RegistryDocument> {
-	const parsed = await fetchJsonc(rawUrl(id, ref, "registry.json"), "tech-stack registry");
-	return parseOrThrow(RegistrySchema, "registry.json (remote)", parsed, "tech-stack registry");
-}
-
-// Registry lookup, fetch and schema parse for one scope's blueprint file.
-export async function fetchBlueprint<K extends BlueprintKind>(
-	state: Pick<RunState, "blueprint" | "id" | "ref">,
-	registry: RegistryDocument,
-	kind: K,
-): Promise<{ data: BlueprintData<K>; rel: string }> {
-	const { label, plural } = blueprintLabels(kind);
-	const entry = findEntry(registry, kind, state.blueprint);
-	if (entry === undefined) {
-		const hint = availableHint(blueprintNames(registry, kind), plural);
-		throw new Error(`${label} "${state.blueprint}" not found in the tech-stack registry.${hint}`);
-	}
-	const rel = blueprintRel(entry.path);
-	const parsed = await fetchJsonc(rawUrl(state.id, state.ref, rel), `${label} ${state.blueprint}`);
-	return { data: parseBlueprint(kind, parsed, `${rel} (remote)`), rel };
+// The pinned tech-stack repo over HTTPS (`check`/`fix`); a 404 is a missing file.
+export function pinnedReader(id: string, ref: string): TechStackReader {
+	return {
+		bytes: (rel, label) => readPinned(() => fetchBytesOrThrow(rawUrl(id, ref, rel), label), rel),
+		text: (rel, label) => readPinned(() => fetchTextOrThrow(rawUrl(id, ref, rel), label), rel),
+		where: (rel) => `${rel} (remote)`,
+	};
 }

@@ -5,8 +5,7 @@ import type { MachineLive } from "#/core/machine/live.js";
 import { evaluatePackages, listInstalled } from "#/core/machine/packages.js";
 import { checkSecretsTemplates } from "#/core/machine/templates.js";
 import type { CheckResult } from "#/core/result.js";
-import { failManual } from "#/core/result.js";
-import { fetchBlueprint } from "#/core/upstream/remote.js";
+import { checkBase, failManual } from "#/core/result.js";
 import type { MachineManifest } from "#/schemas/machine-manifest.js";
 import { isSecretsTemplate } from "#/schemas/machine-manifest.js";
 import { errorMessage } from "#/utils/error.js";
@@ -33,13 +32,7 @@ async function guard(
 	} catch (error) {
 		return [
 			failManual(
-				{
-					id: `machine:${blueprint}:${domain}`,
-					kind: "machine",
-					scope: "machine",
-					target: domain,
-					upstream: `tech-stack:${blueprint}`,
-				},
+				checkBase("machine", blueprint, domain, domain),
 				"<unavailable>",
 				`${domain} checks complete`,
 				`Cannot run ${domain} checks: ${errorMessage(error)}`,
@@ -92,12 +85,12 @@ export async function checkMachine(input: MachineCheckInput): Promise<CheckResul
 }
 
 // Re-checks whole: listing packages and stats takes a few seconds (ADR 0011).
-export const runMachine: ScopeCheck = async ({ home, registry, state, strict }) => {
-	const { data: manifest, rel } = await fetchBlueprint(state, registry, "machines");
+export const runMachine: ScopeCheck = async ({ home, state, strict, techStack }) => {
+	const { data: manifest, rel } = await techStack.blueprint("machines", state.blueprint);
 	return checkMachine({
 		blueprint: state.blueprint,
 		home,
-		live: defaultLive(state, rel),
+		live: defaultLive(techStack, rel),
 		manifest,
 		strict,
 	});

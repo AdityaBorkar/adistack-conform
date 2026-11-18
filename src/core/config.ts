@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import type * as z from "zod";
 
 import type { CheckResult, CheckScope } from "#/core/result.js";
-import type { RegistryDocument } from "#/core/upstream/registry.js";
+import type { TechStack } from "#/core/upstream/tech-stack.js";
 import { ConformSchema } from "#/schemas/config.js";
 import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
 import { parseOrThrow } from "#/utils/schema.js";
@@ -17,11 +17,9 @@ export type LoadedDesiredState = Pick<Conform, CheckScope> & {
 	source: { id: string; ref: string };
 };
 
-// One scope's slice of the desired state plus the pin it reads from.
+// One scope's slice of the desired state; the pin it reads from is the run's tech-stack.
 export interface RunState {
 	blueprint: string;
-	id: string;
-	ref: string;
 	repo?: string;
 }
 
@@ -30,9 +28,10 @@ interface ScopeContext {
 	// The dir that owns conform.json: project targets resolve against it, not the cwd.
 	baseDir: string;
 	home: string;
-	registry: RegistryDocument;
 	state: RunState;
 	strict: boolean;
+	// The pinned tech-stack repo, opened once for the whole run.
+	techStack: TechStack;
 }
 
 // The one interface every scope implements. `onlyIds` holds a re-check's
@@ -84,7 +83,7 @@ export async function loadDesiredState(path: string | undefined): Promise<Loaded
 
 export function stateOf(loaded: LoadedDesiredState, scope: CheckScope): RunState | undefined {
 	const section = loaded[scope];
-	return section === undefined ? undefined : { ...section, ...loaded.source };
+	return section;
 }
 
 export type ScopeOptions = { githubOnly?: boolean; machineOnly?: boolean; projectOnly?: boolean };

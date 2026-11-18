@@ -1,5 +1,5 @@
 import type { CheckBase, CheckResult, SymlinkFix } from "#/core/result.js";
-import { failFixable, failManual, pass } from "#/core/result.js";
+import { checkBase, failFixable, failManual, pass } from "#/core/result.js";
 import { UPSTREAM_FETCH_CONCURRENCY } from "#/core/upstream/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import { errorMessage } from "#/utils/error.js";
@@ -35,13 +35,7 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 function linkBase(blueprint: string, link: MachineLink): CheckBase {
-	return {
-		id: `machine:${blueprint}:link:${link.name}`,
-		kind: "machine",
-		scope: "machine",
-		target: link.target,
-		upstream: `tech-stack:${blueprint}`,
-	};
+	return checkBase("machine", blueprint, `link:${link.name}`, link.target);
 }
 
 async function checkLink(args: CheckLinksArgs, link: MachineLink): Promise<CheckResult> {

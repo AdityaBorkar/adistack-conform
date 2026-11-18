@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { FetchError, fetchOkResponse, isNotFoundError } from "#/core/upstream/remote.js";
+import { FetchError, fetchOkResponse, pinnedReader } from "#/core/upstream/remote.js";
+import { UpstreamMissingError } from "#/core/upstream/tech-stack.js";
 
 const originalFetch = globalThis.fetch;
 const originalToken = process.env["GITHUB_TOKEN"];
@@ -50,13 +51,25 @@ describe("fetchOkResponse", () => {
 			"https://raw.githubusercontent.com/missing",
 			"file",
 		).catch((error: unknown) => error);
-		expect(notFound).toBeInstanceOf(FetchError);
-		expect(isNotFoundError(notFound)).toBe(true);
+		expect((notFound as FetchError).status).toBe(404);
 		const offline = await fetchOkResponse("https://raw.githubusercontent.com/x", "file").catch(
 			(error: unknown) => error,
 		);
 		expect((offline as FetchError).status).toBeUndefined();
-		expect(isNotFoundError(new Error("HTTP 404"))).toBe(false);
+	});
+
+	test("the pinned reader classifies a 404 as a missing file, nothing else", async () => {
+		stubFetch({
+			"https://raw.githubusercontent.com/o/r/main/down.json": new Response("", { status: 403 }),
+			"https://raw.githubusercontent.com/o/r/main/gone.json": new Response("", { status: 404 }),
+		});
+		const reader = pinnedReader("o/r", "main");
+		const gone = await reader.text("gone.json", "file").catch((error: unknown) => error);
+		expect(gone).toBeInstanceOf(UpstreamMissingError);
+		expect((gone as UpstreamMissingError).rel).toBe("gone.json");
+		const down = await reader.text("down.json", "file").catch((error: unknown) => error);
+		expect(down).toBeInstanceOf(FetchError);
+		expect(down).not.toBeInstanceOf(UpstreamMissingError);
 	});
 
 	test("gives up after too many redirects", async () => {

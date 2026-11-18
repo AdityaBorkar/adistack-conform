@@ -6,7 +6,7 @@ import type {
 	PackageManager,
 } from "#/core/machine/managers/types.js";
 import type { CheckBase, CheckResult } from "#/core/result.js";
-import { failFixable, pass, skipped } from "#/core/result.js";
+import { checkBase, failFixable, pass, skipped } from "#/core/result.js";
 import type { MachineManifest } from "#/schemas/machine-manifest.js";
 
 export const MANAGERS: Record<ManagerId, PackageManager> = {
@@ -48,13 +48,8 @@ export function evaluatePackages(args: EvaluatePackagesArgs): CheckResult[] {
 		const allow = new Set(args.allowlist[manager] ?? []);
 		const { extra, missing } = splitDeclared(Object.keys(wanted), installed, allow);
 		const missingSet = new Set(missing);
-		const base = (name: string): CheckBase => ({
-			id: `machine:${args.blueprint}:${manager}:${name}`,
-			kind: "machine",
-			scope: "machine",
-			target: `${manager}:${name}`,
-			upstream: `tech-stack:${args.blueprint}`,
-		});
+		const base = (name: string): CheckBase =>
+			checkBase("machine", args.blueprint, `${manager}:${name}`, `${manager}:${name}`);
 		for (const name of Object.keys(wanted).toSorted()) {
 			const version = wanted[name] as string;
 			const have = installed.versions.get(name);

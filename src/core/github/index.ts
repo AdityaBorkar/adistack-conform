@@ -1,4 +1,4 @@
-import type { RunState, ScopeCheck } from "#/core/config.js";
+import type { ScopeCheck } from "#/core/config.js";
 import {
 	checkActionsOidc,
 	checkActionsPermissions,
@@ -17,13 +17,11 @@ import {
 } from "#/core/github/repo.js";
 import { checkSecrets, checkSecurity } from "#/core/github/security.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor } from "#/core/github/shared.js";
 import { resolveTargetRepo } from "#/core/github/target-repo.js";
 import type { CheckResult } from "#/core/result.js";
-import { failManual, skipped } from "#/core/result.js";
-import type { RegistryDocument } from "#/core/upstream/registry.js";
-import { blueprintRel, findEntry } from "#/core/upstream/registry.js";
-import { fetchBlueprint, isNotFoundError } from "#/core/upstream/remote.js";
+import { checkBase, failManual, skipped } from "#/core/result.js";
+import type { TechStack } from "#/core/upstream/tech-stack.js";
+import { UpstreamMissingError } from "#/core/upstream/tech-stack.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 
 // Lower than upstream fetches: GitHub's secondary rate limits punish bursts.
@@ -37,20 +35,15 @@ type GithubSettingsResult =
 // A missing registry entry or settings file is a manual result with a hint,
 // not an internal error: both are blueprint fixes the user can make.
 async function resolveGithubSettings(
-	state: RunState,
-	registry: RegistryDocument,
+	techStack: TechStack,
+	blueprint: string,
 ): Promise<GithubSettingsResult> {
-	const entry = findEntry(registry, "github_configs", state.blueprint);
-	if (entry === undefined) {
-		return {};
-	}
-	const rel = blueprintRel(entry.path);
 	try {
-		const { data } = await fetchBlueprint(state, registry, "github_configs");
+		const { data, rel } = await techStack.blueprint("github_configs", blueprint);
 		return { rel, upstream: data };
 	} catch (error) {
-		if (isNotFoundError(error)) {
-			return { rel };
+		if (error instanceof UpstreamMissingError) {
+			return error.what === "entry" ? {} : { rel: error.rel };
 		}
 		throw error;
 	}
@@ -61,7 +54,7 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 	if (upstream.socialPreview) {
 		results.push(
 			skipped(
-				baseFor(blueprint, "social-preview", target),
+				checkBase("github", blueprint, "social-preview", target),
 				"custom preview not readable via API",
 				"upload in Settings → General → Social preview",
 			),
@@ -69,7 +62,7 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 	}
 	results.push(
 		skipped(
-			baseFor(blueprint, "agent-suggestions", target),
+			checkBase("github", blueprint, "agent-suggestions", target),
 			`agent suggestions not readable via API (want ${upstream.agentSuggestions})`,
 			"confirm Agent suggestions for issues in repo Settings",
 		),
@@ -84,19 +77,19 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 	];
 	results.push(
 		skipped(
-			baseFor(blueprint, "archive-settings", target),
+			checkBase("github", blueprint, "archive-settings", target),
 			`archive toggles not readable via API (${archiveWant.join(", ")})`,
 			"confirm in Settings → General → Archives/Pushes",
 		),
 		skipped(
-			baseFor(blueprint, "copilot-autofix", target),
+			checkBase("github", blueprint, "copilot-autofix", target),
 			`Copilot Autofix toggle not readable via API (want ${upstream.security.copilotAutofix ? "on" : "off"})`,
 			`confirm Copilot Autofix is ${upstream.security.copilotAutofix ? "on" : "off"} in Settings → Code security`,
 		),
 		...(upstream.security.dependencyAutoSubmit
 			? [
 					skipped(
-						baseFor(blueprint, "dependency-auto-submit", target),
+						checkBase("github", blueprint, "dependency-auto-submit", target),
 						"dependency auto-submit not readable via repo API",
 						"confirm automatic dependency submission in Settings → Code security",
 					),
@@ -107,12 +100,12 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 }
 
 // Re-checks whole: one batch of API reads (ADR 0011).
-export const runGithubChecks: ScopeCheck = async ({ registry, state }) => {
-	const settings = await resolveGithubSettings(state, registry);
+export const runGithubChecks: ScopeCheck = async ({ state, techStack }) => {
+	const settings = await resolveGithubSettings(techStack, state.blueprint);
 	const repo = resolveTargetRepo(state.repo);
 	const target = `${repo} (repo settings)`;
 	if (!("upstream" in settings)) {
-		const base = baseFor(state.blueprint, "settings", target);
+		const base = checkBase("github", state.blueprint, "settings", target);
 		if (!("rel" in settings)) {
 			return [
 				failManual(
@@ -166,7 +159,7 @@ export const runGithubChecks: ScopeCheck = async ({ registry, state }) => {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
 			return [
 				skipped(
-					baseFor(state.blueprint, "auth", target),
+					checkBase("github", state.blueprint, "auth", target),
 					"cannot read repo settings",
 					"set GITHUB_TOKEN (private repo or rate limit)",
 				),

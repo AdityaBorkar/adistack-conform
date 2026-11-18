@@ -5,26 +5,11 @@ import {
 	upstreamPlaceholders,
 } from "#/core/project/template.js";
 import type { CheckBase, CheckResult } from "#/core/result.js";
-import { failFixable, failManual, pass } from "#/core/result.js";
+import { checkBase, failFixable, failManual, pass } from "#/core/result.js";
 import type { ManifestCompare } from "#/core/upstream/registry.js";
 import { readFileSafe } from "#/utils/fs.js";
 import { isRecord, omitKeys, serializeJson, deepEqual, setOwn } from "#/utils/json.js";
 import { parseJsonc } from "#/utils/jsonc.js";
-
-// Every project result id has this shape; re-check narrowing matches on it too.
-export function projectId(blueprint: string, name: string): string {
-	return `project:${blueprint}:${name}`;
-}
-
-export function projectBase(blueprint: string, fileName: string, fileTarget: string): CheckBase {
-	return {
-		id: projectId(blueprint, fileName),
-		kind: "project",
-		scope: "project",
-		target: fileTarget,
-		upstream: `tech-stack:${blueprint}`,
-	};
-}
 
 const EMPTY_COMPARE: ManifestCompare = {
 	ignore: [],
@@ -173,7 +158,7 @@ export async function checkProjectFileWithUpstream(args: {
 	sourceLabel: string;
 	targetPath: string;
 }): Promise<CheckResult> {
-	const base = projectBase(args.blueprint, args.fileName, args.fileTarget);
+	const base = checkBase("project", args.blueprint, args.fileName, args.fileTarget);
 	const compare = { ...EMPTY_COMPARE, ...args.compare };
 	const template = isTemplateUpstream(args.upstream);
 	const targetRead = await readFileSafe(args.targetPath);

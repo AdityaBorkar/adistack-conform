@@ -1,8 +1,7 @@
 import { apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
-import { failFixable, pass, skipped } from "#/core/result.js";
+import { checkBase, failFixable, pass, skipped } from "#/core/result.js";
 
 export function forkApprovalPolicy(approvalForExternal: boolean): string {
 	return approvalForExternal ? "all_external_contributors" : "first_time_contributors";
@@ -14,7 +13,7 @@ export async function checkActionsPermissions(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "actions-permissions", target);
+	const base = checkBase("github", blueprint, "actions-permissions", target);
 	let actual: Record<string, unknown>;
 	try {
 		actual = (await apiJson(repoPath(repo, "/actions/permissions"))) as Record<string, unknown>;
@@ -56,7 +55,7 @@ export async function checkActionsWorkflow(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "actions-workflow", target);
+	const base = checkBase("github", blueprint, "actions-workflow", target);
 	let actual: Record<string, unknown>;
 	try {
 		actual = (await apiJson(repoPath(repo, "/actions/permissions/workflow"))) as Record<
@@ -159,7 +158,7 @@ export async function checkActionsRetention(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "actions-retention", target);
+	const base = checkBase("github", blueprint, "actions-retention", target);
 	let actual: { days?: unknown };
 	try {
 		actual = (await apiJson(repoPath(repo, "/actions/permissions/artifact-and-log-retention"))) as {
@@ -203,7 +202,7 @@ export async function checkActionsOidc(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "actions-oidc", target);
+	const base = checkBase("github", blueprint, "actions-oidc", target);
 	if (!upstream.actions.oidcImmutableSubject) {
 		return skipped(base, "immutable OIDC subject not required", "confirm in Settings → Actions");
 	}
@@ -239,7 +238,7 @@ export async function checkEnvironments(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "environments", target);
+	const base = checkBase("github", blueprint, "environments", target);
 	if (upstream.environments.length === 0) {
 		return skipped(base, "no environments required", "list environments to enforce presence");
 	}

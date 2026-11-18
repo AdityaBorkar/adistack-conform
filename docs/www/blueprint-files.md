@@ -45,7 +45,7 @@ Per `files[]` entry: `ignore[]` keys are excluded from the compare and your loca
 
 <Accordion title="File structure — existence only">
 
-Blueprint `file_structure[]` entries (`name` + `target` + `kind: file|dir`) must exist; content is per-project. Missing file → manual with a generate hint; missing dir → manual with a `mkdir -p` hint. An entry whose `name` overlaps a `files[]` name is dropped with no result in favor of the file check.
+Blueprint `file_structure[]` entries (`name` + `target` + `kind: file|dir`) must exist; content is per-project. Missing file → manual with a generate hint; missing dir → manual with a `mkdir -p` hint. Names must be unique across `files[]` and `file_structure[]`, since each becomes the result id; the blueprint schema rejects a shared name. An entry whose target is also a `files[]` target is dropped with no result in favor of the file check.
 
 </Accordion>
 

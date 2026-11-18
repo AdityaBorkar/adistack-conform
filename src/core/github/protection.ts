@@ -1,8 +1,7 @@
 import { ApiError, apiJson, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
-import { failFixable, failManual, pass } from "#/core/result.js";
+import { checkBase, failFixable, failManual, pass } from "#/core/result.js";
 
 export interface ProtectionInput {
 	branch: string;
@@ -167,7 +166,7 @@ export function checkPrChecks(
 	read: ProtectionRead,
 	target: string,
 ): CheckResult {
-	const base = baseFor(blueprint, "pr-checks", target);
+	const base = checkBase("github", blueprint, "pr-checks", target);
 	if (read.missingBranch) {
 		return failManual(
 			base,
@@ -225,7 +224,7 @@ export async function checkReviews(
 	read: ProtectionRead,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "reviews", target);
+	const base = checkBase("github", blueprint, "reviews", target);
 	if (read.missingBranch) {
 		return failManual(
 			base,

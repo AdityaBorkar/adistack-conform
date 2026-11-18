@@ -57,6 +57,39 @@ export interface CheckResult {
 
 export type CheckBase = Pick<CheckResult, "id" | "kind" | "scope" | "target" | "upstream">;
 
+// Every check result id is `<scope>:<blueprint>:<name>`. Ids are wire output
+// (ADR 0012) and the key re-check narrowing and merging match on (ADR 0011).
+export function checkId(scope: CheckScope, blueprint: string, name: string): string {
+	return `${scope}:${blueprint}:${name}`;
+}
+
+export function checkBase(
+	scope: CheckScope,
+	blueprint: string,
+	name: string,
+	target: string,
+): CheckBase {
+	return {
+		id: checkId(scope, blueprint, name),
+		kind: scope,
+		scope,
+		target,
+		upstream: `tech-stack:${blueprint}`,
+	};
+}
+
+// A repeated id would make a re-check replace or resolve the wrong result.
+export function assertUniqueIds(results: CheckResult[]): CheckResult[] {
+	const seen = new Set<string>();
+	for (const { id } of results) {
+		if (seen.has(id)) {
+			throw new Error(`Duplicate check result id "${id}"; give each blueprint entry its own name.`);
+		}
+		seen.add(id);
+	}
+	return results;
+}
+
 export function isFixable(result: CheckResult): boolean {
 	return result.fix !== undefined;
 }

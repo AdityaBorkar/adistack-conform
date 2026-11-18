@@ -58,16 +58,24 @@ export const ManifestSchema = z.compile(
 						"Blueprint enforces nothing: add at least one files[] or file_structure[] entry.",
 				});
 			}
+			// Names become check result ids, so they are unique across both lists.
+			const seen = new Map<string, string>();
 			for (const [label, names] of [
 				["files", data.files.map((file) => file.name)],
 				["file_structure", data.file_structure.map((entry) => entry.name)],
 			] as const) {
-				const seen = new Set<string>();
 				for (const name of names) {
-					if (seen.has(name)) {
+					const first = seen.get(name);
+					if (first === undefined) {
+						seen.set(name, label);
+					} else if (first === label) {
 						ctx.addIssue({ code: "custom", message: `${label} has duplicate name "${name}".` });
+					} else {
+						ctx.addIssue({
+							code: "custom",
+							message: `${label} name "${name}" is already used in ${first}; names are shared across files and file_structure.`,
+						});
 					}
-					seen.add(name);
 				}
 			}
 		}),

@@ -9,9 +9,10 @@ import { runGithubChecks } from "#/core/github/index.js";
 import { runMachine } from "#/core/machine/index.js";
 import { runProjectChecks } from "#/core/project/index.js";
 import type { CheckResult, CheckScope } from "#/core/result.js";
-import { isDrift } from "#/core/result.js";
-import type { RegistryDocument } from "#/core/upstream/registry.js";
-import { fetchRegistry } from "#/core/upstream/remote.js";
+import { assertUniqueIds, isDrift } from "#/core/result.js";
+import { pinnedReader } from "#/core/upstream/remote.js";
+import type { TechStack } from "#/core/upstream/tech-stack.js";
+import { openTechStack } from "#/core/upstream/tech-stack.js";
 import { errorMessage } from "#/utils/error.js";
 import { defaultHome } from "#/utils/fs.js";
 
@@ -19,10 +20,10 @@ import { defaultHome } from "#/utils/fs.js";
 interface RunContext {
 	desiredState: LoadedDesiredState;
 	home: string;
-	registry: RegistryDocument;
 	// Configured scopes, narrowed by a --*-only flag.
 	scopes: CheckScope[];
 	strict: boolean;
+	techStack: TechStack;
 }
 
 function toSafeResults(task: Promise<CheckResult[]>, scope: CheckScope): Promise<CheckResult[]> {
@@ -55,8 +56,12 @@ function scopeTask(
 	if (state === undefined) {
 		return Promise.resolve([]);
 	}
-	const { home, registry, strict } = ctx;
-	return SCOPES[scope]({ baseDir: ctx.desiredState.dir, home, registry, state, strict }, onlyIds);
+	const { home, strict, techStack } = ctx;
+	// Re-check merging and narrowing key on ids, so a scope must never repeat one.
+	return SCOPES[scope](
+		{ baseDir: ctx.desiredState.dir, home, state, strict, techStack },
+		onlyIds,
+	).then(assertUniqueIds);
 }
 
 // Scopes run concurrently; each is timed on its own.
@@ -143,9 +148,9 @@ export async function prepareRun(
 	const ctx: RunContext = {
 		desiredState,
 		home: defaultHome(),
-		registry: await fetchRegistry(id, ref),
 		scopes,
 		strict: options.strict === true,
+		techStack: await openTechStack(pinnedReader(id, ref)),
 	};
 	return { ...ctx, ...(await runAllChecks(ctx)) };
 }

@@ -1,8 +1,7 @@
 import { apiEnabled, apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
-import { failFixable, failManual, pass, skipped } from "#/core/result.js";
+import { checkBase, failFixable, failManual, pass, skipped } from "#/core/result.js";
 
 export function isPrivateVulnEnabled(body?: unknown): boolean {
 	if (typeof (body as { enabled?: unknown } | undefined)?.["enabled"] === "boolean") {
@@ -29,7 +28,7 @@ export async function checkSecurity(
 	target: string,
 	repoInfo: () => Promise<Record<string, unknown>>,
 ): Promise<CheckResult[]> {
-	const base = baseFor(blueprint, "security", target);
+	const base = checkBase("github", blueprint, "security", target);
 	const notes: CheckResult[] = [];
 	let analysis: Record<string, unknown>;
 	try {
@@ -79,7 +78,7 @@ export async function checkSecurity(
 		if (isAuthError(error)) {
 			notes.push(
 				skipped(
-					baseFor(blueprint, "security-vuln-reporting", target),
+					checkBase("github", blueprint, "security-vuln-reporting", target),
 					"cannot read private vulnerability reporting",
 					"set GITHUB_TOKEN (private repo or rate limit)",
 				),
@@ -105,7 +104,7 @@ export async function checkSecurity(
 		if (isAuthError(error)) {
 			notes.push(
 				skipped(
-					baseFor(blueprint, "security-dependabot", target),
+					checkBase("github", blueprint, "security-dependabot", target),
 					"cannot read Dependabot status",
 					"set GITHUB_TOKEN (private repo or rate limit)",
 				),
@@ -130,7 +129,7 @@ export async function checkSecurity(
 		if (isAuthError(error)) {
 			notes.push(
 				skipped(
-					baseFor(blueprint, "security-dependency-graph", target),
+					checkBase("github", blueprint, "security-dependency-graph", target),
 					"cannot read dependency graph status",
 					"set GITHUB_TOKEN (private repo or rate limit)",
 				),
@@ -163,7 +162,7 @@ export async function checkSecrets(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "secrets", target);
+	const base = checkBase("github", blueprint, "secrets", target);
 	if (upstream.secrets.length === 0 && upstream.variables.length === 0) {
 		return skipped(base, "no secrets/variables required", "list names to enforce presence");
 	}

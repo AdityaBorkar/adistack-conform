@@ -1,8 +1,7 @@
 import { apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import { baseFor } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
-import { failFixable, failManual, pass, skipped } from "#/core/result.js";
+import { checkBase, failFixable, failManual, pass, skipped } from "#/core/result.js";
 
 const MERGE_TITLE_TO_API: Record<string, string> = {
 	"merge-message": "MERGE_MESSAGE",
@@ -51,7 +50,7 @@ export async function checkGeneral(
 	target: string,
 	repoInfo: () => Promise<Record<string, unknown>>,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "general", target);
+	const base = checkBase("github", blueprint, "general", target);
 	let actual: Record<string, unknown>;
 	try {
 		actual = await repoInfo();
@@ -173,7 +172,7 @@ export async function checkReleases(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "releases", target);
+	const base = checkBase("github", blueprint, "releases", target);
 	let enabled: boolean;
 	try {
 		const current = await apiJson(repoPath(repo, "/immutable-releases"), { allowStatuses: [404] });
@@ -220,7 +219,7 @@ export async function checkCodeowners(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "codeowners", target);
+	const base = checkBase("github", blueprint, "codeowners", target);
 	if (upstream.codeowners === undefined) {
 		return skipped(base, "no codeowners configured", "set codeowners to enforce presence");
 	}
@@ -261,7 +260,7 @@ export async function checkIssueTemplates(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "issue-templates", target);
+	const base = checkBase("github", blueprint, "issue-templates", target);
 	if (!upstream.features.issueTemplates) {
 		return skipped(base, "issue templates not required", "set features.issueTemplates to enforce");
 	}
@@ -306,7 +305,7 @@ export async function checkRulesets(
 	upstream: GithubSettings,
 	target: string,
 ): Promise<CheckResult> {
-	const base = baseFor(blueprint, "rulesets", target);
+	const base = checkBase("github", blueprint, "rulesets", target);
 	if (upstream.rulesets.length === 0) {
 		return skipped(base, "no rulesets required", "list rulesets to enforce presence");
 	}

@@ -1,9 +1,8 @@
 import { stat } from "node:fs/promises";
 
-import { projectBase, projectId } from "#/core/project/compare.js";
 import type { ProjectCheckOptions } from "#/core/project/index.js";
 import type { CheckResult } from "#/core/result.js";
-import { failManual, pass, skipped } from "#/core/result.js";
+import { checkBase, checkId, failManual, pass, skipped } from "#/core/result.js";
 import type { ManifestFile, ManifestFileStructure } from "#/core/upstream/registry.js";
 import { isMissingError, readFileSafe, resolveTargetPath } from "#/utils/fs.js";
 
@@ -13,7 +12,7 @@ async function checkFileStructureEntry(args: {
 	kind: "dir" | "file";
 	targetPath: string;
 }): Promise<CheckResult> {
-	const base = projectBase(args.blueprint, args.entryName, args.entryName);
+	const base = checkBase("project", args.blueprint, args.entryName, args.entryName);
 	if (args.kind === "dir") {
 		try {
 			const info = await stat(args.targetPath);
@@ -84,13 +83,13 @@ export async function checkFileStructure(
 		if (enforcedTargets.has(targetPath)) {
 			continue;
 		}
-		if (onlyIds !== undefined && !onlyIds.has(projectId(blueprint, entry.name))) {
+		if (onlyIds !== undefined && !onlyIds.has(checkId("project", blueprint, entry.name))) {
 			continue;
 		}
 		if (seenTargets.has(targetPath)) {
 			notes.push(
 				skipped(
-					projectBase(blueprint, entry.name, entry.target),
+					checkBase("project", blueprint, entry.name, entry.target),
 					"duplicate file-structure target",
 					`same target as "${seenTargets.get(targetPath)}"; keeping the first entry`,
 				),
