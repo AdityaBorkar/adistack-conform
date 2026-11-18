@@ -1,5 +1,6 @@
 import { apiJson, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
+import { diffField, fixOrPass } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix } from "#/core/result.js";
 import { checkBase, failFixable, failManual, pass, skipped } from "#/core/result.js";
 
@@ -7,6 +8,7 @@ interface PagesState {
 	build_type?: unknown;
 	cname?: unknown;
 	https_enforced?: unknown;
+	public?: unknown;
 	source?: { branch?: unknown; path?: unknown };
 }
 
@@ -18,12 +20,12 @@ export async function checkPages(
 	repo: string,
 	upstream: GithubSettings,
 	target: string,
-): Promise<CheckResult> {
-	const base = checkBase("github", blueprint, "pages", target);
+): Promise<CheckResult | undefined> {
 	const want = upstream.pages;
 	if (want === undefined) {
-		return pass(base, "pages not managed", "pages match");
+		return undefined;
 	}
+	const base = checkBase("github", blueprint, "pages", target);
 	let current: PagesState | undefined;
 	try {
 		current = (await apiJson(repoPath(repo, "/pages"), { allowStatuses: [404] })) as
@@ -46,57 +48,54 @@ export async function checkPages(
 		};
 		return failFixable(base, "pages enabled", "pages disabled", fix);
 	}
-	if (want.branch === undefined) {
+	const workflow = want.build_type === "workflow";
+	if (!workflow && want.branch === undefined) {
 		return failManual(
 			base,
 			current === undefined ? "pages: <not configured>" : "pages: <branch source unpinned>",
 			"pages configured",
-			"Set the Pages source branch/folder or GitHub Actions in Settings → Pages, then re-check.",
+			"Set pages.branch (or build_type: workflow), or pick the source in Settings → Pages, then re-check.",
 		);
 	}
-	const branch = want.branch;
-	const path = want.path ?? "/";
+	const source = workflow ? undefined : { branch: want.branch, path: want.path ?? "/" };
+	const wanted = `pages: ${workflow ? "workflow" : `${String(source?.branch)} ${String(source?.path)}`}`;
 	if (current === undefined) {
 		const fix: GithubApiFix = {
 			kind: "github-api",
 			label: `github POST ${repo} pages`,
 			steps: [
 				{
-					body: { source: { branch, path } },
+					body: {
+						build_type: want.build_type ?? "legacy",
+						...(source === undefined ? {} : { source }),
+					},
 					method: "POST",
 					path: repoPath(repo, "/pages"),
 				},
 			],
 		};
-		return failFixable(base, "pages: <not configured>", `pages: ${branch} ${path}`, fix);
+		return failFixable(base, "pages: <not configured>", wanted, fix);
 	}
 	const diffs: string[] = [];
 	const body: Record<string, unknown> = {};
-	if (current.source?.branch !== branch) {
-		diffs.push(`branch: ${String(current.source?.branch)} → ${branch}`);
+	diffField(diffs, body, current as Record<string, unknown>, "build_type", want.build_type);
+	if (
+		source !== undefined &&
+		(current.source?.branch !== source.branch || current.source?.path !== source.path)
+	) {
+		diffs.push(
+			`source: ${String(current.source?.branch)} ${String(current.source?.path)} → ${String(source.branch)} ${source.path}`,
+		);
+		body["source"] = source;
 	}
-	if (current.source?.path !== path) {
-		diffs.push(`path: ${String(current.source?.path)} → ${path}`);
-	}
-	const sourceChanged = diffs.length > 0;
-	if (sourceChanged) {
-		body["source"] = { branch, path };
-	}
-	if (want.customDomain !== undefined && current.cname !== want.customDomain) {
-		diffs.push(`cname: ${String(current.cname)} → ${want.customDomain}`);
-		body["cname"] = want.customDomain;
-	}
-	if (want.httpsEnforced !== undefined && current.https_enforced !== want.httpsEnforced) {
-		diffs.push(`https: ${String(current.https_enforced)} → ${String(want.httpsEnforced)}`);
-		body["https_enforced"] = want.httpsEnforced;
-	}
-	if (diffs.length === 0) {
-		return pass(base, `pages: ${branch} ${path}`, "pages match");
-	}
-	const fix: GithubApiFix = {
-		kind: "github-api",
-		label: `github PUT ${repo} pages`,
-		steps: [{ body, method: "PUT", path: repoPath(repo, "/pages") }],
-	};
-	return failFixable(base, diffs.join("; "), "pages match", fix);
+	diffField(diffs, body, current as Record<string, unknown>, "cname", want.custom_domain);
+	diffField(diffs, body, current as Record<string, unknown>, "https_enforced", want.https_enforced);
+	diffField(diffs, body, current as Record<string, unknown>, "public", want.public);
+	return fixOrPass(
+		base,
+		diffs,
+		[{ body, method: "PUT", path: repoPath(repo, "/pages") }],
+		`github PUT ${repo} pages`,
+		wanted,
+	);
 }

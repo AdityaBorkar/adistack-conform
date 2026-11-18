@@ -1,7 +1,8 @@
-import { apiEnabled, apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
+import { apiEnabled, apiJson, apiJsonPaged, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
-import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
-import { checkBase, failFixable, failManual, pass, skipped } from "#/core/result.js";
+import { checkSimpleEndpoint, diffField, fixOrPass, skipOnError } from "#/core/github/shared.js";
+import type { CheckResult, GithubApiStep } from "#/core/result.js";
+import { checkBase, failManual, pass, skipped } from "#/core/result.js";
 
 export function isPrivateVulnEnabled(body?: unknown): boolean {
 	if (typeof (body as { enabled?: unknown } | undefined)?.["enabled"] === "boolean") {
@@ -21,147 +22,236 @@ function securityStatus(entry: unknown): string {
 	return "disabled";
 }
 
+const onOff = (want: boolean | undefined): string | undefined =>
+	want === undefined ? undefined : want ? "enabled" : "disabled";
+
+// Advanced Security toggles with an API: Secret Protection
+// (security_and_analysis PATCH), private vulnerability reporting, Dependabot
+// alerts (/vulnerability-alerts) and security updates (/automated-security-fixes).
+// Validity checks and custom patterns are READ: drift there is manual.
 export async function checkSecurity(
 	blueprint: string,
 	repo: string,
 	upstream: GithubSettings,
 	target: string,
 	repoInfo: () => Promise<Record<string, unknown>>,
-): Promise<CheckResult[]> {
+): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "security", target);
-	const notes: CheckResult[] = [];
-	let analysis: Record<string, unknown>;
-	try {
-		analysis = ((await repoInfo()).security_and_analysis ?? {}) as Record<string, unknown>;
-	} catch (error) {
-		if (isAuthError(error)) {
-			return [
-				skipped(base, "cannot read repo settings", "set GITHUB_TOKEN (private repo or rate limit)"),
-			];
-		}
-		throw error;
-	}
+	const adv = upstream.advanced_security;
+	const secret = adv.secret_protection;
 	const diffs: string[] = [];
-	const patch: Record<string, { status: string }> = {};
-	const compareSecurity = (key: string, want: boolean): void => {
-		const have = securityStatus(analysis[key]);
-		if ((have === "enabled") !== want) {
-			diffs.push(`${key}: ${have} → ${want ? "enabled" : "disabled"}`);
-			patch[key] = { status: want ? "enabled" : "disabled" };
-		}
-	};
-	compareSecurity("secret_scanning", upstream.security.secretProtection);
-	compareSecurity("secret_scanning_push_protection", upstream.security.pushProtection);
-	if (upstream.security.nonProviderPatterns !== undefined) {
-		compareSecurity("secret_scanning_non_provider_patterns", upstream.security.nonProviderPatterns);
-	}
-	if (upstream.security.aiDetection !== undefined) {
-		compareSecurity("secret_scanning_ai_detection", upstream.security.aiDetection);
-	}
+	const manual: string[] = [];
 	const steps: GithubApiStep[] = [];
-	if (Object.keys(patch).length > 0) {
-		steps.push({
-			body: { security_and_analysis: patch },
-			method: "PATCH",
-			path: repoPath(repo, ""),
-		});
-	}
 	try {
-		const vuln = (await apiJson(repoPath(repo, "/private-vulnerability-reporting"), {
-			allowStatuses: [404],
-		})) as { enabled?: unknown } | undefined;
-		const enabled = isPrivateVulnEnabled(vuln);
-		if (enabled !== upstream.security.privateVulnerabilityReporting) {
-			diffs.push(
-				`private_vulnerability_reporting: ${String(enabled)} → ${String(upstream.security.privateVulnerabilityReporting)}`,
-			);
-			steps.push({
-				method: upstream.security.privateVulnerabilityReporting ? "PUT" : "DELETE",
-				path: repoPath(repo, "/private-vulnerability-reporting"),
-			});
-		}
-	} catch (error) {
-		if (isAuthError(error)) {
-			notes.push(
-				skipped(
-					checkBase("github", blueprint, "security-vuln-reporting", target),
-					"cannot read private vulnerability reporting",
-					"set GITHUB_TOKEN (private repo or rate limit)",
-				),
-			);
-		} else {
-			throw error;
-		}
-	}
-	try {
-		const dependabot = (await apiJson(repoPath(repo, "/automated-security-fixes"), {
-			allowStatuses: [404],
-		})) as { enabled?: unknown; paused?: unknown } | undefined;
-		const enabled =
-			dependabot !== undefined && dependabot["enabled"] === true && dependabot["paused"] !== true;
-		if (enabled !== upstream.security.dependabot) {
-			diffs.push(`dependabot: ${String(enabled)} → ${String(upstream.security.dependabot)}`);
-			steps.push({
-				method: upstream.security.dependabot ? "PUT" : "DELETE",
-				path: repoPath(repo, "/automated-security-fixes"),
-			});
-		}
-	} catch (error) {
-		if (isAuthError(error)) {
-			notes.push(
-				skipped(
-					checkBase("github", blueprint, "security-dependabot", target),
-					"cannot read Dependabot status",
-					"set GITHUB_TOKEN (private repo or rate limit)",
-				),
-			);
-		} else {
-			throw error;
-		}
-	}
-	try {
-		// PUT /vulnerability-alerts enables dependency alerts and the dependency graph together.
-		const graphOn = await apiEnabled(repoPath(repo, "/vulnerability-alerts"));
-		if (graphOn !== upstream.security.dependencyGraph) {
-			diffs.push(
-				`dependency_graph: ${String(graphOn)} → ${String(upstream.security.dependencyGraph)}`,
-			);
-			steps.push({
-				method: upstream.security.dependencyGraph ? "PUT" : "DELETE",
-				path: repoPath(repo, "/vulnerability-alerts"),
-			});
-		}
-	} catch (error) {
-		if (isAuthError(error)) {
-			notes.push(
-				skipped(
-					checkBase("github", blueprint, "security-dependency-graph", target),
-					"cannot read dependency graph status",
-					"set GITHUB_TOKEN (private repo or rate limit)",
-				),
-			);
-		} else {
-			throw error;
-		}
-	}
-	if (diffs.length === 0) {
-		return [pass(base, "security settings match", "security settings match"), ...notes];
-	}
-	if (steps.length === 0) {
-		return [
-			failManual(
-				base,
-				diffs.join("; "),
-				"security settings match",
-				"Toggle in Settings → Code security, then re-check (needs GITHUB_TOKEN).",
-			),
-			...notes,
+		const analysis = ((await repoInfo())["security_and_analysis"] ?? {}) as Record<string, unknown>;
+		const patch: Record<string, unknown> = {};
+		const fields: Array<[string, boolean | undefined]> = [
+			["secret_scanning", secret.enabled],
+			["secret_scanning_push_protection", secret.push_protection],
+			["secret_scanning_non_provider_patterns", secret.non_provider_patterns],
+			["secret_scanning_ai_detection", secret.ai_detection],
+			["secret_scanning_delegated_bypass", secret.delegated_bypass],
+			["secret_scanning_delegated_alert_dismissal", secret.delegated_alert_dismissal],
 		];
+		for (const [key, want] of fields) {
+			const status = onOff(want);
+			if (status !== undefined && securityStatus(analysis[key]) !== status) {
+				diffs.push(`${key}: ${securityStatus(analysis[key])} → ${status}`);
+				patch[key] = { status };
+			}
+		}
+		if (Object.keys(patch).length > 0) {
+			steps.push({
+				body: { security_and_analysis: patch },
+				method: "PATCH",
+				path: repoPath(repo, ""),
+			});
+		}
+		const validity = onOff(secret.validity_checks);
+		const haveValidity = securityStatus(analysis["secret_scanning_validity_checks"]);
+		if (validity !== undefined && haveValidity !== validity) {
+			manual.push(`secret_scanning_validity_checks: ${haveValidity} → ${validity}`);
+		}
+		if (secret.custom_patterns !== undefined && secret.custom_patterns.length > 0) {
+			const patterns = ((await apiJson(repoPath(repo, "/secret-scanning/custom-patterns"), {
+				allowStatuses: [404],
+			})) ?? []) as Array<{ name?: unknown }>;
+			const names = new Set(patterns.map((entry) => String(entry.name)));
+			const missing = secret.custom_patterns.filter((name) => !names.has(name));
+			if (missing.length > 0) {
+				manual.push(`custom patterns missing: ${missing.join(", ")}`);
+			}
+		}
+		const [vuln, alerts, fixes] = await Promise.all([
+			apiJson(repoPath(repo, "/private-vulnerability-reporting"), { allowStatuses: [404] }),
+			apiEnabled(repoPath(repo, "/vulnerability-alerts")),
+			apiJson(repoPath(repo, "/automated-security-fixes"), { allowStatuses: [404] }) as Promise<
+				{ enabled?: unknown; paused?: unknown } | undefined
+			>,
+		]);
+		const toggles: Array<[label: string, have: boolean, want: boolean, path: string]> = [
+			[
+				"private_vulnerability_reporting",
+				isPrivateVulnEnabled(vuln),
+				adv.private_vulnerability_reporting.enabled,
+				"/private-vulnerability-reporting",
+			],
+			// Alerts before security updates: updates need alerts on.
+			["dependabot_alerts", alerts, adv.dependabot.alerts, "/vulnerability-alerts"],
+			[
+				"dependabot_security_updates",
+				fixes?.enabled === true && fixes.paused !== true,
+				adv.dependabot.security_updates,
+				"/automated-security-fixes",
+			],
+		];
+		for (const [label, have, want, path] of toggles) {
+			if (have !== want) {
+				diffs.push(`${label}: ${String(have)} → ${String(want)}`);
+				steps.push({ method: want ? "PUT" : "DELETE", path: repoPath(repo, path) });
+			}
+		}
+	} catch (error) {
+		return skipOnError(error, base, "security settings");
 	}
-	const fix: GithubApiFix = { kind: "github-api", label: `github PATCH ${repo} security`, steps };
-	return [failFixable(base, diffs.join("; "), "security settings match", fix), ...notes];
+	if (diffs.length === 0 && manual.length > 0) {
+		return failManual(
+			base,
+			manual.join("; "),
+			"security settings match",
+			"Set validity checks / custom patterns in Settings → Advanced Security → Secret Protection, then re-check.",
+		);
+	}
+	const result = fixOrPass(
+		base,
+		[...diffs, ...manual],
+		steps,
+		`github PATCH ${repo} security`,
+		"security settings match",
+	);
+	if (manual.length > 0) {
+		result.hint =
+			"Run `fix` for the rest; set validity checks / custom patterns in Settings → Advanced Security → Secret Protection.";
+	}
+	return result;
 }
 
+// Dependency graph has no repo API (the old check read /vulnerability-alerts,
+// which is Dependabot alerts). It is always on for public repos.
+export async function checkDependencyGraph(
+	blueprint: string,
+	upstream: GithubSettings,
+	target: string,
+	repoInfo: () => Promise<Record<string, unknown>>,
+): Promise<CheckResult> {
+	const base = checkBase("github", blueprint, "security-dependency-graph", target);
+	const want = upstream.advanced_security.dependency_graph;
+	let isPublic: boolean;
+	try {
+		isPublic = (await repoInfo())["private"] === false;
+	} catch (error) {
+		return skipOnError(error, base, "repo visibility");
+	}
+	if (want && isPublic) {
+		return pass(base, "dependency graph on (public repo)", "dependency graph on");
+	}
+	return skipped(
+		base,
+		`want dependency graph ${want ? "on" : "off"} (no API${isPublic ? "; always on for public repos" : ""})`,
+		"confirm in Settings → Advanced Security → Dependency Scanning → Dependency graph",
+	);
+}
+
+// Dependabot → self-hosted runner settings (404 when not offered for this repo).
+export function checkDependabotRunner(
+	blueprint: string,
+	repo: string,
+	upstream: GithubSettings,
+	target: string,
+): Promise<CheckResult> | undefined {
+	const want = upstream.advanced_security.dependabot.runner;
+	if (want === undefined) {
+		return undefined;
+	}
+	return checkSimpleEndpoint(
+		checkBase("github", blueprint, "dependabot-runner", target),
+		repo,
+		"/dependabot/runner-settings",
+		{ runner_group: want.group, runner_labels: want.labels, runner_type: want.type },
+		"dependabot runner settings",
+		{ 404: "Dependabot runner settings not available for this repository" },
+	);
+}
+
+// Code Security → Tools → CodeQL default setup (PATCH /code-scanning/default-setup).
+// Wanted languages must be a subset: live lists aliases (javascript, typescript).
+export async function checkCodeScanning(
+	blueprint: string,
+	repo: string,
+	upstream: GithubSettings,
+	target: string,
+): Promise<CheckResult | undefined> {
+	const want = upstream.advanced_security.code_scanning.default_setup;
+	if (want === undefined) {
+		return undefined;
+	}
+	const base = checkBase("github", blueprint, "code-scanning", target);
+	const path = repoPath(repo, "/code-scanning/default-setup");
+	const diffs: string[] = [];
+	const body: Record<string, unknown> = {};
+	try {
+		const actual = (await apiJson(path)) as Record<string, unknown>;
+		diffField(diffs, body, actual, "state", want.state);
+		diffField(diffs, body, actual, "query_suite", want.query_suite);
+		diffField(diffs, body, actual, "threat_model", want.threat_model);
+		diffField(diffs, body, actual, "runner_type", want.runner_type);
+		diffField(diffs, body, actual, "runner_label", want.runner_label);
+		const have = Array.isArray(actual["languages"]) ? actual["languages"].map(String) : [];
+		const missing = (want.languages ?? []).filter((lang) => !have.includes(lang));
+		if (missing.length > 0) {
+			diffs.push(`languages: missing ${missing.join(", ")}`);
+			body["languages"] = want.languages;
+		}
+	} catch (error) {
+		return skipOnError(error, base, "code scanning default setup", {
+			404: "code scanning not available for this repository",
+		});
+	}
+	return fixOrPass(
+		base,
+		diffs,
+		[{ body: { ...body, state: want.state }, method: "PATCH", path }],
+		`github PATCH ${repo} code scanning default setup`,
+		`code scanning ${want.state}`,
+	);
+}
+
+// Code Security → AI Scan for repositories / pull requests.
+export function checkAiScan(
+	blueprint: string,
+	repo: string,
+	upstream: GithubSettings,
+	target: string,
+): Promise<CheckResult> | undefined {
+	const want = upstream.advanced_security.code_scanning.ai_scan;
+	if (want === undefined) {
+		return undefined;
+	}
+	return checkSimpleEndpoint(
+		checkBase("github", blueprint, "ai-scan", target),
+		repo,
+		"/code-scanning/ai-scan",
+		{ pr_scan: onOff(want.pull_requests), repository_scan: onOff(want.repository) },
+		"AI scan",
+		{ 404: "AI Scan not available for this repository" },
+		"PATCH",
+	);
+}
+
+const env = (name: string): string => `/environments/${encodeURIComponent(name)}`;
+
+// Secrets and variables (+ per-environment) are presence-only: values are
+// write-only, so drift is manual with the matching `gh` command.
 export async function checkSecrets(
 	blueprint: string,
 	repo: string,
@@ -169,138 +259,86 @@ export async function checkSecrets(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "secrets", target);
-	const wantCodespaces = upstream.codespacesSecrets ?? [];
-	const wantDependabot = upstream.dependabotSecrets ?? [];
-	const wantAgentsSecrets = upstream.agentsSecrets ?? [];
-	const wantAgentsVariables = upstream.agentsVariables ?? [];
-	const wantEnvSecrets = upstream.environmentSecrets ?? {};
-	const wantEnvEnvs = Object.keys(wantEnvSecrets);
-	if (
-		upstream.secrets.length === 0 &&
-		upstream.variables.length === 0 &&
-		wantCodespaces.length === 0 &&
-		wantDependabot.length === 0 &&
-		wantAgentsSecrets.length === 0 &&
-		wantAgentsVariables.length === 0 &&
-		wantEnvEnvs.length === 0
-	) {
+	const want = upstream.secrets;
+	const envs = Object.entries(upstream.environments);
+	// [label, list path, collection key, wanted names, fix command]
+	const groups: Array<[string, string, string, string[], string]> = [
+		["secret", "/actions/secrets", "secrets", want.actions.secrets, "gh secret set NAME"],
+		["variable", "/actions/variables", "variables", want.actions.variables, "gh variable set NAME"],
+		[
+			"agents-secret",
+			"/agents/secrets",
+			"secrets",
+			want.agents?.secrets ?? [],
+			"gh secret set NAME --app agents",
+		],
+		[
+			"agents-variable",
+			"/agents/variables",
+			"variables",
+			want.agents?.variables ?? [],
+			"Settings → Secrets and variables → Agents (NAME)",
+		],
+		[
+			"codespaces",
+			"/codespaces/secrets",
+			"secrets",
+			want.codespaces ?? [],
+			"gh secret set NAME --app codespaces",
+		],
+		[
+			"dependabot",
+			"/dependabot/secrets",
+			"secrets",
+			want.dependabot ?? [],
+			"gh secret set NAME --app dependabot",
+		],
+		...envs.flatMap(([name, entry]): Array<[string, string, string, string[], string]> => [
+			[
+				`env:${name}`,
+				`${env(name)}/secrets`,
+				"secrets",
+				entry.secrets ?? [],
+				`gh secret set NAME --env ${name}`,
+			],
+			[
+				`env-variable:${name}`,
+				`${env(name)}/variables`,
+				"variables",
+				entry.variables ?? [],
+				`gh variable set NAME --env ${name}`,
+			],
+		]),
+	];
+	const wanted = groups.filter(([, , , names]) => names.length > 0);
+	if (wanted.length === 0) {
 		return pass(base, "no secrets/variables required", "secrets/variables match");
 	}
-	let haveSecrets: string[] = [];
-	let haveVariables: string[] = [];
-	let haveCodespaces: string[] = [];
-	let haveDependabot: string[] = [];
-	let haveAgentsSecrets: string[] = [];
-	let haveAgentsVariables: string[] = [];
-	const haveEnv: Record<string, string[]> = {};
+	let missing: Array<{ command: string; label: string; name: string }>;
 	try {
-		const [
-			secretItems,
-			variableItems,
-			codespacesItems,
-			dependabotItems,
-			agentsSecretItems,
-			agentsVariableItems,
-		] = await Promise.all([
-			apiJsonPaged(repoPath(repo, "/actions/secrets"), "secrets"),
-			apiJsonPaged(repoPath(repo, "/actions/variables"), "variables"),
-			wantCodespaces.length > 0
-				? apiJsonPaged(repoPath(repo, "/codespaces/secrets"), "secrets")
-				: Promise.resolve([]),
-			wantDependabot.length > 0
-				? apiJsonPaged(repoPath(repo, "/dependabot/secrets"), "secrets")
-				: Promise.resolve([]),
-			wantAgentsSecrets.length > 0
-				? apiJsonPaged(repoPath(repo, "/agents/secrets"), "secrets")
-				: Promise.resolve([]),
-			wantAgentsVariables.length > 0
-				? apiJsonPaged(repoPath(repo, "/agents/variables"), "variables")
-				: Promise.resolve([]),
-		]);
-		haveSecrets = (secretItems as Array<{ name?: unknown }>).map((entry) => String(entry.name));
-		haveVariables = (variableItems as Array<{ name?: unknown }>).map((entry) => String(entry.name));
-		haveCodespaces = (codespacesItems as Array<{ name?: unknown }>).map((entry) =>
-			String(entry.name),
+		const lists = await Promise.all(
+			wanted.map(([, path, collection]) => apiJsonPaged(repoPath(repo, path), collection)),
 		);
-		haveDependabot = (dependabotItems as Array<{ name?: unknown }>).map((entry) =>
-			String(entry.name),
-		);
-		haveAgentsSecrets = (agentsSecretItems as Array<{ name?: unknown }>).map((entry) =>
-			String(entry.name),
-		);
-		haveAgentsVariables = (agentsVariableItems as Array<{ name?: unknown }>).map((entry) =>
-			String(entry.name),
-		);
-		const envSecrets = await Promise.all(
-			wantEnvEnvs.map(async (env) => ({
-				env,
-				items: (await apiJsonPaged(
-					repoPath(repo, `/environments/${encodeURIComponent(env)}/secrets`),
-					"secrets",
-				)) as Array<{ name?: unknown }>,
-			})),
-		);
-		for (const { env, items } of envSecrets) {
-			haveEnv[env] = items.map((entry) => String(entry.name));
-		}
+		missing = wanted.flatMap(([label, , , names, command], index) => {
+			const have = new Set(
+				(lists[index] as Array<{ name?: unknown }>).map((entry) => String(entry.name)),
+			);
+			return names.filter((name) => !have.has(name)).map((name) => ({ command, label, name }));
+		});
 	} catch (error) {
-		if (isAuthError(error)) {
-			return skipped(base, "cannot list secrets", "set GITHUB_TOKEN (private repo or rate limit)");
-		}
-		throw error;
+		return skipOnError(error, base, "secrets");
 	}
-	const missingSecrets = upstream.secrets.filter((name) => !haveSecrets.includes(name));
-	const missingVariables = upstream.variables.filter((name) => !haveVariables.includes(name));
-	const missingCodespaces = wantCodespaces.filter((name) => !haveCodespaces.includes(name));
-	const missingDependabot = wantDependabot.filter((name) => !haveDependabot.includes(name));
-	const missingAgentsSecrets = wantAgentsSecrets.filter(
-		(name) => !haveAgentsSecrets.includes(name),
-	);
-	const missingAgentsVariables = wantAgentsVariables.filter(
-		(name) => !haveAgentsVariables.includes(name),
-	);
-	const missingEnv = wantEnvEnvs.flatMap((env) =>
-		(wantEnvSecrets[env] ?? [])
-			.filter((name) => !(haveEnv[env] ?? []).includes(name))
-			.map((name) => `${env}:${name}`),
-	);
-	if (
-		missingSecrets.length === 0 &&
-		missingVariables.length === 0 &&
-		missingCodespaces.length === 0 &&
-		missingDependabot.length === 0 &&
-		missingAgentsSecrets.length === 0 &&
-		missingAgentsVariables.length === 0 &&
-		missingEnv.length === 0
-	) {
+	if (missing.length === 0) {
 		return pass(base, "secrets/variables present", "secrets/variables match");
 	}
-	const missing = [
-		...missingSecrets.map((name) => `secret:${name}`),
-		...missingVariables.map((name) => `variable:${name}`),
-		...missingCodespaces.map((name) => `codespaces:${name}`),
-		...missingDependabot.map((name) => `dependabot:${name}`),
-		...missingAgentsSecrets.map((name) => `agents-secret:${name}`),
-		...missingAgentsVariables.map((name) => `agents-variable:${name}`),
-		...missingEnv.map((name) => `env:${name}`),
-	];
-	const firstEnv = missingEnv[0]?.split(":")[0] ?? "ENV";
+	const first = missing[0] as { command: string; name: string };
+	const command = first.command.replace("NAME", first.name);
 	return failManual(
 		base,
-		`missing: ${missing.join(", ")}`,
+		`missing: ${missing.map((entry) => `${entry.label}:${entry.name}`).join(", ")}`,
 		"secrets/variables present",
-		missingAgentsSecrets.length > 0
-			? `Add values with e.g. gh secret set ${missingAgentsSecrets[0] ?? "NAME"} --app agents --repo ${repo}, then re-check.`
-			: missingAgentsVariables.length > 0
-				? `Add values in Settings → Secrets → Agents (${missingAgentsVariables[0] ?? "NAME"}) or via the agents variables API, then re-check.`
-				: missingCodespaces.length > 0
-					? `Add values with e.g. gh secret set ${missingCodespaces[0] ?? "NAME"} --app codespaces --repo ${repo}, then re-check.`
-					: missingDependabot.length > 0
-						? `Add values with e.g. gh secret set ${missingDependabot[0] ?? "NAME"} --app dependabot --repo ${repo}, then re-check.`
-						: missingEnv.length > 0
-							? `Add values with e.g. gh secret set NAME --env ${firstEnv} --repo ${repo}, then re-check.`
-							: missingSecrets.length > 0
-								? `Add values with e.g. gh secret set ${missingSecrets[0] ?? "NAME"} --repo ${repo}, then re-check.`
-								: `Add values with e.g. gh variable set ${missingVariables[0] ?? "NAME"} --repo ${repo}, then re-check.`,
+		command.startsWith("gh ")
+			? `Add values with e.g. ${command} --repo ${repo}, then re-check.`
+			: `Add values in ${command} or via the API, then re-check.`,
 	);
 }

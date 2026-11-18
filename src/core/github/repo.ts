@@ -1,5 +1,6 @@
-import { apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
+import { apiJson, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
+import { diffField, fixOrPass, skipOnError } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
 import { checkBase, failFixable, failManual, pass, skipped } from "#/core/result.js";
 
@@ -16,32 +17,15 @@ const SQUASH_TITLE_TO_API: Record<string, string> = {
 	"commit-title": "COMMIT_OR_PR_TITLE",
 	"pr-title": "PR_TITLE",
 };
+const PR_CREATION_TO_API: Record<string, string> = {
+	"all-users": "all",
+	"collaborators-only": "collaborators_only",
+};
 const SQUASH_MESSAGE_TO_API: Record<string, string> = {
 	blank: "BLANK",
 	"commit-messages": "COMMIT_MESSAGES",
 	"pr-body": "PR_BODY",
 };
-
-interface GeneralState {
-	actual: Record<string, unknown>;
-	body: Record<string, unknown>;
-	diffs: string[];
-	target: string;
-}
-
-function compareField(
-	state: GeneralState,
-	actual: Record<string, unknown>,
-	key: string,
-	want: unknown,
-	label: string,
-): void {
-	state.actual[label] = actual[key];
-	if (!Object.is(actual[key], want)) {
-		state.diffs.push(`${label}: ${String(actual[key])} → ${String(want)}`);
-		state.body[key] = want;
-	}
-}
 
 export async function checkGeneral(
 	blueprint: string,
@@ -51,155 +35,68 @@ export async function checkGeneral(
 	repoInfo: () => Promise<Record<string, unknown>>,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "general", target);
+	const g = upstream;
+	const pr = g.pull_requests;
+	const diffs: string[] = [];
+	const body: Record<string, unknown> = {};
+	let topicsDiff = false;
 	let actual: Record<string, unknown>;
 	try {
 		actual = await repoInfo();
-	} catch (error) {
-		if (isAuthError(error)) {
-			return skipped(
-				base,
-				"cannot read repo settings",
-				"set GITHUB_TOKEN (private repo or rate limit)",
-			);
-		}
-		throw error;
-	}
-	const state: GeneralState = { actual: {}, body: {}, diffs: [], target };
-	compareField(state, actual, "default_branch", upstream.defaultBranch, "default_branch");
-	compareField(state, actual, "has_issues", upstream.features.issues.enabled, "has_issues");
-	compareField(state, actual, "has_wiki", upstream.features.wiki, "has_wiki");
-	compareField(state, actual, "has_projects", upstream.features.projects, "has_projects");
-	compareField(
-		state,
-		actual,
-		"allow_merge_commit",
-		upstream.pullRequests.mergeCommit,
-		"allow_merge_commit",
-	);
-	compareField(
-		state,
-		actual,
-		"allow_squash_merge",
-		upstream.pullRequests.squashMerge,
-		"allow_squash_merge",
-	);
-	compareField(
-		state,
-		actual,
-		"allow_rebase_merge",
-		upstream.pullRequests.rebaseMerge,
-		"allow_rebase_merge",
-	);
-	compareField(
-		state,
-		actual,
-		"allow_auto_merge",
-		upstream.pullRequests.autoMerge,
-		"allow_auto_merge",
-	);
-	compareField(
-		state,
-		actual,
-		"delete_branch_on_merge",
-		upstream.pullRequests.deleteHeadBranches,
-		"delete_branch_on_merge",
-	);
-	compareField(
-		state,
-		actual,
-		"merge_commit_title",
-		MERGE_TITLE_TO_API[upstream.pullRequests.mergeTitle],
-		"merge_commit_title",
-	);
-	compareField(
-		state,
-		actual,
-		"merge_commit_message",
-		MERGE_MESSAGE_TO_API[upstream.pullRequests.mergeMessage],
-		"merge_commit_message",
-	);
-	compareField(
-		state,
-		actual,
-		"squash_merge_commit_title",
-		SQUASH_TITLE_TO_API[upstream.pullRequests.squashTitle],
-		"squash_merge_commit_title",
-	);
-	compareField(
-		state,
-		actual,
-		"squash_merge_commit_message",
-		SQUASH_MESSAGE_TO_API[upstream.pullRequests.squashMessage],
-		"squash_merge_commit_message",
-	);
-	compareField(
-		state,
-		actual,
-		"web_commit_signoff_required",
-		upstream.signoffRequired,
-		"web_commit_signoff_required",
-	);
-	if (upstream.description !== undefined) {
-		compareField(state, actual, "description", upstream.description, "description");
-	}
-	if (upstream.homepage !== undefined) {
-		compareField(state, actual, "homepage", upstream.homepage, "homepage");
-	}
-	if (upstream.isTemplateRepo !== undefined) {
-		compareField(state, actual, "is_template", upstream.isTemplateRepo, "is_template");
-	}
-	if (upstream.allowForking !== undefined) {
-		compareField(state, actual, "allow_forking", upstream.allowForking, "allow_forking");
-	}
-	if (upstream.pullRequests.suggestUpdatingBranches !== undefined) {
-		compareField(
-			state,
-			actual,
-			"allow_update_branch",
-			upstream.pullRequests.suggestUpdatingBranches,
-			"allow_update_branch",
-		);
-	}
-	if (upstream.visibility !== undefined) {
-		compareField(state, actual, "private", upstream.visibility === "private", "private");
-	}
-	if (upstream.archived !== undefined) {
-		compareField(state, actual, "archived", upstream.archived, "archived");
-	}
-	if (upstream.pullRequests.enabled !== undefined) {
-		compareField(
-			state,
-			actual,
-			"has_pull_requests",
-			upstream.pullRequests.enabled,
-			"has_pull_requests",
-		);
-	}
-	let topicsDiff = false;
-	if (upstream.topics !== undefined) {
-		try {
+		if (g.topics !== undefined) {
 			const topicsRes = (await apiJson(repoPath(repo, "/topics"))) as { names?: unknown };
 			const have = Array.isArray(topicsRes.names) ? topicsRes.names.map(String).toSorted() : [];
-			const want = [...upstream.topics].toSorted();
+			const want = [...g.topics].toSorted();
 			if (JSON.stringify(have) !== JSON.stringify(want)) {
-				state.diffs.push(`topics: ${have.join(", ") || "<none>"} → ${want.join(", ") || "<none>"}`);
+				diffs.push(`topics: ${have.join(", ") || "<none>"} → ${want.join(", ") || "<none>"}`);
 				topicsDiff = true;
 			}
-		} catch (error) {
-			if (isAuthError(error)) {
-				return skipped(base, "cannot read topics", "set GITHUB_TOKEN (private repo or rate limit)");
-			}
-			throw error;
 		}
+	} catch (error) {
+		return skipOnError(error, base, "repo settings");
 	}
-	let discussionsNote = "";
-	if (!Object.is(actual["has_discussions"], upstream.features.discussions)) {
-		discussionsNote = `has_discussions: ${String(actual["has_discussions"])} → ${String(upstream.features.discussions)} (set in Settings → General → Features)`;
+	const fields: Array<[string, unknown]> = [
+		["description", g.description],
+		["homepage", g.homepage],
+		["is_template", g.template_repository],
+		["default_branch", g.default_branch],
+		["has_wiki", g.features.wikis.enabled],
+		["has_issues", g.features.issues.enabled],
+		["has_projects", g.features.projects],
+		["has_pull_requests", pr.enabled],
+		[
+			"pull_request_creation_policy",
+			pr.permissions === undefined ? undefined : PR_CREATION_TO_API[pr.permissions],
+		],
+		["allow_merge_commit", pr.merge_commit],
+		["merge_commit_title", MERGE_TITLE_TO_API[pr.merge_title]],
+		["merge_commit_message", MERGE_MESSAGE_TO_API[pr.merge_message]],
+		["allow_squash_merge", pr.squash_merge],
+		["squash_merge_commit_title", SQUASH_TITLE_TO_API[pr.squash_title]],
+		["squash_merge_commit_message", SQUASH_MESSAGE_TO_API[pr.squash_message]],
+		["allow_rebase_merge", pr.rebase_merge],
+		["allow_update_branch", pr.suggest_updating_branches],
+		["allow_auto_merge", pr.auto_merge],
+		["delete_branch_on_merge", pr.delete_head_branches],
+		["web_commit_signoff_required", g.commits.signoff_required],
+		[
+			"private",
+			g.danger_zone?.visibility === undefined ? undefined : g.danger_zone.visibility === "private",
+		],
+		["allow_forking", g.danger_zone?.allow_forking],
+		["archived", g.danger_zone?.archived],
+	];
+	for (const [key, want] of fields) {
+		diffField(diffs, body, actual, key, want);
 	}
-	if (state.diffs.length === 0 && discussionsNote === "") {
+	// has_discussions has no PATCH field in the REST description: report it, fix in the UI.
+	const discussionsNote = Object.is(actual["has_discussions"], g.features.discussions)
+		? ""
+		: `has_discussions: ${String(actual["has_discussions"])} → ${String(g.features.discussions)} (set in Settings → General → Features)`;
+	if (diffs.length === 0 && discussionsNote === "") {
 		return pass(base, "repo settings match", "repo settings match");
 	}
-	if (state.diffs.length === 0) {
+	if (diffs.length === 0) {
 		return failManual(
 			base,
 			discussionsNote,
@@ -208,26 +105,19 @@ export async function checkGeneral(
 		);
 	}
 	const steps: GithubApiStep[] = [];
-	if (Object.keys(state.body).length > 0) {
-		steps.push({ body: state.body, method: "PATCH", path: repoPath(repo, "") });
+	if (Object.keys(body).length > 0) {
+		steps.push({ body, method: "PATCH", path: repoPath(repo, "") });
 	}
-	if (topicsDiff && upstream.topics !== undefined) {
-		steps.push({
-			body: { names: upstream.topics },
-			method: "PUT",
-			path: repoPath(repo, "/topics"),
-		});
+	if (topicsDiff && g.topics !== undefined) {
+		steps.push({ body: { names: g.topics }, method: "PUT", path: repoPath(repo, "/topics") });
 	}
-	const fix: GithubApiFix = { kind: "github-api", label: `github PATCH ${repo}`, steps };
-	const result = failFixable(
+	const result = fixOrPass(
 		base,
-		discussionsNote === ""
-			? state.diffs.join("; ")
-			: `${state.diffs.join("; ")}; ${discussionsNote}`,
+		discussionsNote === "" ? diffs : [...diffs, discussionsNote],
+		steps,
+		`github PATCH ${repo}`,
 		"repo settings match",
-		fix,
 	);
-	// has_discussions has no documented PATCH field; the fix covers the rest.
 	result.hint =
 		discussionsNote === ""
 			? "Run `fix` (needs GITHUB_TOKEN with admin scope)."
@@ -289,13 +179,14 @@ export async function checkCodeowners(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "codeowners", target);
-	if (upstream.codeowners === "") {
+	const codeowners = upstream.codeowners ?? "";
+	if (codeowners === "") {
 		return pass(base, "codeowners not required", "codeowners match");
 	}
 	const candidates =
-		upstream.codeowners === ".github/CODEOWNERS"
+		codeowners === ".github/CODEOWNERS"
 			? [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"]
-			: [upstream.codeowners];
+			: [codeowners];
 	let found: Array<{ exists: boolean; path: string }>;
 	try {
 		found = await Promise.all(
@@ -318,8 +209,8 @@ export async function checkCodeowners(
 	return failManual(
 		base,
 		"<missing>",
-		`${upstream.codeowners} exists`,
-		`Create ${upstream.codeowners} with per-team reviewers, then re-check.`,
+		`${codeowners} exists`,
+		`Create ${codeowners} with per-team reviewers, then re-check.`,
 	);
 }
 
@@ -330,7 +221,7 @@ export async function checkIssueTemplates(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "issue-templates", target);
-	if (!upstream.features.issueTemplates) {
+	if (upstream.issue_templates !== true) {
 		return pass(base, "issue templates not required", "issue templates match");
 	}
 	const candidates = [
@@ -368,42 +259,6 @@ export async function checkIssueTemplates(
 	);
 }
 
-export async function checkRulesets(
-	blueprint: string,
-	repo: string,
-	upstream: GithubSettings,
-	target: string,
-): Promise<CheckResult> {
-	const base = checkBase("github", blueprint, "rulesets", target);
-	if (upstream.rulesets.length === 0) {
-		return pass(base, "no rulesets required", "rulesets match");
-	}
-	let current: Array<{ enforcement?: unknown; name?: unknown }>;
-	try {
-		current = (await apiJsonPaged(
-			repoPath(repo, "/rulesets?includes_parents=true&per_page=100"),
-		)) as Array<{ enforcement?: unknown; name?: unknown }>;
-	} catch (error) {
-		if (isAuthError(error)) {
-			return skipped(base, "cannot list rulesets", "set GITHUB_TOKEN (private repo or rate limit)");
-		}
-		throw error;
-	}
-	const active = new Set(
-		current.filter((entry) => entry.enforcement === "active").map((entry) => String(entry.name)),
-	);
-	const missing = upstream.rulesets.filter((name) => !active.has(name));
-	if (missing.length === 0) {
-		return pass(base, `active: ${upstream.rulesets.join(", ")}`, "rulesets match");
-	}
-	return failManual(
-		base,
-		`missing or inactive: ${missing.join(", ")}`,
-		`active: ${upstream.rulesets.join(", ")}`,
-		`Create/activate ruleset(s) ${missing.join(", ")} in Settings → Rules, then re-check.`,
-	);
-}
-
 // General → repository custom properties. Schemata are org-level (manage them
 // in the org UI); values fix via PATCH /properties/values (replace-all).
 export async function checkCustomProperties(
@@ -413,7 +268,7 @@ export async function checkCustomProperties(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "custom-properties", target);
-	const want = upstream.customProperties ?? {};
+	const want = upstream.custom_properties ?? {};
 	const keys = Object.keys(want);
 	if (keys.length === 0) {
 		return pass(base, "no custom properties required", "custom properties match");
@@ -455,74 +310,4 @@ export async function checkCustomProperties(
 		],
 	};
 	return failFixable(base, `drifted: ${diffs.join(", ")}`, "custom properties match", fix);
-}
-
-// Rules → merge queue policy (rulesets only; there is no repo PATCH field).
-// Check reads rulesets for a merge_queue rule; authoring stays manual in
-// Settings → Rules, like the rulesets check itself.
-export async function checkMergeQueue(
-	blueprint: string,
-	repo: string,
-	upstream: GithubSettings,
-	target: string,
-): Promise<CheckResult> {
-	const base = checkBase("github", blueprint, "merge-queue", target);
-	const want = upstream.mergeQueue;
-	if (want === undefined) {
-		return pass(base, "merge queue not managed", "merge queue match");
-	}
-	let rules: Array<{ parameters?: Record<string, unknown>; type?: unknown }>;
-	try {
-		const items = (await apiJsonPaged(
-			repoPath(repo, "/rulesets?includes_parents=true&per_page=100"),
-		)) as Array<{ rules?: Array<{ parameters?: Record<string, unknown>; type?: unknown }> }>;
-		rules = items.flatMap((entry) => entry.rules ?? []);
-	} catch (error) {
-		if (isAuthError(error)) {
-			return skipped(base, "cannot list rulesets", "set GITHUB_TOKEN (private repo or rate limit)");
-		}
-		throw error;
-	}
-	const found = rules.find((rule) => rule.type === "merge_queue")?.parameters ?? undefined;
-	if (!want.enabled) {
-		if (found === undefined) {
-			return pass(base, "merge queue disabled", "merge queue match");
-		}
-		return failManual(
-			base,
-			"merge queue rule present",
-			"merge queue disabled",
-			"Remove the merge_queue rule from the ruleset in Settings → Rules, then re-check.",
-		);
-	}
-	if (found === undefined) {
-		return failManual(
-			base,
-			"merge queue: <no rule>",
-			"merge queue enabled",
-			"Add a merge_queue rule to a ruleset in Settings → Rules, then re-check.",
-		);
-	}
-	const diffs: string[] = [];
-	if (want.method !== undefined) {
-		const have = String(found["merge_method"] ?? "").toLowerCase();
-		if (have !== want.method) {
-			diffs.push(`method: ${have || "<unset>"} → ${want.method}`);
-		}
-	}
-	if (want.maxEntriesToMerge !== undefined) {
-		const have = found["max_entries_to_merge"];
-		if (have !== want.maxEntriesToMerge) {
-			diffs.push(`max_entries: ${String(have)} → ${String(want.maxEntriesToMerge)}`);
-		}
-	}
-	if (diffs.length === 0) {
-		return pass(base, "merge queue match", "merge queue match");
-	}
-	return failManual(
-		base,
-		diffs.join("; "),
-		"merge queue match",
-		`Edit the merge_queue rule (${diffs.join("; ")}) in Settings → Rules, then re-check.`,
-	);
 }

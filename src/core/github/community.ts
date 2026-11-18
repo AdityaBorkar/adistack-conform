@@ -1,5 +1,6 @@
-import { ApiError, apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
+import { apiJson, apiJsonPaged, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
+import { skipOnError } from "#/core/github/shared.js";
 import type { CheckResult } from "#/core/result.js";
 import { checkBase, failManual, pass, skipped } from "#/core/result.js";
 
@@ -25,17 +26,11 @@ export async function checkCommunity(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "community", target);
-	const want = upstream.community;
+	const want = upstream;
 	if (
-		want === undefined ||
-		![
-			want.prTemplate,
-			want.funding,
-			want.license,
-			want.codeOfConduct,
-			want.readme,
-			want.dependabotConfig,
-		].some((entry) => entry === true)
+		![want.pr_template, want.funding, want.license, want.code_of_conduct, want.readme].some(
+			(entry) => entry === true,
+		)
 	) {
 		return pass(base, "no community files required", "community match");
 	}
@@ -47,17 +42,12 @@ export async function checkCommunity(
 				"docs/PULL_REQUEST_TEMPLATE.md",
 			],
 			label: "PR template",
-			on: want.prTemplate,
+			on: want.pr_template,
 		},
 		{ candidates: [".github/FUNDING.yml"], label: "funding", on: want.funding },
 		{ candidates: ["LICENSE", "LICENSE.md", "LICENSE.txt"], label: "license", on: want.license },
-		{ candidates: ["CODE_OF_CONDUCT.md"], label: "code of conduct", on: want.codeOfConduct },
+		{ candidates: ["CODE_OF_CONDUCT.md"], label: "code of conduct", on: want.code_of_conduct },
 		{ candidates: ["README.md"], label: "readme", on: want.readme },
-		{
-			candidates: [".github/dependabot.yml"],
-			label: "dependabot config",
-			on: want.dependabotConfig,
-		},
 	];
 	try {
 		const checks = await Promise.all(
@@ -91,93 +81,76 @@ export async function checkCommunity(
 	}
 }
 
-// Security → Deploy keys (/settings/keys). Presence by title; key material is
-// write-only and adding keys is high-risk, so the fix stays manual even
-// though POST /keys exists.
+// Security and quality → Deploy keys (/settings/keys). Presence by title plus
+// read-only flag; key material is write-only and there is no update API
+// (re-adding a key needs the key), so the fix stays manual.
 export async function checkDeployKeys(
 	blueprint: string,
 	repo: string,
 	upstream: GithubSettings,
 	target: string,
-): Promise<CheckResult> {
+): Promise<CheckResult | undefined> {
+	const want = upstream.deploy_keys;
+	if (want === undefined) {
+		return undefined;
+	}
 	const base = checkBase("github", blueprint, "deploy-keys", target);
-	const want = upstream.deployKeys ?? [];
-	if (want.length === 0) {
-		return pass(base, "no deploy keys required", "deploy keys match");
-	}
-	let titles: string[];
+	let live: Array<{ read_only?: unknown; title?: unknown }>;
 	try {
-		const items = (await apiJsonPaged(repoPath(repo, "/keys"))) as Array<{ title?: unknown }>;
-		titles = items.map((entry) => String(entry.title));
+		live = (await apiJsonPaged(repoPath(repo, "/keys"))) as typeof live;
 	} catch (error) {
-		if (isAuthError(error)) {
-			return skipped(
-				base,
-				"cannot list deploy keys",
-				"set GITHUB_TOKEN (private repo or rate limit)",
-			);
-		}
-		throw error;
+		return skipOnError(error, base, "deploy keys");
 	}
-	const missing = want.filter((title) => !titles.includes(title));
-	if (missing.length === 0) {
-		return pass(base, `deploy keys: ${want.join(", ")}`, "deploy keys match");
+	const diffs = want.flatMap((key) => {
+		const found = live.find((entry) => entry.title === key.title);
+		if (found === undefined) {
+			return [`missing: ${key.title}`];
+		}
+		return key.read_only === undefined || found.read_only === key.read_only
+			? []
+			: [`${key.title} read_only: ${String(found.read_only)} → ${String(key.read_only)}`];
+	});
+	const expected = `deploy keys: ${want.map((key) => key.title).join(", ") || "<none>"}`;
+	if (diffs.length === 0) {
+		return pass(base, expected, expected);
 	}
 	return failManual(
 		base,
-		`missing: ${missing.join(", ")}`,
-		`deploy keys: ${want.join(", ")}`,
-		`Add deploy key(s) ${missing.join(", ")} in Settings → Deploy keys, then re-check.`,
+		diffs.join("; "),
+		expected,
+		"Add or re-add the deploy key(s) in Settings → Deploy keys (Allow write access = !read_only), then re-check.",
 	);
 }
 
-// Code and automation → Tags → Tag protection (/settings/tags). The legacy
-// tags/protection API is closing down in favour of Repository Rulesets, so
-// this check is read-only with a manual hint to author a tag ruleset.
-export async function checkTagProtection(
+// Advanced Security → Dependabot version updates: on means .github/dependabot.yml exists.
+export async function checkDependabotVersionUpdates(
 	blueprint: string,
 	repo: string,
 	upstream: GithubSettings,
 	target: string,
-): Promise<CheckResult> {
-	const base = checkBase("github", blueprint, "tag-protection", target);
-	const want = upstream.tagProtection ?? [];
-	if (want.length === 0) {
-		return pass(base, "no tag protection required", "tag protection match");
+): Promise<CheckResult | undefined> {
+	const want = upstream.advanced_security.dependabot.version_updates;
+	if (want === undefined) {
+		return undefined;
 	}
-	let patterns: string[];
+	const base = checkBase("github", blueprint, "dependabot-version-updates", target);
+	let found: string | undefined;
 	try {
-		const items = (await apiJson(repoPath(repo, "/tags/protection"), {
-			allowStatuses: [404],
-		})) as Array<{ pattern?: unknown }> | undefined;
-		patterns = Array.isArray(items) ? items.map((entry) => String(entry.pattern)) : [];
+		found = await firstExisting(repo, [".github/dependabot.yml", ".github/dependabot.yaml"]);
 	} catch (error) {
-		if (error instanceof ApiError && (error.status === 404 || error.status === 410)) {
-			return failManual(
-				base,
-				`tag protection API unavailable (want ${want.join(", ")})`,
-				"tag protection match",
-				`Create tag protection via Rulesets in Settings → Rules (patterns ${want.join(", ")}), then re-check.`,
-			);
-		}
-		if (isAuthError(error)) {
-			return skipped(
-				base,
-				"cannot read tag protection",
-				"set GITHUB_TOKEN (private repo or rate limit)",
-			);
-		}
-		throw error;
+		return skipOnError(error, base, "dependabot.yml");
 	}
-	const missing = want.filter((pattern) => !patterns.includes(pattern));
-	if (missing.length === 0) {
-		return pass(base, `tag protection: ${want.join(", ")}`, "tag protection match");
+	const expected = `version updates ${want ? "on" : "off"}`;
+	if ((found !== undefined) === want) {
+		return pass(base, expected, expected);
 	}
 	return failManual(
 		base,
-		`missing: ${missing.join(", ")}`,
-		`tag protection: ${want.join(", ")}`,
-		`Create tag ruleset pattern(s) ${missing.join(", ")} in Settings → Rules, then re-check (legacy tag API is closing down).`,
+		`version updates ${want ? "off" : "on"}`,
+		expected,
+		want
+			? "Commit .github/dependabot.yml (Settings → Advanced Security → Dependabot version updates → Create dependabot.yml), then re-check."
+			: "Delete .github/dependabot.yml, then re-check.",
 	);
 }
 
@@ -191,7 +164,7 @@ export async function checkCodespaces(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "codespaces", target);
-	if (upstream.codespaces?.devcontainerRequired !== true) {
+	if (upstream.codespaces?.devcontainer_required !== true) {
 		return pass(base, "no codespaces files required", "codespaces match");
 	}
 	try {

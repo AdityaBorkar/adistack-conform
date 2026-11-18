@@ -26,8 +26,7 @@ bun run check:conform                # dogfood self-check (bun dev check); NOT p
 
 ## Release
 
-- Release branch is `main`. Every PR needs a `.changeset/*.md` entry or merging releases nothing. Write it by hand (there is no local changesets CLI): frontmatter `"@adistack/conform": patch|minor|major` plus a summary (`changedFilePatterns` covers `src/*`, `skills/*`, `package.json`, excludes `!**/*.test.ts`). Merging to `main` opens/updates the `changeset-release/` version PR, whose merge publishes to npm (`release.yml`).
-- `/conform.json`, `/package.json`, `/bun.lock` need owner review (`CODEOWNERS`).
+- Release branch is `main`. Every PR needs a `.changeset/*.md` entry or merging releases nothing. Hand-write one with frontmatter `"@adistack/conform": patch|minor|major` plus a summary (`changedFilePatterns` covers `src/*`, `skills/*`, `package.json`, excludes `!**/*.test.ts`). Merging to `main` opens/updates the `changeset-release/` version PR, whose merge publishes to npm (`release.yml`).
 
 ## Layout
 

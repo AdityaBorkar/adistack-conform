@@ -1,592 +1,1136 @@
 import * as z from "zod";
 
-// Field order follows the repo Settings sidebar top to bottom (see ADR-0014):
-// General (incl. Releases) → Access (Collaborators, Moderation: interaction +
-// pull-request limits, code review limits via reviews.restrictPushes) → Branches
-// → Tags → Rules (rulesets, required workflows, merge queue) → Actions
-// (permissions, runners, policies, OIDC) → Webhooks → Copilot suite →
-// Suggestions (planning) → Environments → Codespaces → Pages → Security
-// (Advanced Security, deploy keys) → Secrets and variables (Actions, Agents,
-// Codespaces, Dependabot, per-environment) → Community files → Integrations
-// (GitHub Apps, autolinks, notifications), then Releases.
-// New fields stay optional so old blueprints still parse. Name/transfer/delete
-// are intentionally not fields: rename breaks the target, transfer/delete are
-// destructive — do them in the UI dialogs (see SKILL.md dialog mapping).
+// Flat top-level manifest in Settings sidebar order (ADR 0015): general
+// fields (/settings) → access (/settings/access + Moderation) → code,
+// planning, and automation fields (Rulesets, Branches, Actions, Webhooks,
+// Copilot, Planning, Environments, Codespaces, Pages) → security and quality
+// fields (Advanced Security, Deploy keys, Secrets and variables) →
+// integrations (GitHub Apps, Autolinks, Email notifications) → community
+// files (repo contents, not a Settings page). Key order below is that
+// sidebar order (sort-keys is off for this file).
+// Each leaf's describe names its UI path and how conform handles it:
+// API = checked and fixed via REST; READ = checked via REST, fix is manual;
+// UI = no API, passes when off/default, otherwise skipped with a Settings hint.
+// Optional (omit = not managed, no result). Name/transfer/delete are not
+// fields: rename breaks the target, transfer/delete are destructive.
+
+const permission = z.enum(["pull", "triage", "push", "maintain", "admin"]);
+const names = z.array(z.string().min(1));
+const audience = z.enum(["all-users", "collaborators-only"]);
+
+const general = z
+	.object({
+		description: z
+			.string()
+			.max(350)
+			.describe("General → About → Description. API: PATCH description. Omit to skip.")
+			.optional(),
+		homepage: z
+			.string()
+			.max(2048)
+			.describe("General → About → Website. API: PATCH homepage (empty clears). Omit to skip.")
+			.optional(),
+		topics: z
+			.array(z.string().min(1).max(50))
+			.max(20)
+			.describe("General → About → Topics. API: PUT /topics (replace-all). Omit to skip.")
+			.optional(),
+		template_repository: z
+			.boolean()
+			.describe("General → Template repository. API: PATCH is_template. Omit to skip.")
+			.optional(),
+		default_branch: z
+			.string()
+			.min(1)
+			.describe("General → Default branch. API: PATCH default_branch."),
+		releases: z
+			.object({
+				immutable: z
+					.boolean()
+					.describe(
+						"General → Releases → Enable release immutability. API: PUT/DELETE /immutable-releases.",
+					),
+			})
+			.strict()
+			.describe("General → Releases."),
+		social_preview: z
+			.boolean()
+			.describe(
+				"General → Social preview (custom image set). UI: pass when false, skipped with a hint when true.",
+			),
+		features: z
+			.object({
+				wikis: z
+					.object({
+						enabled: z.boolean().describe("General → Features → Wikis. API: PATCH has_wiki."),
+						restrict_editing_to_collaborators: z
+							.boolean()
+							.describe(
+								"General → Features → Wikis → Restrict editing to collaborators only. UI: pass when false.",
+							)
+							.optional(),
+					})
+					.strict()
+					.describe("General → Features → Wikis."),
+				issues: z
+					.object({
+						enabled: z.boolean().describe("General → Features → Issues. API: PATCH has_issues."),
+						permissions: audience
+							.describe(
+								"General → Features → Issues → Issue permissions (creation allowed by). UI: skipped with a hint when set.",
+							)
+							.optional(),
+						auto_close: z
+							.boolean()
+							.describe(
+								"General → Issues → Auto-close issues with merged linked pull requests. UI: skipped with a hint when set.",
+							)
+							.optional(),
+					})
+					.strict()
+					.describe("General → Features → Issues (plus the page's Issues section)."),
+				sponsorships: z
+					.boolean()
+					.describe(
+						"General → Features → Sponsorships (Sponsor button). UI: pass when false, skipped with a hint when true.",
+					),
+				preserve_repository: z
+					.boolean()
+					.describe(
+						"General → Features → Preserve this repository (Archive Program). UI: skipped with a hint when set.",
+					)
+					.optional(),
+				discussions: z
+					.boolean()
+					.describe(
+						"General → Features → Discussions. READ: has_discussions (no PATCH field; toggle in the UI).",
+					),
+				projects: z.boolean().describe("General → Features → Projects. API: PATCH has_projects."),
+			})
+			.strict()
+			.describe("General → Features, in page order."),
+		pull_requests: z
+			.object({
+				enabled: z
+					.boolean()
+					.describe(
+						"General → Features → Pull requests. API: PATCH has_pull_requests. Omit to skip.",
+					)
+					.optional(),
+				permissions: audience
+					.describe(
+						"General → Features → Pull requests → PR permissions (creation allowed by). API: PATCH pull_request_creation_policy. Omit to skip.",
+					)
+					.optional(),
+				merge_commit: z
+					.boolean()
+					.describe("General → Pull Requests → Allow merge commits. API: allow_merge_commit."),
+				merge_title: z
+					.enum(["merge-message", "pr-title"])
+					.describe(
+						"General → Pull Requests → merge commit default title. API: merge_commit_title.",
+					),
+				merge_message: z
+					.enum(["blank", "pr-body", "pr-title"])
+					.describe(
+						"General → Pull Requests → merge commit default message. API: merge_commit_message.",
+					),
+				squash_merge: z
+					.boolean()
+					.describe("General → Pull Requests → Allow squash merging. API: allow_squash_merge."),
+				squash_title: z
+					.enum(["commit-title", "pr-title"])
+					.describe(
+						"General → Pull Requests → squash default title. API: squash_merge_commit_title.",
+					),
+				squash_message: z
+					.enum(["blank", "commit-messages", "pr-body"])
+					.describe(
+						"General → Pull Requests → squash default message. API: squash_merge_commit_message.",
+					),
+				rebase_merge: z
+					.boolean()
+					.describe("General → Pull Requests → Allow rebase merging. API: allow_rebase_merge."),
+				suggest_updating_branches: z
+					.boolean()
+					.describe(
+						"General → Pull Requests → Always suggest updating pull request branches. API: allow_update_branch. Omit to skip.",
+					)
+					.optional(),
+				auto_merge: z
+					.boolean()
+					.describe("General → Pull Requests → Allow auto-merge. API: allow_auto_merge."),
+				delete_head_branches: z
+					.boolean()
+					.describe(
+						"General → Pull Requests → Automatically delete head branches. API: delete_branch_on_merge.",
+					),
+			})
+			.strict()
+			.describe("General → Features → Pull requests and the Pull Requests section."),
+		commits: z
+			.object({
+				signoff_required: z
+					.boolean()
+					.describe(
+						"General → Commits → Require contributors to sign off on web-based commits. API: web_commit_signoff_required.",
+					),
+				comments_allowed: z
+					.boolean()
+					.describe(
+						"General → Commits → Allow comments on individual commits. UI: pass when false.",
+					),
+			})
+			.strict()
+			.describe("General → Commits."),
+		archives: z
+			.object({
+				include_lfs_objects: z
+					.boolean()
+					.describe(
+						"General → Archives → Include Git LFS objects in archives. UI: pass when false.",
+					),
+			})
+			.strict()
+			.describe("General → Archives."),
+		pushes: z
+			.object({
+				update_limit: z
+					.number()
+					.int()
+					.min(1)
+					.max(1000)
+					.nullable()
+					.describe(
+						"General → Pushes → Limit how many branches and tags can be updated in a single push. UI: null (unlimited) passes.",
+					),
+			})
+			.strict()
+			.describe("General → Pushes."),
+		danger_zone: z
+			.object({
+				visibility: z
+					.enum(["public", "private"])
+					.describe("Danger Zone → Change visibility. API: PATCH private. Omit to skip.")
+					.optional(),
+				allow_forking: z
+					.boolean()
+					.describe("Danger Zone → Allow forking (private repos). API: PATCH allow_forking.")
+					.optional(),
+				branch_protection_rules_disabled: z
+					.boolean()
+					.describe(
+						"Danger Zone → Disable branch protection rules. UI: pass when false, skipped with a hint when true.",
+					)
+					.optional(),
+				archived: z
+					.boolean()
+					.describe("Danger Zone → Archive this repository. API: PATCH archived. Omit to skip.")
+					.optional(),
+			})
+			.strict()
+			.describe(
+				"General → Danger Zone. Transfer/delete are destructive and have no field. Omit to skip.",
+			)
+			.optional(),
+		custom_properties: z
+			.record(z.string().min(1), z.union([z.string(), z.array(z.string())]))
+			.describe(
+				"General → Custom properties values (schemata are org-level). API: PATCH /properties/values. Omit to skip.",
+			)
+			.optional(),
+	})
+	.strict()
+	.describe(
+		"Settings → General (/settings): About, Template, Default branch, Releases, Social preview, Features, Pull Requests, Commits, Archives, Pushes, Danger Zone.",
+	);
+
+const access = z
+	.object({
+		collaborators: z
+			.array(z.object({ login: z.string().min(1), permission }).strict())
+			.describe(
+				"Access → Collaborators. API: PUT /collaborators/{login} (extras ignored). Omit to skip.",
+			)
+			.optional(),
+		teams: z
+			.array(z.object({ slug: z.string().min(1), permission }).strict())
+			.describe(
+				"Access → Collaborators and teams (org repos). API: PUT org team repo permission (extras ignored). Omit to skip.",
+			)
+			.optional(),
+		moderation: z
+			.object({
+				interaction_limits: z
+					.object({
+						limit: z
+							.enum(["off", "existing_users", "contributors_only", "collaborators_only"])
+							.describe(
+								"Moderation → Interaction limits → which users may interact. API: PUT /interaction-limits; off = DELETE.",
+							),
+						expiry: z
+							.enum(["one_day", "three_days", "one_week", "one_month", "six_months"])
+							.describe(
+								"Moderation → Interaction limits → duration (sent on fix; not compared, the live value is a timestamp).",
+							)
+							.optional(),
+					})
+					.strict()
+					.describe("Access → Moderation → Interaction limits (time-boxed). Omit to skip.")
+					.optional(),
+				pull_request_limits: z
+					.object({
+						max_open: z
+							.number()
+							.int()
+							.min(1)
+							.max(100)
+							.describe("Maximum open pull requests per user without write access.")
+							.optional(),
+						count_drafts: z
+							.boolean()
+							.describe("Count draft pull requests toward the limit.")
+							.optional(),
+						min_account_age_days: z
+							.number()
+							.int()
+							.min(1)
+							.describe("Exemption: minimum account age in days.")
+							.optional(),
+						min_merged_prs: z
+							.number()
+							.int()
+							.min(1)
+							.describe("Exemption: minimum merged pull requests in this repository.")
+							.optional(),
+					})
+					.strict()
+					.describe(
+						"Access → Moderation → Interaction limits → Pull request limits. UI: skipped with a hint when set. Omit to skip.",
+					)
+					.optional(),
+				code_review_limits: z
+					.object({
+						restrict_to_explicit_access: z
+							.boolean()
+							.describe(
+								"Moderation → Code review limits → Limit to users explicitly granted read or higher access. UI: pass when false.",
+							),
+					})
+					.strict()
+					.describe("Access → Moderation → Code review limits. Omit to skip.")
+					.optional(),
+			})
+			.strict()
+			.describe("Access → Moderation: Interaction limits, Pull request limits, Code review limits.")
+			.optional(),
+	})
+	.strict()
+	.describe("Settings → Access (/settings/access): Collaborators, Moderation. Omit to skip.");
+
+const threshold = {
+	alerts: z.enum(["none", "errors", "errors_and_warnings", "all"]),
+	security: z.enum(["none", "critical", "high_or_higher", "medium_or_higher", "all"]),
+};
+
+const ruleset = z
+	.object({
+		name: z.string().min(1).describe("Ruleset Name; live rulesets match by name."),
+		target: z.enum(["branch", "tag"]).describe("New branch ruleset or New tag ruleset."),
+		enforcement: z
+			.enum(["active", "disabled", "evaluate"])
+			.describe("Enforcement status (evaluate is Enterprise-only)."),
+		bypass_actors: z
+			.array(
+				z
+					.object({
+						actor_type: z.enum([
+							"RepositoryRole",
+							"Team",
+							"Integration",
+							"DeployKey",
+							"OrganizationAdmin",
+							"User",
+						]),
+						actor_id: z
+							.number()
+							.int()
+							.nullable()
+							.describe("Actor id (RepositoryRole admin 5, maintain 2, write 4).")
+							.optional(),
+						bypass_mode: z.enum(["always", "pull_request", "exempt"]),
+					})
+					.strict(),
+			)
+			.describe("Bypass list. Omit to leave the live list alone.")
+			.optional(),
+		include: names.describe(
+			"Target branches/tags → include (~DEFAULT_BRANCH, ~ALL, refs/heads/<pattern>, refs/tags/<pattern>).",
+		),
+		exclude: names.describe("Target branches/tags → exclude patterns. Omit to skip.").optional(),
+		rules: z
+			.object({
+				creation: z.literal(true).describe("Restrict creations.").optional(),
+				update: z.literal(true).describe("Restrict updates.").optional(),
+				deletion: z.literal(true).describe("Restrict deletions.").optional(),
+				required_linear_history: z.literal(true).describe("Require linear history.").optional(),
+				required_signatures: z.literal(true).describe("Require signed commits.").optional(),
+				non_fast_forward: z.literal(true).describe("Block force pushes.").optional(),
+				required_deployments: names
+					.describe("Require deployments to succeed → environment names.")
+					.optional(),
+				pull_request: z
+					.object({
+						required_approvals: z.number().int().min(0).max(10),
+						dismiss_stale: z.boolean(),
+						require_code_owner: z.boolean(),
+						require_last_push_approval: z.boolean(),
+						require_conversation_resolution: z.boolean(),
+						require_extra_approval_for_copilot: z
+							.boolean()
+							.describe("Require an additional approval for unattributed Copilot pull requests.")
+							.optional(),
+						allowed_merge_methods: z.array(z.enum(["merge", "squash", "rebase"])).min(1),
+					})
+					.strict()
+					.describe("Require a pull request before merging (branch rulesets only).")
+					.optional(),
+				required_status_checks: z
+					.object({
+						strict: z.boolean().describe("Require branches to be up to date before merging."),
+						do_not_enforce_on_create: z
+							.boolean()
+							.describe("Do not require status checks on creation.")
+							.optional(),
+						checks: z.array(
+							z
+								.object({
+									context: z.string().min(1),
+									integration_id: z.number().int().optional(),
+								})
+								.strict(),
+						),
+					})
+					.strict()
+					.describe("Require status checks to pass.")
+					.optional(),
+				code_scanning: z
+					.array(
+						z
+							.object({
+								tool: z.string().min(1),
+								security_alerts: threshold.security,
+								alerts: threshold.alerts,
+							})
+							.strict(),
+					)
+					.describe("Require code scanning results → tools and alert thresholds.")
+					.optional(),
+				code_quality: z
+					.object({ severity: z.enum(["errors", "warnings", "notes", "all"]) })
+					.strict()
+					.describe("Require code quality results.")
+					.optional(),
+				code_coverage: z
+					.object({
+						minimum_coverage: z.number().min(0).max(100).optional(),
+						max_coverage_drop: z.number().min(0).max(100).optional(),
+					})
+					.strict()
+					.describe("Restrict code coverage.")
+					.optional(),
+				copilot_code_review: z
+					.object({ review_on_push: z.boolean(), review_draft_pull_requests: z.boolean() })
+					.strict()
+					.describe("Automatically request Copilot code review.")
+					.optional(),
+				merge_queue: z
+					.object({
+						merge_method: z.enum(["MERGE", "SQUASH", "REBASE"]),
+						grouping_strategy: z.enum(["ALLGREEN", "HEADGREEN"]),
+						max_entries_to_build: z.number().int(),
+						max_entries_to_merge: z.number().int(),
+						min_entries_to_merge: z.number().int(),
+						min_entries_to_merge_wait_minutes: z.number().int(),
+						check_response_timeout_minutes: z.number().int(),
+					})
+					.strict()
+					.describe("Require merge queue (org repos only).")
+					.optional(),
+			})
+			.strict()
+			.describe("Rules. Every key is optional; an absent rule must not be present live."),
+	})
+	.strict();
+
+const branchProtection = z
+	.object({
+		required_status_checks: names.describe(
+			"Require status checks to pass → required check contexts. API: PUT /branches/{b}/protection.",
+		),
+		strict_status_checks: z
+			.boolean()
+			.describe(
+				"Require branches to be up to date before merging. API: required_status_checks.strict.",
+			)
+			.optional(),
+		reviews: z
+			.object({
+				required_approvals: z.number().int().min(0).max(10),
+				dismiss_stale: z.boolean(),
+				require_code_owner: z.boolean(),
+				require_conversation_resolution: z.boolean(),
+				require_signed_commits: z
+					.boolean()
+					.describe("Require signed commits. API: POST/DELETE protection/required_signatures."),
+				restrict_pushes: z
+					.boolean()
+					.describe(
+						"Restrict who can push (org repos). API: protection restrictions; enabling needs an allowlist in the UI.",
+					),
+			})
+			.strict()
+			.describe("Require a pull request before merging + signed commits + push restrictions."),
+		require_last_push_approval: z
+			.boolean()
+			.describe("Require approval of the most recent reviewable push. API.")
+			.optional(),
+		require_linear_history: z.boolean().describe("Require linear history. API.").optional(),
+		allow_force_pushes: z.boolean().describe("Allow force pushes. API.").optional(),
+		allow_deletions: z.boolean().describe("Allow deletions. API.").optional(),
+		enforce_admins: z
+			.boolean()
+			.describe("Do not allow bypassing the above settings. API.")
+			.optional(),
+		lock_branch: z.boolean().describe("Lock branch. API.").optional(),
+	})
+	.strict()
+	.describe(
+		"Branches → classic branch protection on default_branch. Omit when the branch is protected by rulesets only.",
+	);
+
+const allowlist = z
+	.object({
+		firewall: z.boolean().describe("Enable firewall.").optional(),
+		recommended_allowlist: z.boolean().describe("Recommended allowlist.").optional(),
+		custom_allowlist: names.describe("Custom allowlist rules.").optional(),
+	})
+	.strict();
+
+const copilot = z
+	.object({
+		code_review: z
+			.object({
+				review_effort: z
+					.enum(["inherit", "adaptive", "lite", "balanced", "max"])
+					.describe("General → Review effort level (inherit = Default). API.")
+					.optional(),
+				severity_filter: z
+					.enum(["no_filter", "low", "low_and_medium"])
+					.describe("Severity filter (no UI control). API.")
+					.optional(),
+				mcp_enabled: z
+					.boolean()
+					.describe("General → Allow Copilot to use MCP tools. API.")
+					.optional(),
+				cross_repo_context: z
+					.boolean()
+					.describe("General → Search public repositories. API.")
+					.optional(),
+				custom_instructions: z
+					.boolean()
+					.describe("General → Use custom instructions. API.")
+					.optional(),
+				max_review_effort: z
+					.enum(["no-limit", "lite", "balanced", "max"])
+					.describe("General → Maximum review effort. UI: pass when no-limit.")
+					.optional(),
+				secret_protection_ai_scan: z
+					.boolean()
+					.describe("Security → Secret Protection AI Scan. UI: pass when false.")
+					.optional(),
+				allow_approvals: z
+					.boolean()
+					.describe("Approvals → Allow Copilot to approve pull requests. UI: pass when false.")
+					.optional(),
+				block_external_license: z
+					.boolean()
+					.describe(
+						"Access and licensing → Block reviews requested with an external Copilot license. UI: pass when false.",
+					)
+					.optional(),
+			})
+			.strict()
+			.describe(
+				"Copilot → Code review. API: GET/PATCH /copilot/code-review/settings. Omit to skip.",
+			)
+			.optional(),
+		cloud: z
+			.object({
+				sandbox_size: z
+					.enum(["default", "S", "M", "L"])
+					.describe("Sandbox resources → Sandbox size. UI: pass when default.")
+					.optional(),
+				require_workflow_approval: z
+					.boolean()
+					.describe("Policies → Require approval for workflow runs. READ.")
+					.optional(),
+				automations: z
+					.object({
+						enabled: z.boolean().describe("Allow automations. READ.").optional(),
+						shared: z
+							.boolean()
+							.describe("Allow shared automations. UI: pass when false.")
+							.optional(),
+						require_write_access: z
+							.boolean()
+							.describe("Require write access to trigger automations. READ.")
+							.optional(),
+						only_update_triggering_resource: z
+							.boolean()
+							.describe(
+								"Only allow automations to update the resource that triggered them. UI: pass when false.",
+							)
+							.optional(),
+						require_workflow_approval_on_prs: z
+							.boolean()
+							.describe(
+								"Require approval for workflows on automation pull requests. UI: pass when false.",
+							)
+							.optional(),
+					})
+					.strict()
+					.describe("Automations.")
+					.optional(),
+				validation_tools: z
+					.object({
+						codeql: z.boolean().optional(),
+						copilot_code_review: z.boolean().optional(),
+						secret_scanning: z.boolean().optional(),
+						dependency_vulnerability_checks: z.boolean().optional(),
+					})
+					.strict()
+					.describe("Validation tools toggles. READ: enabled_tools.")
+					.optional(),
+			})
+			.strict()
+			.describe(
+				"Copilot → Cloud (Copilot in the cloud). READ: GET /copilot/cloud-agent/configuration (no write API). Omit to skip.",
+			)
+			.optional(),
+		internet_access: z
+			.object({
+				cloud: allowlist.describe("Internet access → Copilot in the cloud. READ.").optional(),
+				code_review: allowlist
+					.describe("Internet access → Copilot code review. UI: pass when off/empty.")
+					.optional(),
+			})
+			.strict()
+			.describe("Copilot → Internet access. Omit to skip.")
+			.optional(),
+		mcp: z
+			.object({
+				configuration: z
+					.record(z.string(), z.unknown())
+					.nullable()
+					.describe("MCP configuration JSON ({ mcpServers: {...} }); null = unset. READ."),
+			})
+			.strict()
+			.describe("Copilot → MCP servers. READ: mcp_configuration. Omit to skip.")
+			.optional(),
+		memory: z
+			.object({
+				enabled: z.boolean().describe("Allow Copilot to store and retrieve repository facts."),
+			})
+			.strict()
+			.describe("Copilot → Memory. UI: pass when false.")
+			.optional(),
+		dreaming: z
+			.object({ enabled: z.boolean().describe("Dreaming (Preview).") })
+			.strict()
+			.describe("Copilot → Dreaming. UI: pass when false.")
+			.optional(),
+	})
+	.strict()
+	.describe(
+		"Copilot: Code review, Cloud, Internet access, MCP servers, Memory, Dreaming. Omit to skip.",
+	);
+
+const environment = z
+	.object({
+		wait_minutes: z
+			.number()
+			.int()
+			.min(0)
+			.max(43_200)
+			.describe("Deployment protection rules → Wait timer (minutes). API: PUT wait_timer.")
+			.optional(),
+		prevent_self_review: z
+			.boolean()
+			.describe("Required reviewers → Prevent self-review. API: PUT prevent_self_review.")
+			.optional(),
+		required_reviewers: z
+			.array(
+				z
+					.object({
+						type: z.enum(["user", "team"]),
+						name: z.string().min(1).describe("User login or team slug."),
+					})
+					.strict(),
+			)
+			.max(6)
+			.describe("Required reviewers. API: PUT reviewers (ids resolved via Users/Teams API).")
+			.optional(),
+		admin_bypass: z
+			.boolean()
+			.describe(
+				"Allow administrators to bypass configured protection rules. READ: can_admins_bypass (not in the PUT body; toggle in the UI).",
+			)
+			.optional(),
+		branch_policy: z
+			.object({
+				type: z
+					.enum(["all", "protected", "selected"])
+					.describe("Deployment branches and tags: No restriction, Protected branches, Selected."),
+				patterns: names
+					.describe("Selected → branch name patterns. API: POST type branch.")
+					.optional(),
+				tag_patterns: names
+					.describe("Selected → tag name patterns. API: POST type tag.")
+					.optional(),
+			})
+			.strict()
+			.describe(
+				"Deployment branches and tags. API: PUT deployment_branch_policy + branch policies.",
+			)
+			.optional(),
+		custom_protection_rules: names
+			.describe("Enable custom rules with GitHub Apps → app slugs. READ (enable in the UI).")
+			.optional(),
+		secrets: names.describe("Environment secrets (presence only). READ.").optional(),
+		variables: names.describe("Environment variables (presence only). READ.").optional(),
+	})
+	.strict();
+
+const codePlanningAutomation = z
+	.object({
+		rulesets: z
+			.array(ruleset)
+			.describe(
+				"Rulesets (/settings/rules). API: matched by name, created (POST) or replaced (PUT) when drifted; undeclared rulesets are ignored. Omit to skip.",
+			)
+			.optional(),
+		branches: branchProtection.optional(),
+		actions: z
+			.object({
+				general: z
+					.object({
+						enabled: z
+							.boolean()
+							.describe("Actions permissions (false = Disable actions). API. Omit = enabled.")
+							.optional(),
+						allowed: z
+							.enum(["all", "local_only", "selected"])
+							.describe("Actions permissions policy. API: allowed_actions."),
+						selected: z
+							.object({
+								github_owned: z.boolean().describe("Allow actions created by GitHub.").optional(),
+								verified_creators: z
+									.boolean()
+									.describe("Allow actions by Marketplace verified creators.")
+									.optional(),
+								patterns: names
+									.max(1000)
+									.describe("Allow or block specified actions and reusable workflows.")
+									.optional(),
+							})
+							.strict()
+							.describe("Selected actions (allowed: selected). API: PUT selected-actions.")
+							.optional(),
+						sha_pinning_required: z
+							.boolean()
+							.describe("Require actions to be pinned to a full-length commit SHA. API."),
+						retention_days: z
+							.number()
+							.int()
+							.min(1)
+							.max(400)
+							.describe("Artifact and log retention (days). API."),
+						fork_pr_approval: z
+							.enum([
+								"first_time_contributors_new_to_github",
+								"first_time_contributors",
+								"all_external_contributors",
+							])
+							.describe("Approval for running fork pull request workflows from contributors. API."),
+						fork_pr_workflows_private: z
+							.object({
+								run_workflows: z.boolean(),
+								require_approval: z.boolean(),
+								send_write_tokens: z.boolean(),
+								send_secrets: z.boolean(),
+							})
+							.strict()
+							.describe(
+								"Fork pull request workflows in private repositories. API (public repos: skipped).",
+							)
+							.optional(),
+						access_level: z
+							.enum(["none", "user", "organization"])
+							.describe("Access (share actions with other repos). API (public repos: skipped).")
+							.optional(),
+						workflow_permissions: z
+							.object({
+								default: z.enum(["read", "write"]).describe("Default GITHUB_TOKEN permissions."),
+								can_approve_pull_requests: z
+									.boolean()
+									.describe("Allow GitHub Actions to create and approve pull requests."),
+							})
+							.strict()
+							.describe("Workflow permissions. API."),
+						cache: z
+							.object({
+								retention_days: z.number().int().min(1).optional(),
+								storage_limit_gb: z.number().int().min(1).optional(),
+							})
+							.strict()
+							.describe("Cache retention/storage limits. API (needs billing; 402 → skipped).")
+							.optional(),
+					})
+					.strict()
+					.describe("Actions → General (/settings/actions)."),
+				runners: names
+					.describe(
+						"Actions → Runners: required self-hosted runner names. READ (register on the host).",
+					)
+					.optional(),
+				policies: names
+					.describe("Actions → Policies: required policy names. UI: skipped with a hint when set.")
+					.optional(),
+				oidc: z
+					.object({
+						use_default: z.boolean().describe("Subject claim → Use default template. API."),
+						include_claim_keys: names
+							.describe("Subject claim template keys (when useDefault is false). API.")
+							.optional(),
+						immutable_subject: z
+							.boolean()
+							.describe("Use immutable subject claim. API: use_immutable_subject.")
+							.optional(),
+					})
+					.strict()
+					.describe("Actions → OIDC. API: PUT /actions/oidc/customization/sub. Omit to skip.")
+					.optional(),
+			})
+			.strict()
+			.describe("Actions: General, Runners, Policies, OIDC."),
+		webhooks: z
+			.array(
+				z
+					.object({
+						url: z.string().min(1).describe("Payload URL; live hooks match by URL."),
+						content_type: z.enum(["form", "json"]).describe("Content type."),
+						events: names.min(1).describe('Events, e.g. ["push"].'),
+						active: z.boolean().describe("Active."),
+						insecure_ssl: z
+							.boolean()
+							.describe("SSL verification disabled (insecure_ssl 1). Omit to skip.")
+							.optional(),
+					})
+					.strict(),
+			)
+			.describe(
+				"Webhooks (/settings/hooks). API: matched by URL, created/updated; secrets stay manual; extras ignored.",
+			),
+		copilot: copilot.optional(),
+		planning: z
+			.object({
+				agent_suggestions: z
+					.enum(["full-control", "cautious", "balanced", "full-automation"])
+					.describe(
+						"Agent suggestions for issues → Automation level. UI: pass when cautious (default).",
+					),
+			})
+			.strict()
+			.describe("Planning (/settings/suggestions). Omit to skip.")
+			.optional(),
+		environments: z
+			.record(z.string().min(1), environment)
+			.describe(
+				"Environments by name; each must exist (fix creates). `{}` only requires existence.",
+			),
+		codespaces: z
+			.object({
+				devcontainer_required: z
+					.boolean()
+					.describe("Require .devcontainer/devcontainer.json in the repo. READ.")
+					.optional(),
+				prebuilds: z
+					.array(
+						z
+							.object({
+								branch: z.string().min(1),
+								config_file: z.string().min(1).optional(),
+								trigger: z.enum(["push", "configuration", "schedule"]),
+								regions: z
+									.array(z.enum(["UsEast", "UsWest", "EuropeWest", "SoutheastAsia", "Australia"]))
+									.optional(),
+								template_versions: z.number().int().min(1).optional(),
+							})
+							.strict(),
+					)
+					.describe("Prebuild configurations. UI: [] passes, otherwise skipped with a hint.")
+					.optional(),
+			})
+			.strict()
+			.describe("Codespaces (/settings/codespaces). Omit to skip.")
+			.optional(),
+		pages: z
+			.object({
+				enabled: z.boolean(),
+				build_type: z
+					.enum(["legacy", "workflow"])
+					.describe("Build and deployment → Source (legacy = Deploy from a branch).")
+					.optional(),
+				branch: z.string().min(1).describe("Branch (legacy source).").optional(),
+				path: z.enum(["/", "/docs"]).describe("Folder (legacy source).").optional(),
+				custom_domain: z.string().min(1).describe("Custom domain (cname).").optional(),
+				https_enforced: z.boolean().describe("Enforce HTTPS.").optional(),
+				public: z.boolean().describe("Visibility (Enterprise Cloud only).").optional(),
+			})
+			.strict()
+			.describe("Pages (/settings/pages). API: POST/PUT/DELETE /pages. Omit to skip.")
+			.optional(),
+	})
+	.strict()
+	.describe(
+		"Settings → Code, planning, and automation: Rulesets, Branches, Actions, Webhooks, Copilot, Planning, Environments, Codespaces, Pages (Tags is deprecated — use a tag ruleset).",
+	);
+
+const securityAndQuality = z
+	.object({
+		advanced_security: z
+			.object({
+				private_vulnerability_reporting: z
+					.object({
+						enabled: z.boolean().describe("Enable/Disable. API: PUT/DELETE."),
+						require_cwe: z.boolean().describe("Require a CWE assignment. UI.").optional(),
+						daily_limit: z.number().int().min(1).describe("Daily advisory limit. UI.").optional(),
+						trusted_reporters: names.describe("Trusted reporters. UI.").optional(),
+					})
+					.strict()
+					.describe("Private vulnerability reporting (+ its settings page, UI)."),
+				dependency_graph: z
+					.boolean()
+					.describe(
+						"Dependency Scanning → Dependency graph. UI (always on for public repos: true passes there).",
+					),
+				automatic_dependency_submission: z
+					.enum(["enabled", "labeled", "disabled"])
+					.describe(
+						"Dependency Scanning → Automatic dependency submission. UI: pass when disabled.",
+					),
+				dependabot: z
+					.object({
+						alerts: z
+							.boolean()
+							.describe("Dependabot alerts. API: PUT/DELETE /vulnerability-alerts."),
+						malware_alerts: z.boolean().describe("Malware alerts. UI.").optional(),
+						security_updates: z
+							.boolean()
+							.describe("Dependabot security updates. API: /automated-security-fixes."),
+						grouped_security_updates: z
+							.boolean()
+							.describe("Grouped security updates. UI.")
+							.optional(),
+						version_updates: z
+							.boolean()
+							.describe("Dependabot version updates (.github/dependabot.yml present). READ.")
+							.optional(),
+						rules: z
+							.object({
+								dismiss_low_impact_dev_alerts: z.boolean().optional(),
+								dismiss_package_malware_alerts: z.boolean().optional(),
+								custom: names.optional(),
+							})
+							.strict()
+							.describe("Dependabot auto-triage rules. UI.")
+							.optional(),
+						runner: z
+							.object({
+								type: z.enum(["standard", "labeled"]),
+								labels: names.max(1).describe("Exactly one label (API limit).").optional(),
+								group: z.string().min(1).optional(),
+							})
+							.strict()
+							.describe("Dependabot on self-hosted runners. API: /dependabot/runner-settings.")
+							.optional(),
+					})
+					.strict()
+					.describe("Dependabot."),
+				code_scanning: z
+					.object({
+						default_setup: z
+							.object({
+								state: z.enum(["configured", "not-configured"]),
+								languages: names.optional(),
+								query_suite: z.enum(["default", "extended"]).optional(),
+								threat_model: z.enum(["remote", "remote_and_local"]).optional(),
+								runner_type: z.enum(["standard", "labeled"]).optional(),
+								runner_label: z.string().min(1).optional(),
+							})
+							.strict()
+							.describe(
+								"Tools → CodeQL analysis default setup. API: PATCH /code-scanning/default-setup.",
+							)
+							.optional(),
+						ai_scan: z
+							.object({ repository: z.boolean().optional(), pull_requests: z.boolean().optional() })
+							.strict()
+							.describe(
+								"AI Scan for repositories / pull requests. API: PATCH /code-scanning/ai-scan.",
+							)
+							.optional(),
+						ai_applications: z.boolean().describe("Scan for AI applications. UI.").optional(),
+						copilot_autofix: z.boolean().describe("Copilot Autofix. UI: pass when false."),
+						agentic_autofix: z.boolean().describe("Agentic autofix. UI.").optional(),
+						check_run_thresholds: z
+							.object({ security: threshold.security, standard: threshold.alerts })
+							.strict()
+							.describe("Protection rules → Check runs failure threshold. UI.")
+							.optional(),
+					})
+					.strict()
+					.describe("Code Security: Tools, AI Scan, Protection rules."),
+				secret_protection: z
+					.object({
+						enabled: z.boolean().describe("Secret Protection. API: security_and_analysis."),
+						push_protection: z.boolean().describe("Push protection. API."),
+						non_provider_patterns: z
+							.boolean()
+							.describe("Scan for non-provider patterns. API.")
+							.optional(),
+						ai_detection: z.boolean().describe("Use AI detection. API.").optional(),
+						validity_checks: z.boolean().describe("Validity checks. READ.").optional(),
+						delegated_bypass: z
+							.boolean()
+							.describe("Push protection → delegated bypass. API.")
+							.optional(),
+						delegated_alert_dismissal: z
+							.boolean()
+							.describe("Prevent direct alert dismissals. API.")
+							.optional(),
+						custom_patterns: names
+							.describe("Custom pattern names. READ: GET /secret-scanning/custom-patterns.")
+							.optional(),
+					})
+					.strict()
+					.describe("Secret Protection."),
+			})
+			.strict()
+			.describe(
+				"Advanced Security (/settings/security_analysis): PVR, Dependency Scanning, Dependabot, Code Security, Secret Protection.",
+			),
+		deploy_keys: z
+			.array(
+				z
+					.object({
+						title: z.string().min(1),
+						read_only: z.boolean().describe("Inverse of Allow write access.").optional(),
+					})
+					.strict(),
+			)
+			.describe("Deploy keys by title. READ (key material is manual). Omit to skip.")
+			.optional(),
+		secrets: z
+			.object({
+				actions: z
+					.object({ secrets: names, variables: names })
+					.strict()
+					.describe("Secrets and variables → Actions (repository)."),
+				agents: z
+					.object({ secrets: names.optional(), variables: names.optional() })
+					.strict()
+					.describe("Secrets and variables → Agents.")
+					.optional(),
+				codespaces: names.describe("Secrets and variables → Codespaces.").optional(),
+				dependabot: names.describe("Secrets and variables → Dependabot.").optional(),
+			})
+			.strict()
+			.describe(
+				"Secrets and variables, presence only (values are write-only). READ: fix with gh secret/variable set.",
+			),
+	})
+	.strict()
+	.describe(
+		"Settings → Security and quality: Advanced Security, Deploy keys, Secrets and variables.",
+	);
+
+const integrations = z
+	.object({
+		github_apps: names
+			.describe("GitHub Apps: installed app slugs. UI (no user-token API): skipped when set.")
+			.optional(),
+		autolinks: z
+			.array(
+				z
+					.object({
+						prefix: z.string().min(1).describe("Reference prefix, e.g. TICKET-."),
+						url_template: z.string().min(1).describe("Target URL with <num>."),
+						alphanumeric: z.boolean().describe("Alphanumeric references.").optional(),
+					})
+					.strict(),
+			)
+			.describe("Autolink references. API: create; mismatches delete + recreate.")
+			.optional(),
+		email_notifications: z
+			.object({
+				addresses: z.array(z.string().email()).max(2),
+				active: z.boolean().optional(),
+			})
+			.strict()
+			.describe("Email notifications (/settings/notifications). UI: skipped when set.")
+			.optional(),
+	})
+	.strict()
+	.describe(
+		"Settings → Integrations: GitHub Apps, Autolink references, Email notifications. Omit to skip.",
+	);
+
+const community = z
+	.object({
+		codeowners: z
+			.string()
+			.describe('CODEOWNERS path, e.g. .github/CODEOWNERS ("" disables). READ presence.')
+			.optional(),
+		issue_templates: z
+			.boolean()
+			.describe("Require .github/ISSUE_TEMPLATE content. READ.")
+			.optional(),
+		pr_template: z.boolean().describe("Require .github/PULL_REQUEST_TEMPLATE.md. READ.").optional(),
+		funding: z.boolean().describe("Require .github/FUNDING.yml. READ.").optional(),
+		license: z.boolean().describe("Require LICENSE. READ.").optional(),
+		code_of_conduct: z.boolean().describe("Require CODE_OF_CONDUCT.md. READ.").optional(),
+		readme: z.boolean().describe("Require README.md. READ.").optional(),
+	})
+	.strict()
+	.describe("Community files (repo contents, not a Settings page). Omit to skip.");
+
 export const GithubSchema = z.compile(
 	z
 		.object({
-			$description: z.string().describe("Human-readable blueprint description.").optional(),
-			$name: z.string().min(1).describe("Human-readable blueprint name.").optional(),
 			$schema: z
 				.string()
 				.describe("JSON Schema reference, e.g. ./config/github-manifest.json.")
 				.optional(),
-			// General (/settings).
-			description: z
-				.string()
-				.max(350)
-				.describe("General → Description (PATCH description). Omit to skip.")
-				.optional(),
-			homepage: z
-				.string()
-				.max(2048)
-				.describe("General → Website URL (PATCH homepage, empty string clears). Omit to skip.")
-				.optional(),
-			topics: z
-				.array(z.string().min(1).max(50))
-				.max(20)
-				.describe("General → Topics (PUT /repos/{repo}/topics, replace-all). Omit to skip.")
-				.optional(),
-			socialPreview: z
-				.boolean()
-				.describe(
-					"Custom social preview image is set. Check-only: no public API, upload in Settings.",
-				),
-			features: z
-				.object({
-					discussions: z.boolean(),
-					issueTemplates: z.boolean().describe("Require .github/ISSUE_TEMPLATE content."),
-					issues: z
-						.object({
-							enabled: z.boolean().describe("General → Issues toggle (PATCH has_issues)."),
-							permissions: z
-								.enum(["all-users", "collaborators-only"])
-								.describe(
-									"General → Features → Issue permissions (Creation allowed by). Check-only: no public repo read API — skipped with a UI hint when set.",
-								)
-								.optional(),
-							autoClose: z
-								.boolean()
-								.describe(
-									"General → Issues → auto-close with merged linked PRs. Check-only: no public repo read API — skipped with a UI hint when set.",
-								)
-								.optional(),
-						})
-						.strict()
-						.describe("Issues toggle and audience (permissions/auto-close are check-only)."),
-					projects: z.boolean(),
-					sponsorships: z
-						.boolean()
-						.describe(
-							"General → Sponsorships → display a Sponsor button. Check-only: no public repo read API — pass when false, skipped with a UI hint when true.",
-						),
-					wiki: z.boolean(),
-				})
-				.describe("Repo feature toggles.")
-				.strict(),
-			// Pull requests (General → Features/Pull Requests + merge methods).
-			pullRequests: z
-				.object({
-					enabled: z
-						.boolean()
-						.describe("General → allow pull requests (PATCH has_pull_requests). Omit to skip.")
-						.optional(),
-					permissions: z
-						.enum(["all-users", "collaborators-only"])
-						.describe(
-							"General → Features → Pull request permissions (Creation allowed by). Check-only: no public repo read API — skipped with a UI hint when set.",
-						)
-						.optional(),
-					autoMerge: z.boolean(),
-					deleteHeadBranches: z.boolean().describe("Automatically delete head branches."),
-					mergeCommit: z.boolean(),
-					mergeMessage: z.enum(["blank", "pr-body", "pr-title"]),
-					mergeTitle: z.enum(["merge-message", "pr-title"]),
-					rebaseMerge: z.boolean(),
-					squashMerge: z.boolean(),
-					squashMessage: z.enum(["blank", "commit-messages", "pr-body"]),
-					squashTitle: z.enum(["commit-title", "pr-title"]),
-					suggestUpdatingBranches: z
-						.boolean()
-						.describe(
-							"General → always suggest updating PR branches (PATCH allow_update_branch). Omit to skip.",
-						)
-						.optional(),
-				})
-				.describe("Pull request feature, audience, merge methods, and PR automation.")
-				.strict(),
-			signoffRequired: z
-				.boolean()
-				.describe("Require contributors to sign off on web-based commits."),
-			archiveSettings: z
-				.object({
-					commitComments: z.boolean().describe("Allow comments on individual commits."),
-					includeLfsInArchives: z.boolean().describe("Include Git LFS objects in archives."),
-					pushUpdateLimit: z
-						.number()
-						.int()
-						.min(1)
-						.max(10_000)
-						.nullable()
-						.describe("Max branches/tags updated in a single push. Null skips (no public API)."),
-				})
-				.describe("Repo archive/push toggles. Check-only: no public API, confirm in Settings.")
-				.strict(),
-			visibility: z
-				.enum(["public", "private"])
-				.describe("Danger Zone → Change visibility (PATCH private). Omit to skip.")
-				.optional(),
-			isTemplateRepo: z
-				.boolean()
-				.describe("General → Template repository toggle (PATCH is_template). Omit to skip.")
-				.optional(),
-			allowForking: z
-				.boolean()
-				.describe("General → Allow forking (PATCH allow_forking, private repos). Omit to skip.")
-				.optional(),
-			archived: z
-				.boolean()
-				.describe("Danger Zone → Archive repository (PATCH archived). Omit to skip.")
-				.optional(),
-			// Access (/settings/access).
-			access: z
-				.object({
-					collaborators: z
-						.array(
-							z
-								.object({
-									login: z.string().min(1),
-									permission: z.enum(["pull", "triage", "push", "maintain", "admin"]),
-								})
-								.strict(),
-						)
-						.describe("Required collaborators with repo permission (extras ignored).")
-						.optional(),
-					teams: z
-						.array(
-							z
-								.object({
-									permission: z.enum(["pull", "triage", "push", "maintain", "admin"]),
-									slug: z.string().min(1),
-								})
-								.strict(),
-						)
-						.describe("Required teams with repo permission (extras ignored; needs org team slug).")
-						.optional(),
-				})
-				.describe("Access → Collaborators & teams (/settings/access). Omit to skip.")
-				.optional(),
-			interactionLimits: z
-				.object({
-					limit: z.enum(["off", "existing_users", "contributors", "collaborators"]),
-				})
-				.describe(
-					"Access → Moderation → Interaction limits (time-boxed abuse response; check via API, fix is manual in the UI). Omit to skip.",
-				)
-				.strict()
-				.optional(),
-			pullRequestLimits: z
-				.object({
-					countDrafts: z
-						.boolean()
-						.describe("Count draft PRs toward the per-user open-PR limit.")
-						.optional(),
-					maxOpen: z
-						.number()
-						.int()
-						.min(1)
-						.max(100)
-						.describe("Max concurrent open PRs per user without write access.")
-						.optional(),
-					minAccountAgeDays: z
-						.number()
-						.int()
-						.min(1)
-						.describe("Exempt contributors whose account is at least this old (days).")
-						.optional(),
-					minMergedPRs: z
-						.number()
-						.int()
-						.min(1)
-						.describe("Exempt contributors with at least this many merged PRs.")
-						.optional(),
-				})
-				.strict()
-				.describe(
-					"Access → Moderation → Pull request limits (Settings → Interaction limits). Check-only: no public repo read API — skipped with a UI hint when set. Omit to skip.",
-				)
-				.optional(),
-			// Branches (/settings/branches).
-			defaultBranch: z.string().min(1).describe("Default branch name."),
-			checks: z
-				.array(z.string().min(1))
-				.describe("Required status check contexts on the default branch."),
-			reviews: z
-				.object({
-					dismissStale: z.boolean(),
-					requireCodeOwner: z.boolean(),
-					requireConversationResolution: z.boolean(),
-					requireSignedCommits: z.boolean(),
-					requiredApprovals: z.number().int().min(0).max(10),
-					restrictPushes: z
-						.boolean()
-						.describe(
-							"Access → Moderation → Code review limits, enforced via branch protection restrictions (PUT). Limit pushes to users explicitly granted read or higher access.",
-						),
-				})
-				.describe("Default-branch code review and push restrictions.")
-				.strict(),
-			// Tags (/settings/tags).
-			tagProtection: z
-				.array(z.string().min(1))
-				.describe(
-					"Tags → Tag protection patterns. Check-only: legacy API is closing down — use Rulesets; fix is manual.",
-				)
-				.optional(),
-			// Rules (/settings/rules).
-			rulesets: z
-				.array(z.string().min(1))
-				.describe(
-					"Ruleset names that must exist and be active. Fix is manual (author JSON in the UI).",
-				),
-			requiredWorkflows: z
-				.array(z.string().min(1))
-				.describe(
-					"Required workflow file paths (org-level file reference; manual authoring). Omit to skip.",
-				)
-				.optional(),
-			mergeQueue: z
-				.object({
-					enabled: z.boolean().describe("A ruleset with a merge_queue rule must exist (or not)."),
-					method: z
-						.enum(["merge", "squash", "rebase"])
-						.describe("Required merge_queue merge method (case-insensitive).")
-						.optional(),
-					maxEntriesToMerge: z
-						.number()
-						.int()
-						.min(1)
-						.describe("Required merge_queue max entries to merge.")
-						.optional(),
-				})
-				.describe(
-					"Rules → merge queue policy (rulesets only; no repo PATCH field). Check reads rulesets; fix is manual in Settings → Rules.",
-				)
-				.strict()
-				.optional(),
-			// Actions (/settings/actions).
-			actions: z
-				.object({
-					allowApprovePRs: z
-						.boolean()
-						.describe("Allow GitHub Actions to create and approve pull requests."),
-					allowed: z
-						.enum(["all", "local_only", "selected"])
-						.describe("Which actions and reusable workflows may run (GitHub API values)."),
-					approvalForExternal: z
-						.boolean()
-						.describe("Require approval for all external contributors (fork PR workflows)."),
-					defaultWorkflowPermissions: z
-						.enum(["read", "write"])
-						.describe("Default GITHUB_TOKEN permissions."),
-					oidcImmutableSubject: z
-						.boolean()
-						.describe("Use the immutable subject claim for OIDC. Check-only: no public fix API."),
-					retentionDays: z
-						.number()
-						.int()
-						.min(1)
-						.max(400)
-						.describe("Artifact and log retention in days."),
-					selectedPatterns: z
-						.array(z.string().min(1))
-						.max(1000)
-						.describe(
-							"Allowed-actions patterns when allowed is selected (e.g. owner/repo@sha). Omit to skip.",
-						)
-						.optional(),
-					shaPinningRequired: z
-						.boolean()
-						.describe("Require actions to be pinned to a full-length commit SHA."),
-				})
-				.describe("GitHub Actions permissions and retention.")
-				.strict(),
-			runners: z
-				.array(z.string().min(1))
-				.describe(
-					"Required self-hosted runner names (presence audit; runners are ephemeral — register them manually in Settings → Actions → Runners).",
-				)
-				.optional(),
-			actionsPolicies: z
-				.array(z.string().min(1))
-				.describe(
-					"Required Actions policy names (Settings → Actions → Policies). Check-only: no public repo read API — skipped with a UI hint when set. Omit to skip.",
-				)
-				.optional(),
-			// Webhooks (/settings/hooks).
-			webhooks: z
-				.array(
-					z
-						.object({
-							active: z.boolean(),
-							contentType: z
-								.enum(["form", "json"])
-								.describe("Payload content type (GitHub API values)."),
-							events: z
-								.array(z.string().min(1))
-								.min(1)
-								.describe('Events triggering delivery, e.g. ["push"].'),
-							url: z.string().min(1).describe("Payload URL; live hooks match by URL."),
-						})
-						.strict(),
-				)
-				.describe(
-					"Repository webhooks, matched by URL (fix creates/updates; secrets are set manually in the UI).",
-				),
-			// Copilot suite (no single /settings page; subpages below).
-			copilot: z
-				.object({
-					codeReview: z
-						.boolean()
-						.describe(
-							"Copilot → Code review enabled (Settings → Copilot → Code review). Check-only: org-level or no public repo API — skipped with a UI hint when set.",
-						)
-						.optional(),
-					codingAgent: z
-						.boolean()
-						.describe(
-							"Copilot → Coding agent enabled (Settings → Copilot → Coding agent). Check-only: org-level or no public repo API — skipped with a UI hint when set.",
-						)
-						.optional(),
-					internetAccessFirewall: z
-						.boolean()
-						.describe(
-							"Copilot → Internet access firewall enabled (Settings → Copilot → Internet access). Check-only: no public repo API — skipped with a UI hint when set.",
-						)
-						.optional(),
-					mcp: z
-						.boolean()
-						.describe(
-							"Copilot → MCP enabled (Settings → Copilot → MCP). Check-only: no public repo API — skipped with a UI hint when set.",
-						)
-						.optional(),
-					memory: z
-						.boolean()
-						.describe(
-							"Copilot → Memory enabled (Settings → Copilot → Memory). Check-only: no public repo API — skipped with a UI hint when set.",
-						)
-						.optional(),
-				})
-				.strict()
-				.describe(
-					"Copilot suite (code review, coding agent, internet access, MCP, memory; dreaming has no repo toggle). Omit to skip.",
-				)
-				.optional(),
-			// Suggestions (Planning → Agent suggestions for issues).
-			planning: z
-				.object({
-					agentSuggestions: z
-						.enum(["full-control", "cautious", "balanced", "full-automation", "disabled"])
-						.describe(
-							"Planning → Agent suggestions automation level (Full control, Cautious default, Balanced, Full automation, or disabled/off). Check-only: no public API, confirm in the UI.",
-						),
-				})
-				.describe("Planning assistance toggles.")
-				.strict(),
-			// Environments (/settings/environments).
-			environments: z
-				.array(z.string().min(1))
-				.describe("Deployment environments that must exist (created by fix when missing)."),
-			environmentProtection: z
-				.record(
-					z.string().min(1),
-					z
-						.object({
-							waitMinutes: z
-								.number()
-								.int()
-								.min(0)
-								.max(43_200)
-								.describe("Wait timer in minutes (PUT wait_timer).")
-								.optional(),
-							preventSelfReview: z
-								.boolean()
-								.describe("Prevent self-review (PUT prevent_self_review).")
-								.optional(),
-							requiredReviewers: z
-								.array(
-									z
-										.object({
-											type: z.enum(["user", "team"]),
-											name: z.string().min(1).describe("User login or team slug."),
-										})
-										.strict(),
-								)
-								.max(6)
-								.describe(
-									"Required reviewers by login/slug (fix resolves IDs via the Users/Teams API).",
-								)
-								.optional(),
-							branchPolicy: z
-								.object({
-									type: z.enum(["all", "protected", "selected"]),
-									patterns: z
-										.array(z.string().min(1))
-										.describe("Branch name patterns (only for selected).")
-										.optional(),
-								})
-								.strict()
-								.describe("Deployment branch policy (PUT deployment_branch_policy).")
-								.optional(),
-						})
-						.strict(),
-				)
-				.describe(
-					"Per-environment protection rules, e.g. { production: { waitMinutes: 30 } } (fix via the Environments API). Omit to skip.",
-				)
-				.optional(),
-			environmentSecrets: z
-				.record(z.string().min(1), z.array(z.string().min(1)))
-				.describe(
-					'Per-environment secret names, e.g. { production: ["TOKEN"] } (presence only; manual fix). Omit to skip.',
-				)
-				.optional(),
-			// Codespaces (/settings/codespaces; secrets live under Secrets and variables).
-			codespacesSecrets: z
-				.array(z.string().min(1))
-				.describe(
-					"Required Codespaces secret names (presence only; values write-only). Fix is manual (gh secret set --app codespaces).",
-				)
-				.optional(),
-			codespaces: z
-				.object({
-					devcontainerRequired: z
-						.boolean()
-						.describe("Require .devcontainer/devcontainer.json in the repo.")
-						.optional(),
-				})
-				.describe(
-					"Codespaces file requirements (machine types and access/spending policies are org-level or UI-only). Omit to skip.",
-				)
-				.strict()
-				.optional(),
-			// Pages (/settings/pages).
-			pages: z
-				.object({
-					enabled: z.boolean(),
-					branch: z.string().min(1).describe("Publishing branch (branch source only).").optional(),
-					path: z.enum(["/", "/docs"]).describe("Publishing folder.").optional(),
-					customDomain: z.string().min(1).describe("Custom domain (CNAME).").optional(),
-					httpsEnforced: z.boolean().describe("Enforce HTTPS.").optional(),
-				})
-				.describe("Code and automation → Pages (/settings/pages). Fix via Pages API.")
-				.strict()
-				.optional(),
-			// Security (/settings/security).
-			security: z
-				.object({
-					copilotAutofix: z
-						.boolean()
-						.describe("Copilot Autofix. Check-only: no public API, confirm in the UI."),
-					dependabot: z.boolean().describe("Dependabot security updates."),
-					dependencyAutoSubmit: z.boolean(),
-					dependencyGraph: z.boolean(),
-					nonProviderPatterns: z
-						.boolean()
-						.describe(
-							"Secret scanning non-provider patterns (PATCH security_and_analysis). Omit to skip.",
-						)
-						.optional(),
-					aiDetection: z
-						.boolean()
-						.describe("Secret scanning AI detection (PATCH security_and_analysis). Omit to skip.")
-						.optional(),
-					privateVulnerabilityReporting: z.boolean(),
-					pushProtection: z.boolean(),
-					secretProtection: z.boolean(),
-				})
-				.describe("Advanced Security toggles.")
-				.strict(),
-			deployKeys: z
-				.array(z.string().min(1))
-				.describe(
-					"Deploy-key titles that must exist (presence by title; key material is manual in Settings → Deploy keys).",
-				)
-				.optional(),
-			// Secrets and variables (/settings/secrets/*).
-			secrets: z
-				.array(z.string().min(1))
-				.describe("Required Actions secret names (presence only; values are write-only)."),
-			variables: z
-				.array(z.string().min(1))
-				.describe("Required Actions variable names (presence only)."),
-			dependabotSecrets: z
-				.array(z.string().min(1))
-				.describe(
-					"Required Dependabot secret names (presence only). Fix is manual (gh secret set --app dependabot).",
-				)
-				.optional(),
-			agentsSecrets: z
-				.array(z.string().min(1))
-				.describe(
-					"Required Agents secret names (presence only via /agents/secrets; values write-only). Fix is manual (gh secret set --app agents or Settings → Secrets → Agents).",
-				)
-				.optional(),
-			agentsVariables: z
-				.array(z.string().min(1))
-				.describe(
-					"Required Agents variable names (presence only via /agents/variables). Fix is manual in Settings → Secrets → Agents.",
-				)
-				.optional(),
-			customProperties: z
-				.record(z.string().min(1), z.union([z.string(), z.array(z.string())]))
-				.describe(
-					"Repository custom-property values (schemata are org-level; values fixable via PATCH /properties/values). Omit to skip.",
-				)
-				.optional(),
-			// Community files (Community Standards / issue and PR templates).
-			codeowners: z
-				.string()
-				.describe(
-					"Required CODEOWNERS path, e.g. .github/CODEOWNERS. Empty string disables the presence check.",
-				),
-			community: z
-				.object({
-					prTemplate: z.boolean().describe("Require .github/PULL_REQUEST_TEMPLATE.md.").optional(),
-					funding: z.boolean().describe("Require .github/FUNDING.yml (sponsor button).").optional(),
-					license: z.boolean().describe("Require LICENSE file.").optional(),
-					codeOfConduct: z.boolean().describe("Require CODE_OF_CONDUCT.md.").optional(),
-					readme: z.boolean().describe("Require README.md.").optional(),
-					dependabotConfig: z.boolean().describe("Require .github/dependabot.yml.").optional(),
-				})
-				.describe("Community files (contents-API presence; manual fix). Omit to skip.")
-				.strict()
-				.optional(),
-			// Integrations.
-			githubApps: z
-				.array(z.string().min(1))
-				.describe(
-					"Integrations → GitHub Apps: required installed app slugs (Settings → Integrations → GitHub Apps). Check-only: installing needs the UI/marketplace — skipped with a UI hint when set. Omit to skip.",
-				)
-				.optional(),
-			autolinks: z
-				.array(
-					z
-						.object({
-							prefix: z.string().min(1).describe("Reference prefix, e.g. TICKET-."),
-							urlTemplate: z.string().min(1).describe("Target URL with <num> placeholder."),
-							alphanumeric: z.boolean().describe("Accept alphanumeric ids.").optional(),
-						})
-						.strict(),
-				)
-				.describe(
-					"Integrations → Autolink references (/settings/autolink_references). Fix creates missing; mismatched entries are delete+recreate via fix.",
-				)
-				.optional(),
-			notificationEmail: z
-				.string()
-				.email()
-				.describe(
-					"Integrations → Email notifications address. Check-only: no repo read API — always skipped with a manual hint when set.",
-				)
-				.optional(),
-			// Releases (General → Releases).
-			releases: z
-				.object({
-					immutable: z.boolean().describe("Disallow modifying release assets and tags."),
-				})
-				.strict()
-				.describe("Release immutability policy."),
+			$name: z.string().min(1).describe("Human-readable blueprint name.").optional(),
+			$description: z.string().describe("Human-readable blueprint description.").optional(),
+			...general.shape,
+			access: access.optional(),
+			...codePlanningAutomation.shape,
+			...securityAndQuality.shape,
+			integrations: integrations.optional(),
+			...community.shape,
 		})
 		.strict(),
 );

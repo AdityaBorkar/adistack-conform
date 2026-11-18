@@ -5,7 +5,7 @@ import { checkBase, failFixable, pass, skipped } from "#/core/result.js";
 
 interface WebhookState {
 	active?: unknown;
-	config?: { content_type?: unknown; url?: unknown };
+	config?: { content_type?: unknown; insecure_ssl?: unknown; url?: unknown };
 	events?: unknown;
 	id?: unknown;
 }
@@ -26,7 +26,8 @@ export async function checkWebhooks(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "webhooks", target);
-	if (upstream.webhooks.length === 0) {
+	const hooks = upstream.webhooks;
+	if (hooks.length === 0) {
 		return pass(base, "no webhooks required", "webhooks match");
 	}
 	let current: WebhookState[];
@@ -40,14 +41,19 @@ export async function checkWebhooks(
 	}
 	const diffs: string[] = [];
 	const steps: GithubApiStep[] = [];
-	for (const want of upstream.webhooks) {
+	for (const want of hooks) {
 		const found = current.find((hook) => hook.config?.url === want.url);
+		const config = {
+			content_type: want.content_type,
+			...(want.insecure_ssl === undefined ? {} : { insecure_ssl: want.insecure_ssl ? "1" : "0" }),
+			url: want.url,
+		};
 		if (found === undefined) {
 			diffs.push(`missing: ${want.url}`);
 			steps.push({
 				body: {
 					active: want.active,
-					config: { content_type: want.contentType, url: want.url },
+					config,
 					events: want.events,
 					name: "web",
 				},
@@ -64,15 +70,23 @@ export async function checkWebhooks(
 		if (!Object.is(found.active, want.active)) {
 			hookDiffs.push(`active: ${String(found.active)} → ${String(want.active)}`);
 		}
-		if (found.config?.content_type !== want.contentType) {
-			hookDiffs.push(`content_type: ${String(found.config?.content_type)} → ${want.contentType}`);
+		if (found.config?.content_type !== want.content_type) {
+			hookDiffs.push(`content_type: ${String(found.config?.content_type)} → ${want.content_type}`);
+		}
+		if (
+			config.insecure_ssl !== undefined &&
+			String(found.config?.insecure_ssl) !== config.insecure_ssl
+		) {
+			hookDiffs.push(
+				`insecure_ssl: ${String(found.config?.insecure_ssl)} → ${config.insecure_ssl}`,
+			);
 		}
 		if (hookDiffs.length > 0) {
 			diffs.push(`${want.url} (${hookDiffs.join("; ")})`);
 			steps.push({
 				body: {
 					active: want.active,
-					config: { content_type: want.contentType, url: want.url },
+					config,
 					events: want.events,
 				},
 				method: "PATCH",
@@ -81,11 +95,7 @@ export async function checkWebhooks(
 		}
 	}
 	if (diffs.length === 0) {
-		return pass(
-			base,
-			`webhooks: ${upstream.webhooks.map((hook) => hook.url).join(", ")}`,
-			"webhooks match",
-		);
+		return pass(base, `webhooks: ${hooks.map((hook) => hook.url).join(", ")}`, "webhooks match");
 	}
 	const fix: GithubApiFix = { kind: "github-api", label: `github webhooks ${repo}`, steps };
 	return failFixable(base, diffs.join("; "), "webhooks match", fix);

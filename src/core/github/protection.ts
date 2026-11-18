@@ -4,14 +4,21 @@ import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js"
 import { checkBase, failFixable, failManual, pass } from "#/core/result.js";
 
 export interface ProtectionInput {
+	allow_deletions?: boolean;
+	allow_force_pushes?: boolean;
 	branch: string;
 	checks: string[];
-	requireApprovals: number;
-	requireCodeOwner: boolean;
-	requireConversationResolution: boolean;
-	dismissStale: boolean;
-	restrictPushes: boolean;
-	requireSignedCommits: boolean;
+	dismiss_stale: boolean;
+	enforce_admins?: boolean;
+	lock_branch?: boolean;
+	require_code_owner: boolean;
+	require_conversation_resolution: boolean;
+	require_last_push_approval?: boolean;
+	require_linear_history?: boolean;
+	require_signed_commits: boolean;
+	required_approvals: number;
+	restrict_pushes: boolean;
+	strict?: boolean;
 }
 
 export interface ProtectionRead {
@@ -94,7 +101,10 @@ export function protectionPutBody(
 ): Record<string, unknown> {
 	const curReviews = (current?.["required_pull_request_reviews"] as Record<string, unknown>) ?? {};
 	const curChecks = (current?.["required_status_checks"] as Record<string, unknown>) ?? {};
-	const flag = (key: string, fallback: boolean): boolean => {
+	const flag = (key: string, fallback: boolean, want?: boolean): boolean => {
+		if (want !== undefined) {
+			return want;
+		}
 		const entry = current?.[key];
 		if (typeof entry === "boolean") {
 			return entry;
@@ -110,46 +120,64 @@ export function protectionPutBody(
 			"teams",
 			"users",
 		]),
-		dismiss_stale_reviews: input.dismissStale,
+		dismiss_stale_reviews: input.dismiss_stale,
 		dismissal_restrictions: toAllowances(curReviews["dismissal_restrictions"], ["teams", "users"]),
-		require_code_owner_reviews: input.requireCodeOwner,
+		require_code_owner_reviews: input.require_code_owner,
 		require_last_push_approval:
-			typeof curReviews["require_last_push_approval"] === "boolean"
+			input.require_last_push_approval ??
+			(typeof curReviews["require_last_push_approval"] === "boolean"
 				? curReviews["require_last_push_approval"]
-				: false,
-		required_approving_review_count: input.requireApprovals,
+				: false),
+		required_approving_review_count: input.required_approvals,
 	};
 	return {
-		allow_deletions: flag("allow_deletions", false),
-		allow_force_pushes: flag("allow_force_pushes", false),
+		allow_deletions: flag("allow_deletions", false, input.allow_deletions),
+		allow_force_pushes: flag("allow_force_pushes", false, input.allow_force_pushes),
 		allow_fork_syncing: flag("allow_fork_syncing", false),
 		block_creations: flag("block_creations", false),
-		enforce_admins: flag("enforce_admins", true),
-		lock_branch: flag("lock_branch", false),
-		required_conversation_resolution: input.requireConversationResolution,
-		required_linear_history: flag("required_linear_history", false),
+		enforce_admins: flag("enforce_admins", true, input.enforce_admins),
+		lock_branch: flag("lock_branch", false, input.lock_branch),
+		required_conversation_resolution: input.require_conversation_resolution,
+		required_linear_history: flag("required_linear_history", false, input.require_linear_history),
 		required_pull_request_reviews: reviews,
 		required_status_checks: {
 			checks: input.checks.map((context) => ({ context })),
-			strict: typeof curChecks["strict"] === "boolean" ? curChecks["strict"] : false,
+			strict:
+				input.strict ?? (typeof curChecks["strict"] === "boolean" ? curChecks["strict"] : false),
 		},
-		restrictions: input.restrictPushes
+		restrictions: input.restrict_pushes
 			? toAllowances(current?.["restrictions"], ["apps", "teams", "users"])
 			: null,
 	};
 }
 
-function protectionInput(upstream: GithubSettings): ProtectionInput {
+type Branches = NonNullable<GithubSettings["branches"]>;
+
+function protectionInput(branch: string, b: Branches): ProtectionInput {
 	return {
-		branch: upstream.defaultBranch,
-		checks: upstream.checks,
-		dismissStale: upstream.reviews.dismissStale,
-		requireApprovals: upstream.reviews.requiredApprovals,
-		requireCodeOwner: upstream.reviews.requireCodeOwner,
-		requireConversationResolution: upstream.reviews.requireConversationResolution,
-		requireSignedCommits: upstream.reviews.requireSignedCommits,
-		restrictPushes: upstream.reviews.restrictPushes,
+		allow_deletions: b.allow_deletions,
+		allow_force_pushes: b.allow_force_pushes,
+		branch,
+		checks: b.required_status_checks,
+		dismiss_stale: b.reviews.dismiss_stale,
+		enforce_admins: b.enforce_admins,
+		lock_branch: b.lock_branch,
+		require_code_owner: b.reviews.require_code_owner,
+		require_conversation_resolution: b.reviews.require_conversation_resolution,
+		require_last_push_approval: b.require_last_push_approval,
+		require_linear_history: b.require_linear_history,
+		require_signed_commits: b.reviews.require_signed_commits,
+		required_approvals: b.reviews.required_approvals,
+		restrict_pushes: b.reviews.restrict_pushes,
+		strict: b.strict_status_checks,
 	};
+}
+
+// GET returns classic flags as booleans or {enabled}.
+function enabledFlag(value: unknown): unknown {
+	return typeof value === "object" && value !== null && "enabled" in value
+		? (value as { enabled?: unknown }).enabled
+		: value;
 }
 
 function checkNames(contexts: unknown): string[] {
@@ -162,7 +190,8 @@ function checkNames(contexts: unknown): string[] {
 export function checkPrChecks(
 	blueprint: string,
 	repo: string,
-	upstream: GithubSettings,
+	branch: string,
+	b: Branches,
 	read: ProtectionRead,
 	target: string,
 ): CheckResult {
@@ -170,26 +199,28 @@ export function checkPrChecks(
 	if (read.missingBranch) {
 		return failManual(
 			base,
-			`<branch ${upstream.defaultBranch} missing>`,
-			`required checks: ${upstream.checks.join(", ")}`,
-			`Push branch ${upstream.defaultBranch} first, then re-check.`,
+			`<branch ${branch} missing>`,
+			`required checks: ${b.required_status_checks.join(", ")}`,
+			`Push branch ${branch} first, then re-check.`,
 		);
 	}
-	const current = checkNames(
-		(read.protection?.["required_status_checks"] as Record<string, unknown> | undefined)?.[
-			"checks"
-		],
-	).toSorted();
-	const want = [...upstream.checks].toSorted();
-	if (JSON.stringify(current) === JSON.stringify(want)) {
+	const liveChecks = read.protection?.["required_status_checks"] as
+		| Record<string, unknown>
+		| undefined;
+	const current = checkNames(liveChecks?.["checks"]).toSorted();
+	const want = [...b.required_status_checks].toSorted();
+	const strictOk =
+		b.strict_status_checks === undefined || liveChecks?.["strict"] === b.strict_status_checks;
+	if (
+		read.protection !== undefined &&
+		strictOk &&
+		JSON.stringify(current) === JSON.stringify(want)
+	) {
 		return pass(base, `required checks: ${want.join(", ") || "<none>"}`, "required checks match");
 	}
 	// Enabling push restrictions from scratch needs a user/team allowlist the
 	// boolean schema cannot express; the API rejects empty teams/users.
-	if (
-		upstream.reviews.restrictPushes &&
-		!isRestrictionsEnabled(read.protection?.["restrictions"])
-	) {
+	if (b.reviews.restrict_pushes && !isRestrictionsEnabled(read.protection?.["restrictions"])) {
 		return failManual(
 			base,
 			`required checks: ${current.join(", ") || "<none>"}`,
@@ -197,21 +228,22 @@ export function checkPrChecks(
 			"Add a push allowlist (users/teams) in Settings → Branches, then re-check.",
 		);
 	}
-	const input = protectionInput(upstream);
 	const fix: GithubApiFix = {
 		kind: "github-api",
-		label: `github PUT ${repo} branch protection (${upstream.defaultBranch})`,
+		label: `github PUT ${repo} branch protection (${branch})`,
 		steps: [
 			{
-				body: protectionPutBody(read.protection, input),
+				body: protectionPutBody(read.protection, protectionInput(branch, b)),
 				method: "PUT",
-				path: repoPath(repo, `/branches/${encodeURIComponent(upstream.defaultBranch)}/protection`),
+				path: repoPath(repo, `/branches/${encodeURIComponent(branch)}/protection`),
 			},
 		],
 	};
 	return failFixable(
 		base,
-		`required checks: ${current.join(", ") || "<none>"}`,
+		read.protection === undefined
+			? "<branch not protected>"
+			: `required checks: ${current.join(", ") || "<none>"}${strictOk ? "" : `; strict: ${String(liveChecks?.["strict"])}`}`,
 		`required checks: ${want.join(", ") || "<none>"}`,
 		fix,
 	);
@@ -220,7 +252,8 @@ export function checkPrChecks(
 export async function checkReviews(
 	blueprint: string,
 	repo: string,
-	upstream: GithubSettings,
+	branch: string,
+	b: Branches,
 	read: ProtectionRead,
 	target: string,
 ): Promise<CheckResult> {
@@ -228,43 +261,50 @@ export async function checkReviews(
 	if (read.missingBranch) {
 		return failManual(
 			base,
-			`<branch ${upstream.defaultBranch} missing>`,
+			`<branch ${branch} missing>`,
 			"code reviews enforced",
-			`Push branch ${upstream.defaultBranch} first, then re-check.`,
+			`Push branch ${branch} first, then re-check.`,
 		);
 	}
 	const reviews =
 		(read.protection?.["required_pull_request_reviews"] as Record<string, unknown>) ?? {};
 	const diffs: string[] = [];
 	const expect: Array<[string, unknown, unknown]> = [
-		["approvals", reviews["required_approving_review_count"], upstream.reviews.requiredApprovals],
-		["dismiss_stale", reviews["dismiss_stale_reviews"], upstream.reviews.dismissStale],
-		["code_owner", reviews["require_code_owner_reviews"], upstream.reviews.requireCodeOwner],
+		["approvals", reviews["required_approving_review_count"], b.reviews.required_approvals],
+		["dismiss_stale", reviews["dismiss_stale_reviews"], b.reviews.dismiss_stale],
+		["code_owner", reviews["require_code_owner_reviews"], b.reviews.require_code_owner],
 		[
 			"conversation_resolution",
 			(
 				read.protection?.["required_conversation_resolution"] as Record<string, unknown> | undefined
 			)?.["enabled"],
-			upstream.reviews.requireConversationResolution,
+			b.reviews.require_conversation_resolution,
 		],
 		[
 			"restrict_pushes",
 			isRestrictionsEnabled(read.protection?.["restrictions"]),
-			upstream.reviews.restrictPushes,
+			b.reviews.restrict_pushes,
 		],
+		["last_push_approval", reviews["require_last_push_approval"], b.require_last_push_approval],
+		[
+			"linear_history",
+			enabledFlag(read.protection?.["required_linear_history"]),
+			b.require_linear_history,
+		],
+		["force_pushes", enabledFlag(read.protection?.["allow_force_pushes"]), b.allow_force_pushes],
+		["deletions", enabledFlag(read.protection?.["allow_deletions"]), b.allow_deletions],
+		["enforce_admins", enabledFlag(read.protection?.["enforce_admins"]), b.enforce_admins],
+		["lock_branch", enabledFlag(read.protection?.["lock_branch"]), b.lock_branch],
 	];
 	for (const [label, have, want] of expect) {
-		if (!Object.is(have, want)) {
+		if (want !== undefined && !Object.is(have, want)) {
 			diffs.push(`${label}: ${String(have)} → ${String(want)}`);
 		}
 	}
 	let signaturesEnabled = false;
 	try {
 		const signatures = await apiJson(
-			repoPath(
-				repo,
-				`/branches/${encodeURIComponent(upstream.defaultBranch)}/protection/required_signatures`,
-			),
+			repoPath(repo, `/branches/${encodeURIComponent(branch)}/protection/required_signatures`),
 			{ allowStatuses: [404] },
 		);
 		signaturesEnabled = signatures !== undefined;
@@ -275,9 +315,9 @@ export async function checkReviews(
 			throw error;
 		}
 	}
-	if (signaturesEnabled !== upstream.reviews.requireSignedCommits) {
+	if (signaturesEnabled !== b.reviews.require_signed_commits) {
 		diffs.push(
-			`signed_commits: ${String(signaturesEnabled)} → ${String(upstream.reviews.requireSignedCommits)}`,
+			`signed_commits: ${String(signaturesEnabled)} → ${String(b.reviews.require_signed_commits)}`,
 		);
 	}
 	if (diffs.length === 0) {
@@ -286,7 +326,7 @@ export async function checkReviews(
 	// Enabling push restrictions from scratch needs a user/team allowlist the
 	// boolean schema cannot express; the API rejects empty teams/users.
 	if (
-		upstream.reviews.restrictPushes &&
+		b.reviews.restrict_pushes &&
 		!isRestrictionsEnabled(read.protection?.["restrictions"]) &&
 		diffs.some((entry) => entry.startsWith("restrict_pushes"))
 	) {
@@ -297,26 +337,25 @@ export async function checkReviews(
 			"Add a push allowlist (users/teams) in Settings → Branches, then re-check.",
 		);
 	}
-	const input = protectionInput(upstream);
 	const steps: GithubApiStep[] = [
 		{
-			body: protectionPutBody(read.protection, input),
+			body: protectionPutBody(read.protection, protectionInput(branch, b)),
 			method: "PUT",
-			path: repoPath(repo, `/branches/${encodeURIComponent(upstream.defaultBranch)}/protection`),
+			path: repoPath(repo, `/branches/${encodeURIComponent(branch)}/protection`),
 		},
 	];
-	if (signaturesEnabled !== upstream.reviews.requireSignedCommits) {
+	if (signaturesEnabled !== b.reviews.require_signed_commits) {
 		steps.push({
-			method: upstream.reviews.requireSignedCommits ? "POST" : "DELETE",
+			method: b.reviews.require_signed_commits ? "POST" : "DELETE",
 			path: repoPath(
 				repo,
-				`/branches/${encodeURIComponent(upstream.defaultBranch)}/protection/required_signatures`,
+				`/branches/${encodeURIComponent(branch)}/protection/required_signatures`,
 			),
 		});
 	}
 	const fix: GithubApiFix = {
 		kind: "github-api",
-		label: `github PUT ${repo} branch protection (${upstream.defaultBranch})`,
+		label: `github PUT ${repo} branch protection (${branch})`,
 		steps,
 	};
 	return failFixable(base, diffs.join("; "), "code reviews match", fix);

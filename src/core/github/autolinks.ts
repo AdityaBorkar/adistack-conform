@@ -20,7 +20,7 @@ export async function checkAutolinks(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "autolinks", target);
-	const want = upstream.autolinks ?? [];
+	const want = upstream.integrations?.autolinks ?? [];
 	if (want.length === 0) {
 		return pass(base, "no autolinks required", "autolinks match");
 	}
@@ -47,7 +47,7 @@ export async function checkAutolinks(
 				body: {
 					is_alphanumeric: entry.alphanumeric ?? false,
 					key_prefix: entry.prefix,
-					url_template: entry.urlTemplate,
+					url_template: entry.url_template,
 				},
 				method: "POST",
 				path: repoPath(repo, "/autolinks"),
@@ -55,8 +55,8 @@ export async function checkAutolinks(
 			continue;
 		}
 		const mismatches: string[] = [];
-		if (found.url_template !== entry.urlTemplate) {
-			mismatches.push(`url: ${String(found.url_template)} → ${entry.urlTemplate}`);
+		if (found.url_template !== entry.url_template) {
+			mismatches.push(`url: ${String(found.url_template)} → ${entry.url_template}`);
 		}
 		if ((found.is_alphanumeric ?? false) !== (entry.alphanumeric ?? false)) {
 			mismatches.push(
@@ -70,7 +70,7 @@ export async function checkAutolinks(
 				body: {
 					is_alphanumeric: entry.alphanumeric ?? false,
 					key_prefix: entry.prefix,
-					url_template: entry.urlTemplate,
+					url_template: entry.url_template,
 				},
 				method: "POST" as const,
 				path: repoPath(repo, "/autolinks"),

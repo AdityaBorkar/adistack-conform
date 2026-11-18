@@ -1,7 +1,8 @@
 import { ApiError, apiJson, isAuthError, repoPath } from "#/core/github/api.js";
 import type { GithubSettings } from "#/core/github/shared.js";
+import { fixOrPass, skipOnError } from "#/core/github/shared.js";
 import type { CheckResult, GithubApiFix, GithubApiStep } from "#/core/result.js";
-import { checkBase, failFixable, failManual, pass, skipped } from "#/core/result.js";
+import { checkBase, failFixable, pass, skipped } from "#/core/result.js";
 
 // Access → Collaborators & teams (/settings/access). Declared entries are
 // enforced; extras are ignored (like webhooks). Collaborator permission is
@@ -86,18 +87,19 @@ export async function checkAccess(
 }
 
 // Access → Moderation → Interaction limits (/settings/interaction_limits).
-// Time-boxed abuse response: check via API, fix is manual in the UI.
+// GET returns {} when off; fix is PUT {limit, expiry} or DELETE for "off".
+// Only `limit` is compared: the live expiry is a timestamp, not a duration.
 export async function checkInteractionLimits(
 	blueprint: string,
 	repo: string,
 	upstream: GithubSettings,
 	target: string,
-): Promise<CheckResult> {
-	const base = checkBase("github", blueprint, "access-limits", target);
-	const want = upstream.interactionLimits;
+): Promise<CheckResult | undefined> {
+	const want = upstream.access?.moderation?.interaction_limits;
 	if (want === undefined) {
-		return pass(base, "no interaction limits required", "interaction limits match");
+		return undefined;
 	}
+	const base = checkBase("github", blueprint, "access-limits", target);
 	let have = "off";
 	try {
 		const current = (await apiJson(repoPath(repo, "/interaction-limits"), {
@@ -107,63 +109,18 @@ export async function checkInteractionLimits(
 			have = current.limit;
 		}
 	} catch (error) {
-		if (isAuthError(error)) {
-			return skipped(
-				base,
-				"cannot read interaction limits",
-				"set GITHUB_TOKEN (private repo or rate limit)",
-			);
-		}
-		throw error;
+		return skipOnError(error, base, "interaction limits");
 	}
-	if (have === want.limit) {
-		return pass(base, `interaction limits: ${have}`, "interaction limits match");
-	}
-	return failManual(
+	const path = repoPath(repo, "/interaction-limits");
+	const step: GithubApiStep =
+		want.limit === "off"
+			? { method: "DELETE", path }
+			: { body: { expiry: want.expiry, limit: want.limit }, method: "PUT", path };
+	return fixOrPass(
 		base,
-		`interaction limits: ${have} → ${want.limit}`,
-		"interaction limits match",
-		`Set Interaction limits to ${want.limit} in Settings → Moderation, then re-check (time-boxed; not auto-fixed).`,
-	);
-}
-
-export async function checkRequiredWorkflows(
-	blueprint: string,
-	repo: string,
-	upstream: GithubSettings,
-	target: string,
-): Promise<CheckResult> {
-	const base = checkBase("github", blueprint, "required-workflows", target);
-	const want = upstream.requiredWorkflows ?? [];
-	if (want.length === 0) {
-		return pass(base, "no required workflows", "required workflows match");
-	}
-	let have: string[] = [];
-	try {
-		const items = (await apiJson(repoPath(repo, "/required_workflows"), {
-			allowStatuses: [404],
-		})) as Array<{ path?: unknown }> | undefined;
-		if (Array.isArray(items)) {
-			have = items.map((entry) => String(entry.path ?? ""));
-		}
-	} catch (error) {
-		if (isAuthError(error)) {
-			return skipped(
-				base,
-				"cannot list required workflows",
-				"set GITHUB_TOKEN (private repo or rate limit)",
-			);
-		}
-		throw error;
-	}
-	const missing = want.filter((path) => !have.includes(path));
-	if (missing.length === 0) {
-		return pass(base, `required workflows: ${want.join(", ")}`, "required workflows match");
-	}
-	return failManual(
-		base,
-		`missing: ${missing.join(", ")}`,
-		`required workflows: ${want.join(", ")}`,
-		`Author required workflow file(s) ${missing.join(", ")} at org level, then re-check.`,
+		have === want.limit ? [] : [`interaction limits: ${have} → ${want.limit}`],
+		[step],
+		`github ${step.method} ${repo} interaction-limits`,
+		`interaction limits: ${want.limit}`,
 	);
 }

@@ -1,5 +1,6 @@
 // JSON helpers: indent-preserving serialize, deep equality and
 // prototype-safe key handling.
+import equal from "fast-deep-equal";
 export function setOwn(target: Record<string, unknown>, key: string, value: unknown): void {
 	// "__proto__" assignment would mutate the prototype instead of creating an
 	// own property, so define it explicitly.
@@ -44,22 +45,4 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function deepEqual(left: unknown, right: unknown): boolean {
-	if (left === right) {
-		return true;
-	}
-	if (Array.isArray(left) && Array.isArray(right)) {
-		return (
-			left.length === right.length && left.every((item, index) => deepEqual(item, right[index]))
-		);
-	}
-	if (isRecord(left) && isRecord(right)) {
-		const leftKeys = Object.keys(left);
-		const rightKeys = Object.keys(right);
-		return (
-			leftKeys.length === rightKeys.length &&
-			leftKeys.every((key) => Object.hasOwn(right, key) && deepEqual(left[key], right[key]))
-		);
-	}
-	return false;
-}
+export const deepEqual: (left: unknown, right: unknown) => boolean = equal;
