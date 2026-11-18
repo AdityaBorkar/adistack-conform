@@ -1,5 +1,5 @@
 ---
-"@adistack/conform": major
+"@adistack/conform": minor
 ---
 
 Snake_case GitHub manifest fields (breaking).

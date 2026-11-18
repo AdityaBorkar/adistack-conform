@@ -1,5 +1,5 @@
 ---
-"@adistack/conform": major
+"@adistack/conform": minor
 ---
 
 GitHub settings manifest v2: nested by the Settings sidebar (breaking, ADR 0015)

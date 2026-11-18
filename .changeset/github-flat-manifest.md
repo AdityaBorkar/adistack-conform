@@ -1,5 +1,5 @@
 ---
-"@adistack/conform": major
+"@adistack/conform": minor
 ---
 
 Flat GitHub manifest (breaking).
