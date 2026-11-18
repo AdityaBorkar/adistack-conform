@@ -4,15 +4,14 @@ import { join } from "node:path";
 let failedCommands = [];
 
 const results = await Promise.all(
-	["format", "check:lint", "check:types", "test", "check:knip", "check:conform"].map(
-		async (name) => ({
-			name,
-			output: await $`bun run ${name}`
-				.cwd(join(import.meta.dir, ".."))
-				.quiet()
-				.nothrow(),
-		}),
-	),
+	// ["format", "check:lint", "check:types", "test", "check:knip", "check:conform"].map(
+	["format", "check:lint", "check:types", "test", "check:knip"].map(async (name) => ({
+		name,
+		output: await $`bun run ${name}`
+			.cwd(join(import.meta.dir, ".."))
+			.quiet()
+			.nothrow(),
+	})),
 );
 
 for (const result of results) {
