@@ -40,7 +40,7 @@ program
 	.description(
 		"Check the current project/machine/repo against the desired state in the current directory.",
 	)
-	.name("adistack-conform")
+	.name("@adistack/conform")
 	.version(VERSION);
 
 // Each command module owns its flags (`configure`) and logic (`run`, which

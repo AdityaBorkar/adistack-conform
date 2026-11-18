@@ -1,6 +1,6 @@
 ---
 title: API
-description: JSON output, CheckResult shape, schemas, and building from source.
+description: JSON output, CheckResult shape, and schemas.
 icon: DocText
 ---
 
@@ -11,7 +11,7 @@ There is no library API — the interface is the CLI plus the JSON Schemas. (`sr
 Humans read lines; scripts read JSON:
 
 ```bash
-adistack-conform check --json --project-only > report.json
+bunx @adistack/conform check --json --project-only > report.json
 ```
 
 Prints `{ desiredStates, ok, passed, failed, skipped, total, results }` (`--json` ignores `--verbose`; JSON always carries every result). Gate on `ok` / exit code (<Badge variant="success">0 sync</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>). Each `CheckResult`:
@@ -42,11 +42,11 @@ Prints `{ desiredStates, ok, passed, failed, skipped, total, results }` (`--json
 
 ## Schemas (Zod source of truth)
 
-`src/schemas/` (`config.ts`, `project-manifest.ts`, `machine-manifest.ts`, `registry.ts`, `github-settings.ts`, `import * as z from "zod"`, finals wrapped in `z.compile()`) generates `config/*.json` via `scripts/generate-json-schema.ts` (also run by `bun run build`).
+`src/schemas/` (`config.ts`, `project-manifest.ts`, `machine-manifest.ts`, `registry.ts`, `github-settings.ts`, `import * as z from "zod"`, finals wrapped in `z.compile()`) generates `config/*.json` on `bun run build` (via `scripts/generate-json-schema.ts`).
 
 <Callout type="warning" title="Hands off the generated files">
 
-Never hand-edit the generated files. Change the Zod source and regen.
+Never hand-edit the generated files. Change the Zod source and regen with `bun run build`.
 
 </Callout>
 
@@ -54,16 +54,6 @@ Never hand-edit the generated files. Change the Zod source and regen.
 | ------------------------------ | -------------------------------------------------------------- |
 | `config/conform.json`          | Consumer `conform.json`                                        |
 | `config/project-manifest.json` | Blueprint file (`projects/<name>.json`) in the tech-stack repo |
+| `config/machine-manifest.json` | Blueprint file (`machines/<name>.json`) in the tech-stack repo |
 | `config/registry.json`         | Tech-stack root `registry.json`                                |
 | `config/github-manifest.json`  | Settings file listed in `registry.json` `github_configs`       |
-
-## Building
-
-```bash
-bun install
-bun run dev              # run from source: bun ./src/index.ts
-bun run verify           # format && check:lint && check:types && test (gate before pushing)
-bun run build            # regen schemas via gen:json-schema + compile --minify --bytecode to .output/adistack-conform
-```
-
-Conventions: path alias `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` for type-only, tabs + width 100, always `bun run <script>`. The 30s fetch timeout, 10-minute fix timeout, and 16-way upstream parallelism are fixed, not configurable.

@@ -7,8 +7,8 @@ icon: SquareGrid2x2
 No workspace discovery: each invocation loads a single `conform.json` (`./conform.json` in the cwd, or one `--path <path>`), and project targets resolve against the directory that owns that `conform.json`. In a monorepo, run the CLI once per package directory that owns a `conform.json`:
 
 ```bash
-for d in packages/*; do (cd "$d" && adistack-conform check); done
-# or: adistack-conform check --path ./packages/a/conform.json
+for d in packages/*; do (cd "$d" && bunx @adistack/conform check); done
+# or: bunx @adistack/conform check --path ./packages/a/conform.json
 # (targets resolve against the directory that owns the loaded conform.json)
 ```
 

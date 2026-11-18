@@ -1,90 +1,142 @@
 ---
 name: adistack-conform
-description: Check and fix project/machine drift against tech-stack blueprints with adistack-conform. Use when running conform check or fix, editing conform.json, debugging a drift report, or developing this CLI repo itself.
+description: Use when running adistack-conform (@adistack/conform) check, fix, or validate; adding or editing conform.json; reading a drift report (fixable, manual, skipped, internal-error, exit 0/1/2); authoring or validating a tech-stack repo (registry.json, project/machine/github blueprints, templates, secrets templates); wiring conform into CI; or developing the conform CLI itself.
 ---
 
 # adistack-conform
 
-Bun-only TypeScript CLI that checks the current directory (project files) and the current machine (JSON manifest state) against upstream blueprints in a tech-stack repo. Desired state lives in `conform.json`.
+Desired-state enforcer. A consumer repo declares a **desired state** in `conform.json`: which **blueprints** (project / machine / github) it must match, and the **pin** (`source`: tech-stack `owner/repo@ref`) holding them. `check` compares reality to the pinned **upstreams** and reports **drift**; `fix` applies **fixable** remedies; `validate` lints a tech-stack repo before consumers pin it.
 
-## Desired state (`conform.json`)
+Two roles, never mixed:
+
+| Role                          | Owns                                        | Runs           |
+| ----------------------------- | ------------------------------------------- | -------------- |
+| Consumer (end repo / machine) | `conform.json`                              | `check`, `fix` |
+| Author (tech-stack repo)      | `registry.json` + manifests + payload files | `validate`     |
+
+Vocabulary (GLOSSARY.md): pin, registry, blueprint, manifest, source (path inside tech-stack), upstream (fetched content), target (local thing enforced), scope, drift, fixable, manual, hint, skipped, extra, allowlist, strict, re-check, dry-run, backup. Use these words; avoid preset/golden/sync/apply.
+
+## Running in an end repo
+
+```bash
+bun add -d @adistack/conform            # or run ad hoc
+bunx @adistack/conform check            # bin of the package; this repo's source: bun dev check
+```
+
+Run from the dir owning `conform.json` (no directory walking; `--path <file>` overrides, `~` expands). `bunx @adistack/conform` runs the published package (verified: `bunx` resolves the scoped package to its single bin); this repo's source runs via `bun dev check`.
+
+```bash
+bunx @adistack/conform check [--json] [--verbose] [--strict] [--project-only|--machine-only|--github-only] [--path p]
+bunx @adistack/conform fix   [--all] [--dry-run] [--strict] [--project-only|--machine-only|--github-only] [--path p]
+bunx @adistack/conform validate [--path <tech-stack dir | registry.json>]
+```
+
+### `conform.json`
 
 ```jsonc
 {
-	"$schema": "./config/conform.json",
-	"machine": { "blueprint": "main" },
-	"project": { "blueprint": "cli-app" },
-	"github": { "blueprint": "npm-package" },
+	"$schema": "./node_modules/@adistack/conform/config/conform.json",
+	"project": { "blueprint": "cli-app" }, // registry projects key or entry path
+	"machine": { "blueprint": "main" }, // registry machines key; global to $HOME
+	"github": { "blueprint": "npm-package", "repo": "owner/repo" }, // repo optional
 	"source": { "type": "github", "repo": "AdityaBorkar/tech-stack", "ref": "main" },
 }
 ```
 
-- At least one of `machine` / `project` / `github` is required; omit the others to track fewer scopes.
-- `github` is `{ "blueprint": "<name>", "repo"?: "owner/repo" }`. `repo` defaults to `$GITHUB_REPOSITORY`, then the git origin remote of the cwd.
-- `source.type` is always `"github"`. `source.repo` is `owner/repo`. `source.ref` defaults to `main` (branch, tag, or commit; pin for reproducibility).
-- `project.blueprint` matches a tech-stack root `registry.json` `projects` key, or an entry `path` (e.g. `projects/cli-app.json` matches `./projects/cli-app.json`). Basenames alone never match, so a typo cannot resolve to the wrong blueprint.
-- `machine.blueprint` matches a `registry.json` `machines` key or entry `path` the same way (e.g. `main`).
-- Desired-state discovery: without `--path`, `check` / `fix` read `./conform.json` in the cwd and `validate` reads `./registry.json` in the cwd (no directory walking). `--path <path>` accepts any path. Project targets resolve against the directory that owns `conform.json`; leading `~` expands against `$HOME`, absolute paths pass through.
+- ≥1 scope required; omitting a scope = permanent scope filter. Strict schema: unknown keys → exit 2.
+- `source.type` only `"github"`; `ref` default `main` (branch/tag/commit). Pin a tag/commit for reproducibility; `main` moves and there is no cache, so upstream pushes hit the next run.
+- Blueprint resolution: exact key (case-sensitive, trimmed) or normalized entry path (`projects/cli-app.json` ≡ `./projects/cli-app.json`). No basename/fuzzy match. Unknown name → `<scope>:internal-error` listing available names (exit 1). Copy names from the registry.
+- `github.repo` fallback: `$GITHUB_REPOSITORY` → cwd git `origin`. None → `github:internal-error`.
+- Project targets resolve against the dir owning `conform.json`; machine targets against `$HOME`.
+- Monorepo: one `conform.json` per package, run per package dir (`for d in packages/*; do (cd "$d" && bunx @adistack/conform check); done`). Put `machine` in at most one.
 
-## Commands
+### Auth
 
-Run from the directory that owns `conform.json`: project targets resolve against that directory.
+`GITHUB_TOKEN` env, else `gh auth token`. Needed for: private tech-stack, rate limits, branch protection reads, all github-scope fixes (admin). Without token: public fetches work until 401/403 → github scope **skips** (exit 0) with `⚠ GitHub checks skipped` on stderr.
 
-```bash
-adistack-conform check [--path <path>] [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
-adistack-conform fix [--path <path>] [--all] [--dry-run] [--strict] [--project-only | --machine-only | --github-only]
-adistack-conform validate [--path <path>]
-# from source: bun ./src/index.ts check
-```
+### Exit codes (public contract, ADR 0012)
 
-- `check` exits 0 (in sync, skips are not drift), 1 (drift), 2 (desired-state error).
-- `--project-only` + `--machine-only` + `--github-only` are mutually exclusive (passing two is an error). Naming a scope that `conform.json` does not configure exits 2.
-- `--json` prints a machine-readable summary (`{ desiredStates, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically. `--json` ignores `--verbose` (JSON always carries every result). `--verbose` also shows passing results (default: failing results only).
-- `fix` flow: reports manual items with hints (fixable machine/github results may carry both `fix` and `hint`), shows a diff preview (diffs over ~200KB skipped; at most 20 diffs shown), prompts with space-to-toggle multiselect (each option shows the fix command), fixes `overwrite-file` first (each writes a `.conform.bak` backup next to the target with the same file mode, numbered `.conform.bak.N` when one already exists; secrets templates keep a single `.conform.bak`; a symlink or non-regular target is refused before anything is read or copied) then links/commands/API fixes (commands time out after 10 minutes), then re-checks the selected IDs (project narrows to them, machine and github re-check whole; full re-check fallback on error). A selected ID missing from the re-check counts as fixed (e.g. a removed extra) only when that scope's re-check hit no new failure — a GitHub auth skip or a machine domain error keeps the previous failure, and a re-checked result that comes back skipped (e.g. a per-check GitHub 403) never replaces a failure under the same ID. `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on desired-state error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes or file fixes outside the project dir.
-- `fix` needs a TTY unless `--all` is passed, and non-TTY `--all` refuses command/API fixes and file or link fixes outside the project dir (symlinked parent dirs are resolved first, so `.github -> /elsewhere` counts as outside) (run again in a terminal). In agents/non-TTY runs use `fix --dry-run` (dry-run never writes and never prompts). Prefer `fix --dry-run` before `fix --all` so the diff is reviewed first.
-- `validate` is a tech-stack author tool, not a consumer check: it validates the local tech-stack repo at `--path <path>` (a repo directory or `registry.json` file; default `./registry.json` in the cwd) — the `registry.json` schema, every blueprint file in every section (`projects`, `machines`, `github_configs`), every `files[]` source existing on disk, and the manifest-adjacent `secrets.yaml` existing when any machine file declares `secrets`. Prints one `✓` line per valid file to stdout and `✗` lines with the error detail to stderr, exits 0 when all valid, 1 when any invalid, 2 when no registry is found. It never reads `conform.json` (for `validate`, `--path` points at the tech-stack repo directory or `registry.json` file instead); consumers check their own drift with `check`. Tech-stack repos run it from their own `verify` script.
-- Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits; when unset, the token comes from `gh auth token` (the env var wins). With no token at all, `check` warns on stderr that GitHub checks were skipped (branch protection always needs auth). GitHub-scope checks/fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit (then the scope skips, still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); the target repo defaults to `$GITHUB_REPOSITORY`, then the cwd git origin remote (override with `github.repo`). Unresolvable repo (none of the three) is `github:internal-error` drift (exit 1).
+| Code | `check`                                                                                                                 | `fix`                                                                  | `validate`                        |
+| ---- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------- |
+| 0    | in sync (skips are ok)                                                                                                  | nothing left failing                                                   | all valid                         |
+| 1    | drift (incl. `internal-error`, unknown blueprint, scoped-run fetch error)                                               | drift remains / cancelled / `--dry-run` found drift                    | registry or any blueprint invalid |
+| 2    | desired-state error: missing/invalid `conform.json`, two scope flags, configured-scope mismatch, registry fetch failure | same + no TTY without `--all`, or non-TTY `--all` refusing risky fixes | no registry file at all           |
 
-## What each scope checks
+### Results
 
-Project (one result per blueprint `files[]`, id `project:<blueprint>:<name>`):
+Id `<scope>:<blueprint>:<name>` (machine: `machine:<bp>:<section>:<name>`, section `pacman|bun|link|secrets-template`; whole-scope failure: `<scope>:internal-error`, no `upstream`, `target` = scope name).
 
-- Fetch order per unique `repo@ref`: `registry.json` once, then each desired state's blueprint file (project manifests, machine manifests, github settings files), then only needed upstream files (deduplicated, 16-way parallel, no local cache). `source` is repo-relative (e.g. `projects/files/<group>/<file>`); a leading `/`, `./`/`../` prefixes, empty or dot segments, and `\\` fail the blueprint schema (same rule for machine sources).
-- Project `target` is resolved against the directory that owns `conform.json` (`~` expands, absolute passes through). Missing target fails fixable (overwrite-file fix). Unreadable target (e.g. `/etc/...` without sudo) fails manual with a hint. Three upstream/target errors stay distinct because each has a different owner: `<blueprint fetch failed>` (network/auth, retry), `<blueprint file missing>` (blueprint author: fix the manifest or add the file), `<unreadable>` (local permissions).
-- Per-entry `compare` rules (declared in the manifest, never hardcoded): `ignore[]` keys are excluded from the compare with local values preserved by `fix` (e.g. linter `overrides`). An upstream is a template only when it parses as a JSON object or array (JSONC-tolerant) and holds `<...>` placeholders: each slot accepts any per-project value (non-empty, no `<...>` placeholders, matching the surrounding text) while every other field must match — extra local fields and array items allowed, placeholder keys fuzzy-match. Drift without a fix is manual. A missing template target is manual (copy the upstream and adapt per-project fields). Templates never pass on byte equality — a verbatim copy fails manual until every upstream `<...>` placeholder is replaced with per-project values. `<...>` in non-JSON upstreams never counts.
-- Existence-only entries from blueprint `file_structure[]` (`name` + `target` + `kind: file|dir`, e.g. `src/`, `AGENTS.md`) must exist; missing files get a generate hint, missing dirs a `mkdir -p` hint (manual). Names are unique across `files[]` and `file_structure[]` (schema error otherwise: both become `project:<blueprint>:<name>` ids). An entry whose resolved target is also a `files[]` target is dropped with no result (file check owns it); a duplicate structure target is skipped.
+| Bucket         | Meaning                                                                 | Action                         |
+| -------------- | ----------------------------------------------------------------------- | ------------------------------ |
+| ok             | matches upstream                                                        | —                              |
+| skipped        | not enforced (no API, auth 401/403, extras without `--strict`)          | none; not drift                |
+| fixable        | carries `fix`: `overwrite-file`, `symlink`, `run-command`, `github-api` | `fix`                          |
+| manual         | `hint` only                                                             | human follows hint             |
+| internal-error | scope threw                                                             | read `actual`; counts as drift |
 
-Machine (one result per declared item, id `machine:<blueprint>:<section>:<name>`):
+`--json` → `{ desiredStates, ok, passed, failed, skipped, total, results[] }`; result fields `id kind scope upstream target expected actual fix? hint? skipped?`. Gate on exit code or `ok`; exclude skips. `--json` ignores `--verbose`. Probe with `check --json`; preview with `fix --dry-run`.
 
-- Upstream is the machine manifest file listed in `registry.json` `machines` (e.g. `machines/main.json`); the CLI fetches it plus only needed `files/` sources (same order as project: `registry.json` → manifest → needed files). `source` is repo-relative (same rules as project); `target` resolves against `$HOME` (`~` expands, absolute passes through).
-- Machine checks require every declared package/file present and correct. Extras (undeclared installs) are skipped, never drift, unless `--strict` is passed to `check` or `fix`, which makes them fixable drift (removal). A clean `check` with a dirty `check --strict` is normal — the machine holds extras the blueprint does not own.
-- Package names in the manifest (`packages`, `allowlist`) must start with a letter, digit, `@`, `_` or `+` and use only `A-Za-z0-9@._+/-`; fixes pass `--` before names to `pacman`. Read-only probes (`pacman -Q`, `bun pm -g ls`, `sops --decrypt`) time out after 60s.
-- Packages: a declared package counts as installed even when it came in as a dependency; extras are judged against explicitly installed packages only. One result per declared `packages.pacman`/`packages.bun` entry (`name: version|"latest"`) plus one result per undeclared install (extra), all with id `machine:<blueprint>:<manager>:<name>`. Missing and pinned-version drift are always fixable (install `name` or `name=version` / `name@version`); an extra is skipped unless `--strict` (then fixable removal). `allowlist` exempts distro-base names (e.g. `base`, `linux`) so a fresh Arch install does not flag its own base.
-- Files without `secrets` link: `target` must be a symlink to the fetched upstream materialized at `<target>.conform-src`. Missing target, wrong dest, dangling link, or a regular file is fixable: the fix writes the exact bytes the check compared to the cache, backs a regular file up to `.conform.bak[.N]`, then swaps the link in atomically. A directory or special file at the target is manual. Extra files are never drift (links own paths, not dirs).
-- Files with `secrets` are secrets templates (id `machine:<blueprint>:secrets-template:<name>`): rendered from `source` with one `sops --decrypt` of the manifest-adjacent `secrets.yaml` per run (flat `KEY: value` lines; keys `[A-Za-z_][A-Za-z0-9_.-]*`). Only the names listed in the file's `secrets` replace their `@@NAME@@` slots; other secrets never reach the file, and a slot for an unlisted name stays as a leftover. `mode` defaults to `0600` and is always enforced (the fix narrows the mode before writing, so the file is never wider). Rendered and live content never appears in `actual`/`expected`, `--json`, or diffs (shown as `<redacted ...>`). Missing `sops`/age key, a listed secret absent from `secrets.yaml`, or leftover placeholders is manual with a hint.
+### Fix flow and safety (ADR 0010/0011)
 
-GitHub (fixed check list, id `github:<blueprint>:<name>`, kind `github`):
+1. Lists manual items + hints. 2. Diff preview (≤20 diffs, skip >~200KB; commands/REST steps printed). 3. Multiselect (TTY) or `--all`. 4. Apply: `overwrite-file` first, then links/commands/API (commands 10-min timeout). 5. Re-check selected ids (project narrowed; machine/github whole; full fallback on error). Ends `Fixed X/Y. N still failing` — re-check is authoritative.
 
-- Upstream is the settings file listed in `registry.json` `github_configs` (e.g. `github-configs/<name>.json`); the CLI compares it against live repo settings via the GitHub REST API (needs `GITHUB_TOKEN`). Covers general/repo settings, immutable releases, CODEOWNERS, issue templates, required PR checks, code reviews/push restrictions, rulesets presence, Actions permissions/workflow (incl. fork PR approval)/retention/OIDC, environments, Advanced Security (incl. dependency graph via vulnerability alerts), and secrets/variables presence. `actions-oidc` always skips; OIDC 404 and upstreams that do not require a check skip too.
-- Fixes are kind `github-api` (multi-step REST calls, needs admin-scoped `GITHUB_TOKEN`).
-- Skipped with a UI hint (still exit 0): items with no public API — social preview, archive toggles, Copilot Autofix, dependency auto-submit, agent suggestions, OIDC-only checks. Whole-scope or per-check 401/403 auth failures also skip. Follow the hint in the GitHub web UI. `internal-error` results carry no `upstream` (`target` is the scope name).
+- Backup `<target>.conform.bak[.N]` before replacing a regular file (secrets templates keep one). Symlink/non-regular target refused before reading. Conflicting writes to one path abort.
+- Non-TTY `--all`: if even one fix runs a command, calls the GitHub API, or writes outside the project (real path, symlinked parents resolved), the whole run is refused with exit 2 ("Re-run in a terminal") — nothing is applied, risky fixes are not skipped-and-continued. Never try to work around this; hand those to a human.
+- A selected id missing from re-check = resolved (e.g. removed extra) only if that scope's re-check had no new failure; a re-check skip never replaces a failure.
 
-## Agent workflow
+### Agent recipe
 
-1. Locate `conform.json` (cwd or `--path`). Confirm the `source.repo@ref` and which scopes are configured.
-2. Run `check` (add `--json` for parsing, `--project-only`/`--machine-only`/`--github-only` to narrow). Done when every failing result (non-`ok`, non-skipped) is classified fixable vs manual.
-3. For drift, run `fix --dry-run` to preview. Done when the would-fix list matches the fixable set.
-4. Run `fix --all` (non-TTY) or interactive `fix` (TTY). Re-check output is authoritative: done when it reports 0 still failing.
-5. Manual items are never fixed automatically: follow the `hint`. To remove extras too, add `--strict` to `fix`.
+1. Read `conform.json`: pin, scopes. 2. `check --json` (narrow with `--*-only`). Classify every non-ok non-skipped result fixable vs manual. 3. `fix --dry-run`; confirm would-fix list = fixable set. 4. Non-TTY: `fix --all` only when every fixable is a project file/link (if even one runs a command, calls the GitHub API, or writes outside the project, the whole run is refused with exit 2); machine package installs, github API fixes → ask user to run `fix` in a terminal. 5. Manual → follow `hint` (edit file, fill template placeholders, mkdir, author fixes upstream). 6. Done when `check` exits 0.
 
-## Developing this repo
+Drift owner by `actual`: `<blueprint fetch failed>` → network/token, retry; `<blueprint file missing>` → tech-stack author (manifest `source` points nowhere); `<unreadable>` → local permissions. Fetched-blueprint schema violation is drift in that scope (author's bug), not exit 2. A `registry.json` that cannot be fetched at all is exit 2, not drift.
 
-```bash
-bun install
-bun run dev              # bun ./src/index.ts
-bun run verify           # format + check:lint + check:types + test + check:knip in parallel (gate before pushing; check:conform runs separately)
-```
+## What each scope enforces
 
-- `src/index.ts` registers commands only; `src/commands/` one file per command (`check`/`fix`/`validate`); `src/core/` domain logic: pipeline (`config`/`run`/`result`/`fix`/`select`/`validate`/`report`), `upstream/` (`registry`/`remote`), and one folder per scope (`project/` (`index`/`compare`/`template`/`structure`), `machine/` (`index`/`links`/`templates`/`packages`/`managers/`/`live`), `github/` (`index`/`api`/`target-repo` + per-area checks)); `src/utils/` generic helpers; `src/schemas/` (`github-settings.ts` included; Zod source of truth, `import * as z from "zod"`, finals wrapped in `z.compile()`).
-- `config/*.json` is generated — never hand-edit (regen via `bun run build`). Compiled binary lands in `.output/`.
-- Conventions: `#/*` → `./src/*` with `.js` suffix on internal imports, `import type` where type-only, tabs + width 100, no `npm`/`npx` (always `bun run <script>`). Reference blueprints live at `~/repo/tech-stack` — read `registry.json`/blueprint files directly instead of guessing.
+### project (`files[]` + `file_structure[]`)
+
+- Fetch per unique `repo@ref`: `registry.json` once → blueprint manifest → only needed upstreams (dedup, 16-way, 30s timeout, no cache).
+- Plain upstream: byte compare. Missing/mismatch → fixable `overwrite-file`.
+- JSON upstream (JSONC-tolerant): semantic compare; fix writes local indent style.
+- `compare.ignore: ["key"]`: top-level keys excluded; `fix` preserves local values (e.g. oxlint/oxfmt `overrides`).
+- Template = upstream parses as JSON object/array AND holds `<...>` placeholders. Each slot accepts any non-empty, placeholder-free per-project value; everything else must match; extra local fields/array items allowed; placeholder keys fuzzy-match. Template drift, missing template target, or verbatim copy (placeholders left) → manual. `<...>` in non-JSON (TS generics, HTML) never counts.
+- `file_structure[]` (`kind: file|dir`): existence only, missing → manual (generate / `mkdir -p` hint). Never auto-created. Target also in `files[]` → dropped (content check owns it).
+
+### machine (packages + `files[]`)
+
+- Packages `packages.pacman|bun: { name: version|"latest" }`. Missing or wrong pinned version → fixable install (`name=ver` / `name@ver`; pacman gets `--` before names). Dependency-installed counts as present.
+- Extras = explicitly installed, undeclared, not in `allowlist` → skipped; `--strict` makes them fixable removals. Clean `check` + dirty `check --strict` is normal.
+- File without `secrets` = **link**: `target` must symlink to materialized upstream `<target>.conform-src`. Missing/wrong/dangling/regular file → fixable (regular file backed up, link swapped atomically). Directory/special file at target → manual. Extra files never drift.
+- File with `secrets: [NAME…]` = **secrets template**: one `sops --decrypt` per run of manifest-adjacent `secrets.yaml` (flat `KEY: value`); only listed names fill `@@NAME@@`; `mode` (`0600` default | `0644`) always enforced, narrowed before write. Content always `<redacted>` in output/JSON/diffs. Missing `sops`/age key, absent secret, leftover `@@…@@` → manual.
+- Probes (`pacman -Q`, `bun pm -g ls`, `sops`) time out at 60s. Domain failure → `machine:<bp>:<domain>` result.
+
+### github (fixed check list via REST, ADR 0008)
+
+Ids `github:<bp>:<check>`: `general`, `releases`, `codeowners`, `issue-templates`, `pr-checks`, `reviews`, `rulesets`, `actions-*` (permissions, workflow incl. fork approval, retention, `actions-oidc`), `environments`, `security`, `secrets`. Fixes are `github-api` (admin token, TTY only). Skipped with UI hint: no public API (social preview, archive toggles, Copilot Autofix, dependency auto-submit, agent suggestions, OIDC); `actions-oidc` always; 401/403.
+
+## Authoring a tech-stack repo
+
+Data-only repo: `registry.json` + manifests + payload files. Full field reference, examples, and the publish/rollout loop: [references/tech-stack.md](references/tech-stack.md). Minimum loop:
+
+1. Add payload under `projects/files/<group>/<file>` (or `machines/files/…`).
+2. Reference it from a manifest `files[]` entry (`name`, repo-relative `source`, `target`).
+3. List the manifest in `registry.json` (key → file path, never a dir).
+4. `bunx @adistack/conform validate` in the tech-stack root → exit 0.
+5. Push / tag; consumers bump `source.ref`; consumer `check`.
+
+## Developing this CLI repo
+
+AGENTS.md is authoritative. Essentials: `bun dev check` runs from source; `bun run verify` gates (format, lint, types, test, knip); `bun run check:conform` dogfoods. `src/schemas/` (Zod) generates `config/*.json` on `bun run build` — never hand-edit `config/`. Scope folders `src/core/{project,machine,github}/` never import each other; upstream access via `src/core/upstream/tech-stack`. Result ids only from `checkBase`/`checkId`. Changing flags, results, exit codes, or `conform.json` semantics → update this skill + `docs/www/` + an ADR, and add a `.changeset/*.md`.
+
+## Common mistakes
+
+| Mistake                                               | Reality                                                 |
+| ----------------------------------------------------- | ------------------------------------------------------- |
+| Running `check` from a subdir without `conform.json`  | exit 2; `cd` to owner or `--path`                       |
+| `validate` in a consumer repo                         | `validate` reads `registry.json`; consumers use `check` |
+| Treating skipped as failing / passing                 | Neither; excluded from drift and pass counts            |
+| Fixing a manual template by copying upstream verbatim | Still manual until every `<...>` is replaced            |
+| Forcing `fix --all` in CI for machine/github drift    | Refused (exit 2) by design; needs a TTY                 |
+| Registry value `./machines/main/` (dir)               | Must point at the manifest file `./machines/main.json`  |
+| Expecting extras to fail without `--strict`           | Skipped by default                                      |
+| Hand-editing `config/*.json`                          | Edit `src/schemas/*`, `bun run build`                   |
+| Typo'd blueprint expecting fuzzy match                | Exact key or path only                                  |

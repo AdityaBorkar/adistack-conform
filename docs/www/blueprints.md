@@ -49,4 +49,4 @@ The map value is the blueprint file: the CLI fetches it directly from the tech-s
 
 ## Machine blueprints
 
-The map value is the blueprint file: the CLI fetches it directly from the tech-stack repo. Directory entries are rejected — the value must point at the file (e.g. `./machines/main.json`). See the machine section of the [skill prompt](../../skills/adistack-conform/SKILL.md) for how its `packages` plus `files[]` entries are enforced.
+The map value is the blueprint file: the CLI fetches it directly from the tech-stack repo. Directory entries are rejected — the value must point at the file (e.g. `./machines/main.json`). See [machine](./machine.md) for how its `packages` plus `files[]` entries are enforced.

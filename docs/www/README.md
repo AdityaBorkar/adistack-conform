@@ -17,9 +17,9 @@ You describe the setup you want in `conform.json`. The CLI compares that against
 ```
 
 ```bash
-adistack-conform check          # exit 0 in sync, 1 drift, 2 desired-state error
-adistack-conform fix --dry-run  # preview, never writes
-adistack-conform fix --all      # apply all fixable items (non-TTY safe)
+bunx @adistack/conform check          # exit 0 in sync, 1 drift, 2 desired-state error
+bunx @adistack/conform fix --dry-run  # preview, never writes
+bunx @adistack/conform fix --all      # apply all fixable items (non-TTY safe)
 ```
 
 <Callout type="tip" title="New here? Read in this order">
@@ -60,8 +60,9 @@ Reference material:
 
 - [Blueprints](./blueprints.md) — how names resolve to blueprint files.
 - [Blueprint files](./blueprint-files.md) — per-file compare and fix rules.
+- [Machine](./machine.md) — packages, dotfile links, and secrets templates.
 - [Authoring](./authoring.md) — writing your own tech-stack repo.
-- [API](./api.md) — JSON output, schemas, and building from source.
+- [API](./api.md) — JSON output and schemas.
 - [Monorepo](./monorepo.md) — one `conform.json` per package.
 
 <Callout type="info" title="Requirements">

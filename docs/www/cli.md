@@ -6,7 +6,7 @@ icon: Command
 
 One binary, three verbs. Global shape first:
 
-`adistack-conform <command> [--path <path>]`
+`bunx @adistack/conform <command> [--path <path>]`
 
 Without `--path`, `check` / `fix` read `./conform.json` in your cwd and `validate` reads `./registry.json` in your cwd (no directory walking); `--path` accepts any path and goes after the command.
 
@@ -15,7 +15,7 @@ Without `--path`, `check` / `fix` read `./conform.json` in your cwd and `validat
 Look, don't touch:
 
 ```bash
-adistack-conform check [--path <path>] [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
+bunx @adistack/conform check [--path <path>] [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
 ```
 
 | Flag                                                  | Meaning                                                   |
@@ -50,7 +50,7 @@ Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="war
 Change things, carefully:
 
 ```bash
-adistack-conform fix [--path <path>] [--all] [--dry-run] [--strict] [--project-only | --machine-only | --github-only]
+bunx @adistack/conform fix [--path <path>] [--all] [--dry-run] [--strict] [--project-only | --machine-only | --github-only]
 ```
 
 | Flag                                                  | Meaning                                                                                                  |
@@ -76,7 +76,7 @@ You get a unified diff preview (diffs over ~200KB are skipped; `run-command` fix
 
 <Step title="Pick and apply">
 
-A group-multiselect prompt lists each fix (each option shows the fix command; space toggles). `overwrite-file` fixes apply first, then links, commands and API fixes. Each `overwrite-file` fix writes a `.conform.bak` backup next to the target before writing (numbered `.conform.bak.N` when one already exists; secrets templates keep one); a symlink or non-regular target is refused before anything is copied. Non-TTY `--all` also refuses file and link fixes outside the project directory, resolving symlinked parent directories first.
+A group-multiselect prompt lists each fix (each option shows the fix command; space toggles). `overwrite-file` fixes apply first, then links, commands and API fixes. Each `overwrite-file` fix writes a `.conform.bak` backup next to the target before writing (numbered `.conform.bak.N` when one already exists; secrets templates keep one); a symlink or non-regular target is refused before anything is copied. Non-TTY `--all` refuses the whole run when any fixable writes or links outside the project directory (judged by real path, symlinked parent directories resolved first) — nothing is applied; re-run in a terminal instead.
 
 </Step>
 
@@ -88,19 +88,19 @@ Only the selected IDs are re-checked (falling back to a full re-check on error).
 
 </Steps>
 
-Exit codes: <Badge variant="success">0 nothing remains failing</Badge> <Badge variant="warning">1 drift remains / cancelled / dry-run found drift</Badge> <Badge variant="error">2 desired-state error</Badge> — including no-TTY use without `--all`, and non-TTY `--all` with command/API fixes or file fixes outside the project dir (`Re-run in a terminal …`).
+Exit codes: <Badge variant="success">0 nothing remains failing</Badge> <Badge variant="warning">1 drift remains / cancelled / dry-run found drift</Badge> <Badge variant="error">2 desired-state error</Badge> — including no-TTY use without `--all`, and non-TTY `--all` where even one fix runs a command, calls the GitHub API, or writes outside the project dir (the whole run is refused with `Re-run in a terminal …`, nothing is skipped-and-continued).
 
 ## `validate`
 
 A tech-stack author tool — not a consumer check:
 
 ```bash
-adistack-conform validate [--path <path>]
+bunx @adistack/conform validate [--path <path>]
 ```
 
 Validates the local tech-stack repo at `--path <path>` (a repo directory or a `registry.json` file; default `./registry.json` in the cwd): the `registry.json` schema, every blueprint file in every section (`projects`, `machines`, `github_configs`), every `files[]` source existing on disk, and the manifest-adjacent `secrets.yaml` existing when any machine file declares `secrets`. Prints one `✓` line per valid file to stdout and `✗` lines with the error detail to stderr. It never reads `conform.json` (for `validate`, `--path` points at the tech-stack repo directory or `registry.json` file instead) — consumers check their own drift with `check`. Tech-stack repos run it from their own `verify` script.
 
-Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 no registry found</Badge>.
+Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 no registry found</Badge>. An invalid `registry.json` (bad JSON or schema violation) is exit 1; exit 2 is only when no registry file exists at all.
 
 <Callout type="tip" title="Agents and CI">
 

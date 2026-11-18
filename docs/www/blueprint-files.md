@@ -49,6 +49,4 @@ Blueprint `file_structure[]` entries (`name` + `target` + `kind: file|dir`) must
 
 </Accordion>
 
-</Accordion>
-
 File and directory checks use IDs shaped `project:<blueprint>:<name>` (`name` is the manifest `name`, e.g. `project:cli-app:Bun Config`); `kind` is `project`, `source` is `tech-stack:<blueprint>`.

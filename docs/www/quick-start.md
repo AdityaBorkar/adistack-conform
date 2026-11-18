@@ -27,7 +27,7 @@ bun ./src/index.ts check
 
 <Tab title="Compiled binary">
 
-One self-contained file. It lands in `.output/adistack-conform` and is also the `adistack-conform` npm bin:
+One self-contained file. It lands in `.output/adistack-conform` (the published `@adistack/conform` package runs it via `bunx`):
 
 ```bash
 bun run build
@@ -63,11 +63,11 @@ You need at least one of `project` / `machine` / `github`. Leave scopes out to t
 <Step title="Check">
 
 ```bash
-adistack-conform check
-adistack-conform check --project-only
-adistack-conform check --machine-only
-adistack-conform check --github-only
-adistack-conform check --json   # machine-readable, for scripts
+bunx @adistack/conform check
+bunx @adistack/conform check --project-only
+bunx @adistack/conform check --machine-only
+bunx @adistack/conform check --github-only
+bunx @adistack/conform check --json   # machine-readable, for scripts
 ```
 
 Exits: <Badge variant="success">0 in sync</Badge> (skips count as ok), <Badge variant="warning">1 drift</Badge>, <Badge variant="error">2 desired-state error</Badge>. The `--*-only` flags are mutually exclusive.
@@ -77,9 +77,9 @@ Exits: <Badge variant="success">0 in sync</Badge> (skips count as ok), <Badge va
 <Step title="Fix">
 
 ```bash
-adistack-conform fix --dry-run  # preview diffs, never writes, never prompts
-adistack-conform fix            # interactive: space to toggle, enter to apply
-adistack-conform fix --all      # apply everything fixable, no prompt
+bunx @adistack/conform fix --dry-run  # preview diffs, never writes, never prompts
+bunx @adistack/conform fix            # interactive: space to toggle, enter to apply
+bunx @adistack/conform fix --all      # apply everything fixable, no prompt
 ```
 
 `fix` shows the manual items with hints first, applies the rest, then re-checks only the selected IDs. It needs a TTY unless you pass `--all`; `--dry-run` never prompts. The full flag and exit-code reference lives in [cli](./cli.md).
@@ -93,7 +93,7 @@ adistack-conform fix --all      # apply everything fixable, no prompt
 Fetches use `raw.githubusercontent.com` (30s timeout, no local cache). For private repos or HTTP 401/403 rate limits:
 
 ```bash
-GITHUB_TOKEN=ghp_... adistack-conform check
+GITHUB_TOKEN=ghp_... bunx @adistack/conform check
 ```
 
 The `github` scope calls the GitHub REST API, so public repos work without a token until 401/403/rate-limit (then it skips); set `GITHUB_TOKEN` for private repos or rate limits (admin scope for `fix`).

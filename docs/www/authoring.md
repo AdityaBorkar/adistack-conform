@@ -64,13 +64,13 @@ Reference the blueprints in `registry.json` (`machines` + `projects` + `github_c
 Run the CLI from the repo root — it checks `registry.json`, every blueprint in every section, every `files[]` source existing on disk, and the adjacent `secrets.yaml` when any machine file declares `secrets`:
 
 ```bash
-adistack-conform validate
+bunx @adistack/conform validate
 ```
 
 Wire it into your `verify` script so broken blueprints fail before consumers pin them:
 
 ```jsonc
-{ "scripts": { "verify": "biome check --fix && adistack-conform validate" } }
+{ "scripts": { "verify": "biome check --fix && bunx @adistack/conform validate" } }
 ```
 
 ## Versioning and rollout
