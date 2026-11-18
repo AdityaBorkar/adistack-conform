@@ -110,6 +110,14 @@ export function printResults(
 	process.stdout.write(`${lines.join("\n")}\n`);
 }
 
+// A secret fix keeps its content for the fix step only; JSON shows a marker.
+function withoutSecrets(result: CheckResult): CheckResult {
+	if (result.fix?.kind !== "overwrite-file" || result.fix.secret !== true) {
+		return result;
+	}
+	return { ...result, fix: { ...result.fix, newContent: "<redacted>" } };
+}
+
 export function printJsonSummary(desiredStates: string[], results: CheckResult[]): void {
 	const failed = results.filter((item) => !item.ok && item.skipped !== true);
 	const skipped = results.filter((item) => item.skipped === true);
@@ -121,7 +129,7 @@ export function printJsonSummary(desiredStates: string[], results: CheckResult[]
 				failed: failed.length,
 				ok: failed.length === 0,
 				passed: passed.length,
-				results,
+				results: results.map((item) => withoutSecrets(item)),
 				skipped: skipped.length,
 				total: results.length,
 			},
@@ -159,6 +167,9 @@ export function renderFixDiffs(fixable: CheckResult[]): void {
 		}
 		if (item.fix?.kind === "github-api") {
 			return `\napi ${sanitize(item.id)} (${sanitize(item.target)})\n${item.fix.steps.map((step) => `${step.method} ${sanitize(step.path)}`).join("\n")}`;
+		}
+		if (item.fix?.kind === "overwrite-file" && item.fix.secret === true) {
+			return `\nwrite ${sanitize(item.id)} (${sanitize(item.target)})\n<diff hidden: content holds secrets>`;
 		}
 		return `\ndiff ${sanitize(item.id)} (${sanitize(item.target)})\n${renderDiff("actual", "expected", item.actual, desiredContent(item))}`;
 	});

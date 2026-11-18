@@ -12,23 +12,11 @@ type CheckOptions = DesiredStateOption &
 	};
 
 async function run(options: CheckOptions): Promise<number> {
-	const { desiredStates, githubElapsedMs, machineElapsedMs, projectElapsedMs, results } =
-		await prepareRun(options);
+	const { desiredState, elapsedMs, results } = await prepareRun(options);
 	if (options.json) {
-		printJsonSummary(
-			desiredStates.map((entry) => entry.path),
-			results,
-		);
+		printJsonSummary([desiredState.path], results);
 	} else {
-		printResults(
-			results,
-			{
-				github: githubElapsedMs,
-				machine: machineElapsedMs,
-				project: projectElapsedMs,
-			},
-			{ verbose: options.verbose === true },
-		);
+		printResults(results, elapsedMs, { verbose: options.verbose === true });
 	}
 	return results.some((item) => !item.ok && item.skipped !== true) ? 1 : 0;
 }

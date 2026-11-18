@@ -1,10 +1,12 @@
+import { constants } from "node:fs";
+import { copyFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { fixGithubApiFix } from "#/core/github/api.js";
 import { statLinkPath } from "#/core/machine/live.js";
 import type { CheckResult } from "#/core/result.js";
 import { errorMessage } from "#/utils/error.js";
-import { readFileSafe, writeFileEnsuringDir } from "#/utils/fs.js";
+import { writeFileEnsuringDir } from "#/utils/fs.js";
 
 export const FIX_TIMEOUT_MS = 10 * 60_000;
 
@@ -54,7 +56,8 @@ export async function fixResult(result: CheckResult): Promise<void> {
 		return;
 	}
 	if (fix.kind === "overwrite-file") {
-		await writeFileEnsuringDir(fix.filePath, fix.newContent);
+		const mode = fix.mode === undefined ? undefined : Number.parseInt(fix.mode, 8);
+		await writeFileEnsuringDir(fix.filePath, fix.newContent, mode);
 		return;
 	}
 	if (fix.kind === "symlink") {
@@ -64,23 +67,24 @@ export async function fixResult(result: CheckResult): Promise<void> {
 	await runCommandFix([fix.command, ...fix.args], fix.label);
 }
 
+// copyFile keeps the source's bytes and mode, so a 0600 secrets file never
+// gets a world-readable backup; COPYFILE_EXCL never overwrites an older backup.
 async function backupExistingFile(filePath: string): Promise<string | undefined> {
-	const existing = await readFileSafe(filePath);
-	if (!existing.ok) {
+	if (!(await Bun.file(filePath).exists())) {
 		return undefined;
 	}
-	let backupPath = `${filePath}.conform.bak`;
-	for (let suffix = 1; suffix < 100; suffix += 1) {
-		if (!(await Bun.file(backupPath).exists())) {
-			break;
+	for (let suffix = 0; suffix < 100; suffix += 1) {
+		const backupPath = `${filePath}.conform.bak${suffix === 0 ? "" : `.${suffix}`}`;
+		try {
+			await copyFile(filePath, backupPath, constants.COPYFILE_EXCL);
+			return backupPath;
+		} catch (error) {
+			if ((error as { code?: unknown } | null)?.code !== "EEXIST") {
+				throw error;
+			}
 		}
-		backupPath = `${filePath}.conform.bak.${suffix}`;
 	}
-	if (await Bun.file(backupPath).exists()) {
-		throw new Error(`Backup ${backupPath} already exists; refusing to overwrite it.`);
-	}
-	await Bun.write(backupPath, existing.text);
-	return backupPath;
+	throw new Error(`Too many backups of ${filePath}; remove old .conform.bak files first.`);
 }
 
 // `ln -sfn` replaces whatever is at the target: back up a regular file first

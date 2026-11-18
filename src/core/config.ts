@@ -78,18 +78,12 @@ const DESIRED_STATE_FILENAME = "conform.json";
 // The global `--desired-state <path>` flag every command accepts.
 export type DesiredStateOption = { desiredState?: string };
 
-export async function loadDesiredState(desiredStatePath: string): Promise<LoadedDesiredState> {
-	const path = resolveDesiredStatePath(desiredStatePath);
-	const parsed = await readJsonFile(path, "Desired state");
-	return toLoadedDesiredState(path, parsed);
-}
-
-export async function discoverDesiredStates(): Promise<LoadedDesiredState[]> {
+async function discoverDesiredStatePath(): Promise<string> {
 	let dir = process.cwd();
 	while (true) {
 		const path = join(dir, DESIRED_STATE_FILENAME);
 		if (await Bun.file(path).exists()) {
-			return [await loadDesiredState(path)];
+			return path;
 		}
 		const parent = dirname(dir);
 		if (parent === dir) {
@@ -102,8 +96,10 @@ export async function discoverDesiredStates(): Promise<LoadedDesiredState[]> {
 }
 
 // An explicit path loads that file; otherwise walk up from the cwd.
-export async function loadDesiredStates(path: string | undefined): Promise<LoadedDesiredState[]> {
-	return path === undefined ? discoverDesiredStates() : [await loadDesiredState(path)];
+export async function loadDesiredState(path: string | undefined): Promise<LoadedDesiredState> {
+	const resolved =
+		path === undefined ? await discoverDesiredStatePath() : resolveDesiredStatePath(path);
+	return toLoadedDesiredState(resolved, await readJsonFile(resolved, "Desired state"));
 }
 
 export function projectStateOf(loaded: LoadedDesiredState): ProjectRunState | undefined {
@@ -122,13 +118,6 @@ export function machineStateOf(loaded: LoadedDesiredState): MachineRunState | un
 		id: loaded.source.id,
 		ref: loaded.source.ref,
 	};
-}
-
-export function machineStatesOf(desiredStates: readonly LoadedDesiredState[]): MachineRunState[] {
-	return desiredStates.flatMap((loaded) => {
-		const state = machineStateOf(loaded);
-		return state === undefined ? [] : [state];
-	});
 }
 
 export function githubStateOf(loaded: LoadedDesiredState): GithubRunState | undefined {
@@ -164,6 +153,19 @@ export function scopeOf(options: ScopeOptions): CheckScope | undefined {
 	return undefined;
 }
 
-export function activeScopes(only: CheckScope | undefined): CheckScope[] {
-	return only === undefined ? ["project", "machine", "github"] : [only];
+// Scopes this run checks: the configured ones, narrowed by a --*-only flag.
+export function activeScopes(
+	loaded: LoadedDesiredState,
+	only: CheckScope | undefined,
+): CheckScope[] {
+	const configured = (["project", "machine", "github"] as const).filter(
+		(scope) => loaded[scope] !== undefined,
+	);
+	if (only === undefined) {
+		return configured;
+	}
+	if (!configured.includes(only)) {
+		throw new Error(`Scope "${only}" is not configured in ${loaded.path}.`);
+	}
+	return [only];
 }

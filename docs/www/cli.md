@@ -102,7 +102,7 @@ adistack-conform --desired-state ./packages/a/conform.json validate
 
 Validates `registry.json` plus the blueprint file of every configured project blueprint and the settings file of every configured `github` blueprint (machine blueprints check the registry entry only, including path sanity) at the pinned `source.repo@ref`. Prints one `✓` line per valid file/entry to stdout and `✗` lines with the error detail to stderr. The global `--desired-state` flag applies here too.
 
-Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 desired-state error, or nothing configured</Badge>.
+Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 desired-state error</Badge>.
 
 <Callout type="tip" title="Agents and CI">
 

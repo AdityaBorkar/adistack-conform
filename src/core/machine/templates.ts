@@ -1,4 +1,4 @@
-import type { CheckBase, CheckResult } from "#/core/result.js";
+import type { CheckBase, CheckResult, OverwriteFileFix } from "#/core/result.js";
 import { failFixable, failManual, pass } from "#/core/result.js";
 import { UPSTREAM_FETCH_CONCURRENCY } from "#/core/upstream/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
@@ -120,12 +120,19 @@ function templateResult(
 			`Provide values for ${rendered.leftover.join(", ")} via sops secrets, then re-check.`,
 		);
 	}
+	const hasSecrets = (template.secrets?.length ?? 0) > 0;
+	// Rendered and live text hold decrypted secrets: keep them out of reports.
+	const shown = (text: string): string =>
+		hasSecrets ? `<redacted: ${text.length} chars with secrets>` : text;
+	const fix: OverwriteFileFix = {
+		filePath: template.target,
+		kind: "overwrite-file",
+		mode: template.mode,
+		newContent: rendered.text,
+		...(hasSecrets ? { secret: true } : {}),
+	};
 	if (!live.exists) {
-		return failFixable(base, "<missing>", "rendered template", {
-			filePath: template.target,
-			kind: "overwrite-file",
-			newContent: rendered.text,
-		});
+		return failFixable(base, "<missing>", "rendered template", fix);
 	}
 	if (live.text === undefined) {
 		return failManual(
@@ -140,13 +147,9 @@ function templateResult(
 		live.mode !== undefined &&
 		normalizeMode(live.mode) !== normalizeMode(template.mode);
 	if (live.text !== rendered.text || modeMismatch) {
-		const outcome = failFixable(base, live.text ?? "<missing>", rendered.text, {
-			filePath: template.target,
-			kind: "overwrite-file",
-			newContent: rendered.text,
-		});
+		const outcome = failFixable(base, shown(live.text), shown(rendered.text), fix);
 		if (modeMismatch) {
-			outcome.hint = `Enforce mode ${template.mode} after writing: chmod ${template.mode} ${template.target} (overwrite-file fixes do not set modes).`;
+			outcome.hint = `Mode is ${live.mode ?? "<unknown>"}, want ${template.mode}: fix rewrites the file with mode ${template.mode}.`;
 		}
 		return outcome;
 	}

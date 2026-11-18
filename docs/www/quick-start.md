@@ -4,7 +4,7 @@ description: Install the CLI, add conform.json, and run your first check and fix
 icon: Rocket
 ---
 
-Run everything from the directory that owns `conform.json` — project targets resolve against your current directory.
+Run from anywhere inside the project — project targets resolve against the directory that owns `conform.json`.
 
 <Steps>
 

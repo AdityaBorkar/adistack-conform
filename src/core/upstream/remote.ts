@@ -36,10 +36,6 @@ import { parseOrThrow } from "#/utils/schema.js";
 // Upstream file fetches per scope run; see ADR 0002.
 export const UPSTREAM_FETCH_CONCURRENCY = 16;
 
-export function repoKey(id: string, ref: string): string {
-	return `${id}@${ref}`;
-}
-
 export function rawUrl(id: string, ref: string, relPath: string): string {
 	assertRepoId(id, "tech-stack source");
 	assertRef(ref, "tech-stack source");
@@ -85,6 +81,11 @@ async function fetchOkResponse(url: string, label: string): Promise<Response> {
 		return response;
 	}
 	throw new Error(`${label} fetch failed (${url}): too many redirects.`);
+}
+
+// fetchOkResponse marks a missing upstream file with "HTTP 404".
+export function isNotFoundError(error: unknown): boolean {
+	return errorMessage(error).includes("HTTP 404");
 }
 
 function isFetchRetryable(error: unknown): boolean {

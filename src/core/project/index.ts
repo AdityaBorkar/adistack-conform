@@ -1,13 +1,13 @@
 import type { ProjectRunState } from "#/core/config.js";
 import { checkProjectFileWithUpstream, projectBase } from "#/core/project/compare.js";
 import { checkFileStructure } from "#/core/project/structure.js";
-import { failManual, type CheckResult, type CheckScope } from "#/core/result.js";
+import { failManual, type CheckResult } from "#/core/result.js";
 import type { ManifestCompare, ManifestFile, RegistryDocument } from "#/core/upstream/registry.js";
-import { resolveSourceRel } from "#/core/upstream/registry.js";
 import {
 	UPSTREAM_FETCH_CONCURRENCY,
 	fetchProjectManifest,
 	fetchTextOrThrow,
+	isNotFoundError,
 	rawUrl,
 } from "#/core/upstream/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
@@ -17,7 +17,6 @@ import { resolveTargetPath } from "#/utils/fs.js";
 export interface ProjectCheckOptions {
 	baseDir: string;
 	home: string;
-	scope: CheckScope;
 }
 
 interface NeededFile {
@@ -47,7 +46,7 @@ function collectNeeded(
 			fileName: file.name,
 			fileTarget: file.target,
 			sourceLabel: file.source,
-			sourceRel: resolveSourceRel(file.source),
+			sourceRel: file.source,
 			targetPath: resolveTargetPath(file.target, options.baseDir, options.home),
 		});
 	}
@@ -73,20 +72,15 @@ async function fetchUpstreams(
 	return upstreams;
 }
 
-function isNotFoundError(message: string): boolean {
-	return message.includes("HTTP 404") || message.includes("not found");
-}
-
 function checkNeeded(
 	needed: readonly NeededFile[],
 	upstreams: Map<string, { error?: string; text?: string }>,
-	scope: CheckScope,
 ): Promise<CheckResult[]> {
 	return Promise.all(
 		needed.map((item): Promise<CheckResult> => {
 			const upstream = upstreams.get(item.sourceRel);
 			if (upstream?.text === undefined) {
-				const base = projectBase(item.blueprint, item.fileName, item.fileTarget, scope);
+				const base = projectBase(item.blueprint, item.fileName, item.fileTarget);
 				if (upstream?.error !== undefined && !isNotFoundError(upstream.error)) {
 					return Promise.resolve(
 						failManual(
@@ -111,7 +105,6 @@ function checkNeeded(
 				compare: item.compare,
 				fileName: item.fileName,
 				fileTarget: item.fileTarget,
-				scope,
 				sourceLabel: item.sourceLabel,
 				targetPath: item.targetPath,
 				upstream: upstream.text as string,
@@ -120,7 +113,8 @@ function checkNeeded(
 	);
 }
 
-async function runWithManifest(
+// `onlyIds` narrows a re-check after fix to the selected results.
+export async function runProjectChecks(
 	state: ProjectRunState,
 	options: ProjectCheckOptions,
 	registry: RegistryDocument,
@@ -134,27 +128,7 @@ async function runWithManifest(
 	);
 	const needed = collectNeeded(state.blueprint, files, options, onlyIds);
 	const upstreams = await fetchUpstreams(state.id, state.ref, needed);
-	const enforced = await checkNeeded(needed, upstreams, options.scope);
+	const enforced = await checkNeeded(needed, upstreams);
 	const structured = await checkFileStructure(state.blueprint, files, structure, options, onlyIds);
 	return [...enforced, ...structured];
-}
-
-export function runProjectChecks(
-	state: ProjectRunState,
-	options: ProjectCheckOptions,
-	registry: RegistryDocument,
-): Promise<CheckResult[]> {
-	return runWithManifest(state, options, registry);
-}
-
-export function recheckProjectSelected(
-	state: ProjectRunState,
-	options: ProjectCheckOptions,
-	registry: RegistryDocument,
-	selectedIds: ReadonlySet<string>,
-): Promise<CheckResult[]> {
-	if (selectedIds.size === 0) {
-		return Promise.resolve([]);
-	}
-	return runWithManifest(state, options, registry, selectedIds);
 }

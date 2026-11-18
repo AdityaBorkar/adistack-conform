@@ -4,8 +4,8 @@ import { dirname, join } from "node:path";
 
 import type { MachineRunState } from "#/core/config.js";
 import type { LinkStat } from "#/core/machine/links.js";
-import { bunManager } from "#/core/machine/managers/bun.js";
-import { pacmanManager } from "#/core/machine/managers/pacman.js";
+import { listBunPackages } from "#/core/machine/managers/bun.js";
+import { listPacmanPackages } from "#/core/machine/managers/pacman.js";
 import type { InstalledPackages } from "#/core/machine/managers/types.js";
 import type { TemplateTarget } from "#/core/machine/templates.js";
 import { fetchBytesOrThrow, fetchTextOrThrow, rawUrl } from "#/core/upstream/remote.js";
@@ -184,8 +184,8 @@ export function defaultLive(state: MachineRunState, manifestRel: string): Machin
 			fetchBytesOrThrow(rawUrl(state.id, state.ref, rel), `blueprint file ${rel}`),
 		fetchText: (rel: string) =>
 			fetchTextOrThrow(rawUrl(state.id, state.ref, rel), `blueprint file ${rel}`),
-		listBun: () => bunManager.list(),
-		listPacman: () => pacmanManager.list(),
+		listBun: listBunPackages,
+		listPacman: listPacmanPackages,
 		readTemplateTarget: readTemplateTargetPath,
 		statLink: statLinkPath,
 	};

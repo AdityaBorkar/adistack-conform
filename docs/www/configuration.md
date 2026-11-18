@@ -16,7 +16,7 @@ Your whole setup in one file. Most repos need fewer than ten lines:
 }
 ```
 
-Validate against `./config/conform.json` (generated from Zod schemas — never hand-edit it, regen with `bun run gen:json-schema`).
+Validate against `./config/conform.json` (generated from Zod schemas — never hand-edit it, regen with `bun run build`).
 
 ## `source` <Badge variant="error">required</Badge>
 
@@ -38,17 +38,17 @@ Refs containing `/` work as plain path segments in `raw.githubusercontent.com` U
 
 At least one of `project` / `machine` / `github` is required — omit the others to track fewer scopes.
 
-| Field       | Meaning                                                                                                                                          |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `blueprint` | Project blueprint matching a tech-stack root `registry.json` `projects` key — by key, `path`, or path basename without `.json` (e.g. `cli-app`). |
+| Field       | Meaning                                                                                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `blueprint` | Project blueprint matching a tech-stack root `registry.json` `projects` key — by key or entry `path` (e.g. `cli-app`, or `projects/cli-app.json`). Basenames alone never match. |
 
-Project targets resolve against your cwd, so run from the directory that owns `conform.json`. Leading `~` expands against `$HOME`; absolute `target` paths pass through.
+Project targets resolve against the directory that owns `conform.json`, so you can run from any subdirectory. Leading `~` expands against `$HOME`; absolute `target` paths pass through.
 
 ## `machine` <Badge variant="muted">optional</Badge>
 
-| Field       | Meaning                                                                                                                       |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `blueprint` | Machine blueprint matching a `registry.json` `machines` key — by key, `path`, or path basename without `.json` (e.g. `main`). |
+| Field       | Meaning                                                                                             |
+| ----------- | --------------------------------------------------------------------------------------------------- |
+| `blueprint` | Machine blueprint matching a `registry.json` `machines` key — by key or entry `path` (e.g. `main`). |
 
 Machine state is declared by the manifest file (packages plus `files[]`); there is no per-machine attribute to select. See [blueprints](./blueprints.md) for matching details.
 
@@ -64,6 +64,6 @@ The upstream is the settings file listed in `registry.json` `github_configs` (e.
 ## Loading rules
 
 - Without `--desired-state`, `check` / `fix` / `validate` walk up from your cwd to find `conform.json`; a missing file exits 2.
-- With `--desired-state <path>`, any path is accepted. The path may use `~` (`untildify`) and resolves against your cwd.
+- With `--desired-state <path>`, any path is accepted. The path may use `~` (expands against `$HOME`) and resolves against your cwd.
 - Invalid JSON or schema violations print a `zod` summary and exit 2.
 - `--project-only` / `--machine-only` / `--github-only` filter at run time; omitting the other scopes from `conform.json` has the same effect permanently.

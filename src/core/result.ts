@@ -3,7 +3,11 @@ export type CheckScope = "project" | "machine" | "github";
 export interface OverwriteFileFix {
 	filePath: string;
 	kind: "overwrite-file";
+	// Octal mode (e.g. "0600") applied before the content lands, so the file is never wider.
+	mode?: string;
 	newContent: string;
+	// newContent holds decrypted secrets: reports must never print it.
+	secret?: boolean;
 }
 
 export interface RunCommandFix {

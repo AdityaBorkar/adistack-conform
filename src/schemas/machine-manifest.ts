@@ -1,19 +1,6 @@
 import * as z from "zod";
 
-function machineSourceRel() {
-	return z
-		.string()
-		.min(1)
-		.refine(
-			(value) =>
-				!value.startsWith("/") &&
-				!value.startsWith("./") &&
-				!value.startsWith("../") &&
-				!value.includes("\\") &&
-				value.split("/").every((part) => part !== "" && part !== "." && part !== ".."),
-			{ message: "Source must be repo-relative with no empty, dot, or dot-dot segments." },
-		);
-}
+import { RepoRelSourceSchema } from "#/schemas/source.js";
 
 function versionString(label: string) {
 	return z
@@ -38,7 +25,7 @@ const MachineFileSchema = z
 		mode: z.enum(["0600", "0644"]).optional(),
 		name: z.string().min(1),
 		secrets: z.array(z.string().min(1)).min(1).optional(),
-		source: machineSourceRel(),
+		source: RepoRelSourceSchema,
 		target: z.string().min(1),
 	})
 	.strict();

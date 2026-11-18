@@ -1,5 +1,7 @@
 import * as z from "zod";
 
+import { RepoRelSourceSchema } from "#/schemas/source.js";
+
 const ManifestCompareSchema = z
 	.object({
 		ignore: z
@@ -13,12 +15,9 @@ const ManifestFileSchema = z
 	.object({
 		compare: ManifestCompareSchema.describe("Semantic compare/fix rules for this file.").optional(),
 		name: z.string().min(1).describe("File name within the blueprint."),
-		source: z
-			.string()
-			.min(1)
-			.describe(
-				"Repo-relative source path of the upstream file (e.g. projects/files/<group>/<file>).",
-			),
+		source: RepoRelSourceSchema.describe(
+			"Repo-relative source path of the upstream file (e.g. projects/files/<group>/<file>).",
+		),
 		target: z.string().min(1).describe("Enforcement target."),
 	})
 	.strict();

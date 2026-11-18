@@ -134,20 +134,7 @@ export function recheckMachineSelected(
 	strict: boolean,
 	live?: MachineLive,
 ): Promise<CheckResult[]> {
-	if (selectedIds.size === 0) {
-		return Promise.resolve([]);
-	}
 	const prefix = `machine:${state.blueprint}:`;
-	let wanted = false;
-	for (const id of selectedIds) {
-		if (id.startsWith(prefix)) {
-			wanted = true;
-			break;
-		}
-	}
-	if (!wanted) {
-		return Promise.resolve([]);
-	}
 	// The full domain run is cheap (~2s): re-check everything, then keep the
 	// selected IDs plus any domain error, so a failed re-check never reads as
 	// a resolved (vanished) ID.

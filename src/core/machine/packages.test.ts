@@ -162,19 +162,29 @@ describe("evaluatePackages", () => {
 
 describe("splitDeclared", () => {
 	test("missing is declared minus installed", () => {
-		const { extra, missing } = splitDeclared(["b", "a"], new Set(["a"]), new Set());
+		const { extra, missing } = splitDeclared(["b", "a"], installed(["a"]), new Set());
 		expect(missing).toEqual(["b"]);
 		expect(extra).toEqual([]);
 	});
 
 	test("extra is installed minus declared minus allowlist", () => {
-		const { extra } = splitDeclared(["a"], new Set(["a", "z", "base"]), new Set(["base"]));
+		const { extra } = splitDeclared(["a"], installed(["a", "z", "base"]), new Set(["base"]));
 		expect(extra).toEqual(["z"]);
 	});
 
 	test("outputs are sorted and deduplicated", () => {
-		const { extra, missing } = splitDeclared(["b", "a", "b"], new Set(["z", "y"]), new Set());
+		const { extra, missing } = splitDeclared(["b", "a", "b"], installed(["z", "y"]), new Set());
 		expect(missing).toEqual(["a", "b"]);
 		expect(extra).toEqual(["y", "z"]);
+	});
+
+	test("a declared package installed only as a dependency is not missing", () => {
+		const asDependency: InstalledPackages = {
+			explicit: new Set(),
+			versions: new Map([["git", "2.47.0-1"]]),
+		};
+		const { extra, missing } = splitDeclared(["git"], asDependency, new Set());
+		expect(missing).toEqual([]);
+		expect(extra).toEqual([]);
 	});
 });

@@ -1,43 +1,16 @@
-import { defaultRunner } from "#/core/machine/managers/types.js";
-import type {
-	InstalledPackages,
-	PackageManager,
-	PackageRef,
-	Runner,
-} from "#/core/machine/managers/types.js";
+import { captureCommand } from "#/core/machine/managers/types.js";
+import type { InstalledPackages } from "#/core/machine/managers/types.js";
 
-export function createPacmanManager(runner: Runner = defaultRunner): PackageManager {
+export async function listPacmanPackages(): Promise<InstalledPackages> {
+	const [explicitOut, versionsOut] = await Promise.all([
+		captureCommand(["pacman", "-Qqe"]),
+		captureCommand(["pacman", "-Q"]),
+	]);
 	return {
-		id: "pacman",
-		async install(entries: PackageRef[]): Promise<void> {
-			if (entries.length === 0) {
-				return;
-			}
-			const specs = entries.map((entry) =>
-				entry.version === "latest" ? entry.name : `${entry.name}=${entry.version}`,
-			);
-			await runner.run(["sudo", "pacman", "-S", "--needed", "--noconfirm", ...specs]);
-		},
-		async list(): Promise<InstalledPackages> {
-			const [explicitOut, versionsOut] = await Promise.all([
-				runner.capture(["pacman", "-Qqe"]),
-				runner.capture(["pacman", "-Q"]),
-			]);
-			return {
-				explicit: new Set(parsePacmanExplicit(explicitOut)),
-				versions: parsePacmanVersions(versionsOut),
-			};
-		},
-		async remove(names: string[]): Promise<void> {
-			if (names.length === 0) {
-				return;
-			}
-			await runner.run(["sudo", "pacman", "-Rs", "--noconfirm", ...names]);
-		},
+		explicit: new Set(parsePacmanExplicit(explicitOut)),
+		versions: parsePacmanVersions(versionsOut),
 	};
 }
-
-export const pacmanManager: PackageManager = createPacmanManager();
 
 export function parsePacmanExplicit(stdout: string): string[] {
 	return stdout.split(/\s+/u).filter((name) => name !== "");

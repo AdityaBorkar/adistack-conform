@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { chmod, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -95,5 +96,29 @@ describe("fixSelected", () => {
 		expect(await Bun.file(`${filePath}.conform.bak`).text()).toBe('{"a":1}\n');
 		expect(await Bun.file(`${filePath}.conform.bak.1`).text()).toBe('{"a":2}\n');
 		expect(await Bun.file(filePath).text()).toBe('{"a":3}\n');
+	});
+
+	test("a 0600 file keeps 0600 on its backup and its rewrite", async () => {
+		const filePath = join(tmpdir(), `conform-fix-mode-${process.pid}-${Date.now()}`, ".npmrc");
+		await Bun.write(filePath, "token=old\n");
+		await chmod(filePath, 0o600);
+		const fix: CheckResult = {
+			...overwrite("machine:main:template:Npmrc", filePath, "token=new\n"),
+			fix: { filePath, kind: "overwrite-file", mode: "0600", newContent: "token=new\n" },
+		};
+		expect(await fixSelected([fix])).toHaveLength(1);
+		expect((await stat(`${filePath}.conform.bak`)).mode & 0o777).toBe(0o600);
+		expect((await stat(filePath)).mode & 0o777).toBe(0o600);
+		expect(await Bun.file(filePath).text()).toBe("token=new\n");
+	});
+
+	test("a new file with a mode is created with that mode", async () => {
+		const filePath = join(tmpdir(), `conform-fix-newmode-${process.pid}-${Date.now()}`, "f");
+		const fix: CheckResult = {
+			...overwrite("machine:main:template:New", filePath, "x\n"),
+			fix: { filePath, kind: "overwrite-file", mode: "0600", newContent: "x\n" },
+		};
+		expect(await fixSelected([fix])).toHaveLength(1);
+		expect((await stat(filePath)).mode & 0o777).toBe(0o600);
 	});
 });

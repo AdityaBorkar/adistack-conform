@@ -21,13 +21,13 @@ Schema: `./config/project-manifest.json` (generated, draft 2020-12).
 
 ## Where upstreams come from
 
-`source` is the upstream file's repo-relative path, used for `raw.githubusercontent.com` fetches (e.g. `projects/files/<group>/<variant>`; a leading `/` is stripped). Paths starting with `./` or `../` are rejected — sources must be repo-relative.
+`source` is the upstream file's repo-relative path, used for `raw.githubusercontent.com` fetches (e.g. `projects/files/<group>/<variant>`). A leading `/`, `./` or `../`, empty or `.`/`..` segments, and `\\` are rejected — sources must be repo-relative.
 
 Only the upstreams you need are fetched, deduplicated by repo-relative path, 16-way parallel. A missing upstream is a manual result (`<blueprint file missing>` with the repo-relative path).
 
 ## Where targets land
 
-`target` is the manifest-declared enforcement target, resolved against your cwd. Leading `~` expands against `$HOME`; absolute paths pass through.
+`target` is the manifest-declared enforcement target, resolved against the directory that owns `conform.json`. Leading `~` expands against `$HOME`; absolute paths pass through.
 
 ## How each file is judged
 

@@ -88,26 +88,6 @@ export function findMachineEntry(
 	return findInPathMap(name, registry.machines);
 }
 
-// Repo-relative location of a project source file for raw fetches.
-export function resolveSourceRel(source: string): string {
-	if (source.startsWith("./") || source.startsWith("../")) {
-		throw new Error(
-			`Source "${source}" must be repo-relative (e.g. projects/files/<group>/<file>); "./" and "../" prefixes are no longer supported.`,
-		);
-	}
-	const stripped = source.replace(/^\.\//u, "").replace(/^\/+/u, "");
-	const segments = stripped.split("/");
-	if (segments.some((part) => part === "" || part === "." || part === "..")) {
-		throw new Error(
-			`Source "${source}" must be repo-relative without empty, ".", or ".." segments.`,
-		);
-	}
-	if (stripped.includes("\\")) {
-		throw new Error(`Source "${source}" must use "/" separators.`);
-	}
-	return stripped;
-}
-
 function assertSafeRel(normalized: string, original: string, label: string): string {
 	const segments = normalized.split("/");
 	if (segments.some((part) => part === "" || part === "." || part === "..")) {

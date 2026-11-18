@@ -54,6 +54,20 @@ function toLoginList(value: unknown): string[] | undefined {
 	});
 }
 
+// GET returns allowances as user/team/app objects (plus url fields); PUT
+// wants plain login/slug lists. `keys` are always sent, even when empty.
+function toAllowances(kept: unknown, keys: readonly string[]): Record<string, string[]> {
+	const record = typeof kept === "object" && kept !== null ? (kept as Record<string, unknown>) : {};
+	const out: Record<string, string[]> = {};
+	for (const key of ["apps", "teams", "users"]) {
+		const list = toLoginList(record[key]);
+		if (list !== undefined || keys.includes(key)) {
+			out[key] = list ?? [];
+		}
+	}
+	return out;
+}
+
 function nonEmptyList(entry: unknown): boolean {
 	return Array.isArray(entry) && entry.length > 0;
 }
@@ -92,7 +106,13 @@ export function protectionPutBody(
 		return fallback;
 	};
 	const reviews: Record<string, unknown> = {
+		bypass_pull_request_allowances: toAllowances(curReviews["bypass_pull_request_allowances"], [
+			"apps",
+			"teams",
+			"users",
+		]),
 		dismiss_stale_reviews: input.dismissStale,
+		dismissal_restrictions: toAllowances(curReviews["dismissal_restrictions"], ["teams", "users"]),
 		require_code_owner_reviews: input.requireCodeOwner,
 		require_last_push_approval:
 			typeof curReviews["require_last_push_approval"] === "boolean"
@@ -100,14 +120,6 @@ export function protectionPutBody(
 				: false,
 		required_approving_review_count: input.requireApprovals,
 	};
-	for (const [key, fallback] of [
-		["dismissal_restrictions", { teams: [], users: [] }],
-		["bypass_pull_request_allowances", { apps: [], teams: [], users: [] }],
-	] as const) {
-		const kept = curReviews[key];
-		reviews[key] =
-			typeof kept === "object" && kept !== null ? kept : (fallback as Record<string, unknown>);
-	}
 	return {
 		allow_deletions: flag("allow_deletions", false),
 		allow_force_pushes: flag("allow_force_pushes", false),
@@ -123,17 +135,7 @@ export function protectionPutBody(
 			strict: typeof curChecks["strict"] === "boolean" ? curChecks["strict"] : false,
 		},
 		restrictions: input.restrictPushes
-			? ((): Record<string, unknown> => {
-					const kept = current?.["restrictions"];
-					if (typeof kept === "object" && kept !== null) {
-						return {
-							apps: toLoginList((kept as Record<string, unknown>)["apps"]) ?? [],
-							teams: toLoginList((kept as Record<string, unknown>)["teams"]) ?? [],
-							users: toLoginList((kept as Record<string, unknown>)["users"]) ?? [],
-						};
-					}
-					return { apps: [], teams: [], users: [] };
-				})()
+			? toAllowances(current?.["restrictions"], ["apps", "teams", "users"])
 			: null,
 	};
 }

@@ -14,11 +14,11 @@ export async function generateJsonSchema() {
 	const OUTPUT_DIR = join(import.meta.dir, "..", "config");
 
 	const TARGETS = {
+		"conform.json": ConformSchema,
 		"github-manifest.json": GithubSchema,
 		"machine-manifest.json": MachineManifestSchema,
 		"project-manifest.json": ManifestSchema,
 		"registry.json": RegistrySchema,
-		"schema.json": ConformSchema,
 	} as const;
 
 	await mkdir(OUTPUT_DIR, { recursive: true });

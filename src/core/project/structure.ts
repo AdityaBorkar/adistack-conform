@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 
 import { projectBase } from "#/core/project/compare.js";
 import type { ProjectCheckOptions } from "#/core/project/index.js";
-import type { CheckResult, CheckScope } from "#/core/result.js";
+import type { CheckResult } from "#/core/result.js";
 import { failManual, pass, skipped } from "#/core/result.js";
 import type { ManifestFile, ManifestFileStructure } from "#/core/upstream/registry.js";
 import { readFileSafe, resolveTargetPath } from "#/utils/fs.js";
@@ -11,10 +11,9 @@ async function checkFileStructureEntry(args: {
 	blueprint: string;
 	entryName: string;
 	kind: "dir" | "file";
-	scope: CheckScope;
 	targetPath: string;
 }): Promise<CheckResult> {
-	const base = projectBase(args.blueprint, args.entryName, args.entryName, args.scope);
+	const base = projectBase(args.blueprint, args.entryName, args.entryName);
 	if (args.kind === "dir") {
 		try {
 			const info = await stat(args.targetPath);
@@ -96,7 +95,7 @@ export async function checkFileStructure(
 		if (seenTargets.has(targetPath)) {
 			notes.push(
 				skipped(
-					projectBase(blueprint, entry.name, entry.target, options.scope),
+					projectBase(blueprint, entry.name, entry.target),
 					"duplicate file-structure target",
 					`same target as "${seenTargets.get(targetPath)}"; keeping the first entry`,
 				),
@@ -109,7 +108,6 @@ export async function checkFileStructure(
 				blueprint,
 				entryName: entry.name,
 				kind: entry.kind,
-				scope: options.scope,
 				targetPath,
 			}),
 		);

@@ -23,9 +23,8 @@ import type { CheckResult } from "#/core/result.js";
 import { failManual, skipped } from "#/core/result.js";
 import type { RegistryDocument } from "#/core/upstream/registry.js";
 import { findGithubEntry, blueprintRel } from "#/core/upstream/registry.js";
-import { fetchGithubSettings } from "#/core/upstream/remote.js";
+import { fetchGithubSettings, isNotFoundError } from "#/core/upstream/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
-import { errorMessage } from "#/utils/error.js";
 
 export { forkApprovalPolicy } from "#/core/github/actions.js";
 export { protectionPutBody } from "#/core/github/protection.js";
@@ -51,7 +50,7 @@ async function resolveGithubSettings(
 		const { upstream } = await fetchGithubSettings(id, ref, blueprint, registry);
 		return { rel, upstream };
 	} catch (error) {
-		if (errorMessage(error).includes("HTTP 404") || errorMessage(error).includes("not found")) {
+		if (isNotFoundError(error)) {
 			return { rel };
 		}
 		throw error;
@@ -139,18 +138,19 @@ export async function runGithubChecks(
 	const { upstream } = settings;
 	try {
 		const read = await readProtection(repo, upstream.defaultBranch);
-		const prChecks = checkPrChecks(state.blueprint, repo, upstream, read, target);
 		// One GET /repos/{repo} shared by checkGeneral and checkSecurity.
 		let repoInfo: Promise<Record<string, unknown>> | undefined;
 		const getRepoInfo = (): Promise<Record<string, unknown>> => {
 			repoInfo ??= apiJson(repoPath(repo, "")) as Promise<Record<string, unknown>>;
 			return repoInfo;
 		};
-		const checks: Array<() => Promise<CheckResult | CheckResult[]>> = [
+		// Listed in report order; mapWithConcurrency keeps that order.
+		const checks: Array<() => CheckResult | Promise<CheckResult | CheckResult[]>> = [
 			() => checkGeneral(state.blueprint, repo, upstream, target, getRepoInfo),
 			() => checkReleases(state.blueprint, repo, upstream, target),
 			() => checkCodeowners(state.blueprint, repo, upstream, target),
 			() => checkIssueTemplates(state.blueprint, repo, upstream, target),
+			() => checkPrChecks(state.blueprint, repo, upstream, read, target),
 			() => checkReviews(state.blueprint, repo, upstream, read, target),
 			() => checkRulesets(state.blueprint, repo, upstream, target),
 			() => checkActionsPermissions(state.blueprint, repo, upstream, target),
@@ -161,53 +161,8 @@ export async function runGithubChecks(
 			() => checkSecurity(state.blueprint, repo, upstream, target, getRepoInfo),
 			() => checkSecrets(state.blueprint, repo, upstream, target),
 		];
-		const settled = await mapWithConcurrency(checks, 6, (run) => run());
-		const [
-			general,
-			releases,
-			codeowners,
-			issueTemplates,
-			reviews,
-			rulesets,
-			permissions,
-			workflow,
-			retention,
-			oidc,
-			environments,
-			security,
-			secrets,
-		] = settled as [
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult,
-			CheckResult[],
-			CheckResult,
-		];
-		return [
-			general,
-			releases,
-			codeowners,
-			issueTemplates,
-			prChecks,
-			reviews,
-			rulesets,
-			permissions,
-			workflow,
-			retention,
-			oidc,
-			environments,
-			...security,
-			secrets,
-			...checkUiOnly(state.blueprint, upstream, target),
-		];
+		const settled = await mapWithConcurrency(checks, 6, (run) => Promise.resolve(run()));
+		return [...settled.flat(), ...checkUiOnly(state.blueprint, upstream, target)];
 	} catch (error) {
 		if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
 			return [
@@ -220,18 +175,4 @@ export async function runGithubChecks(
 		}
 		throw error;
 	}
-}
-
-export function recheckGithubSelected(
-	state: GithubRunState,
-	registry: RegistryDocument,
-	selectedIds: ReadonlySet<string>,
-): Promise<CheckResult[]> {
-	if (selectedIds.size === 0) {
-		return Promise.resolve([]);
-	}
-	if (![...selectedIds].some((id) => id.startsWith(`github:${state.blueprint}:`))) {
-		return Promise.resolve([]);
-	}
-	return runGithubChecks(state, registry);
 }

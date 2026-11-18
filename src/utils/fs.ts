@@ -1,8 +1,6 @@
-import { lstat, mkdir } from "node:fs/promises";
+import { chmod, lstat, mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-
-import untildify from "untildify";
 
 import { errorMessage } from "#/utils/error.js";
 
@@ -42,7 +40,13 @@ function isMissingError(error: unknown): boolean {
 	return (error as { code?: unknown }).code === "ENOENT";
 }
 
-export async function writeFileEnsuringDir(path: string, content: string): Promise<void> {
+// With `mode`, an existing file is narrowed before the new content lands and a
+// new file is created with that mode, so secrets are never briefly world-readable.
+export async function writeFileEnsuringDir(
+	path: string,
+	content: string,
+	mode?: number,
+): Promise<void> {
 	try {
 		const stat = await lstat(path);
 		if (stat.isSymbolicLink()) {
@@ -54,14 +58,25 @@ export async function writeFileEnsuringDir(path: string, content: string): Promi
 		}
 	}
 	await mkdir(dirname(path), { recursive: true });
-	await Bun.write(path, content);
+	if (mode === undefined) {
+		await Bun.write(path, content);
+		return;
+	}
+	try {
+		await chmod(path, mode);
+	} catch (error) {
+		if ((error as { code?: unknown } | null)?.code !== "ENOENT") {
+			throw error;
+		}
+	}
+	await writeFile(path, content, { mode });
 }
 
 export function expandHome(value: string, home: string): string {
 	if (/^~($|\/)/u.test(value) && home.length > 0) {
 		return value === "~" ? home : join(home, value.slice(2));
 	}
-	return untildify(value);
+	return value;
 }
 
 function resolveAgainstBase(raw: string, base: string, expand: (value: string) => string): string {
@@ -78,9 +93,7 @@ export function defaultHome(): string {
 }
 
 export function resolveTargetPath(raw: string, baseDir: string, home: string): string {
-	// Expand a leading ~ against the caller's home (respects $HOME overrides,
-	// unlike untildify which caches os.homedir()). Anything else falls through
-	// to untildify for ~user handling.
+	// Expand a leading ~ against the caller's home (respects $HOME overrides).
 	return resolveAgainstBase(raw, baseDir, (value) => expandHome(value, home));
 }
 

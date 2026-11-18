@@ -85,12 +85,13 @@ export function evaluatePackages(args: EvaluatePackagesArgs): CheckResult[] {
 			}
 		}
 		const declaredNames = [...wanted.keys()].toSorted();
-		const { explicit, versions } = args.installed[manager] ?? {
+		const installed = args.installed[manager] ?? {
 			explicit: new Set<string>(),
 			versions: new Map<string, string>(),
 		};
+		const { versions } = installed;
 		const allow = args.allowlist[manager] ?? new Set<string>();
-		const { extra, missing } = splitDeclared(declaredNames, explicit, allow);
+		const { extra, missing } = splitDeclared(declaredNames, installed, allow);
 		const missingSet = new Set(missing);
 		for (const name of declaredNames) {
 			const version = wanted.get(name) ?? "latest";
@@ -149,14 +150,19 @@ export function evaluatePackages(args: EvaluatePackagesArgs): CheckResult[] {
 	return results;
 }
 
+// Missing = declared but not installed at all (a package pulled in as a
+// dependency counts: `pacman -S --needed` would skip it, so it can never be
+// "fixed"). Extras = explicitly installed but neither declared nor allowed.
 export function splitDeclared(
 	declared: string[],
-	installed: Set<string>,
+	installed: InstalledPackages,
 	allow: Set<string>,
 ): { extra: string[]; missing: string[] } {
 	const declaredSet = new Set(declared);
 	return {
-		extra: [...installed].filter((name) => !declaredSet.has(name) && !allow.has(name)).toSorted(),
-		missing: [...declaredSet].filter((name) => !installed.has(name)).toSorted(),
+		extra: [...installed.explicit]
+			.filter((name) => !declaredSet.has(name) && !allow.has(name))
+			.toSorted(),
+		missing: [...declaredSet].filter((name) => !installed.versions.has(name)).toSorted(),
 	};
 }

@@ -6,7 +6,6 @@ import {
 	findMachineEntry,
 	findProjectEntry,
 	blueprintRel,
-	resolveSourceRel,
 } from "#/core/upstream/registry.js";
 
 const registry = {
@@ -65,20 +64,7 @@ describe("blueprintRel", () => {
 		expect(() => blueprintRel("./machines/main/")).toThrow("no longer supported");
 	});
 
-	test("repo-relative sources pass through", () => {
-		expect(resolveSourceRel("projects/files/bunfig/base.toml")).toBe(
-			"projects/files/bunfig/base.toml",
-		);
-	});
-
-	test("relative sources are rejected", () => {
-		expect(() => resolveSourceRel("./files/bunfig.toml")).toThrow("repo-relative");
-		expect(() => resolveSourceRel("../files/bunfig.toml")).toThrow("repo-relative");
-	});
-
 	test("interior parent segments are rejected", () => {
-		expect(() => resolveSourceRel("projects/files/../../conform.json")).toThrow("..");
-		expect(() => resolveSourceRel("projects//files/x.json")).toThrow("empty");
 		expect(() => blueprintRel("projects/../../x.json")).toThrow("..");
 	});
 });

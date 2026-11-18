@@ -74,9 +74,32 @@ describe("checkTemplates", () => {
 		expect(results[0]?.fix).toEqual({
 			filePath: "/home/ada/.npmrc",
 			kind: "overwrite-file",
+			mode: "0600",
 			newContent: "a=1\n",
 		});
-		expect(results[0]?.hint).toContain("chmod 0600");
+		expect(results[0]?.hint).toContain("mode 0600");
+	});
+
+	test("drift in a secret template never exposes the secret in actual/expected", async () => {
+		const results = await checkTemplates({
+			blueprint,
+			decryptSecrets: () => Promise.resolve({ TOKEN: "s3cr3t-new" }),
+			fetchSource: () => Promise.resolve("token=@@TOKEN@@\n"),
+			readTarget: () => Promise.resolve({ exists: true, mode: "600", text: "token=s3cr3t-old\n" }),
+			templates: [
+				{
+					mode: "0600",
+					name: "Npmrc",
+					secrets: ["TOKEN"],
+					source: "machines/main/files/.npmrc",
+					target: "/home/ada/.npmrc",
+				},
+			],
+		});
+		const [result] = results;
+		expect(result?.ok).toBe(false);
+		expect(`${result?.actual} ${result?.expected}`).not.toContain("s3cr3t");
+		expect(result?.fix).toMatchObject({ newContent: "token=s3cr3t-new\n", secret: true });
 	});
 
 	test("leftover placeholders fail manual", async () => {

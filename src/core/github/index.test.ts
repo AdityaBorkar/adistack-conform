@@ -100,6 +100,42 @@ describe("github IaC mappings", () => {
 			required_approving_review_count: 1,
 		});
 	});
+	test("protection body maps GET-shaped allowances to PUT login lists", () => {
+		const team = { id: 1, name: "Core Team", slug: "core", url: "https://api.github.com/x" };
+		const user = { id: 2, login: "octocat", url: "https://api.github.com/users/octocat" };
+		const app = { id: 3, name: "Bot", slug: "bot" };
+		const body = protectionPutBody(
+			{
+				required_pull_request_reviews: {
+					bypass_pull_request_allowances: { apps: [app], teams: [], users: [user] },
+					dismissal_restrictions: {
+						teams: [team],
+						teams_url: "https://api.github.com/t",
+						url: "https://api.github.com/d",
+						users: [user],
+						users_url: "https://api.github.com/u",
+					},
+				},
+				restrictions: { apps: [app], teams: [team], url: "https://api.github.com/r", users: [] },
+			},
+			{
+				branch: "main",
+				checks: [],
+				dismissStale: false,
+				requireApprovals: 1,
+				requireCodeOwner: false,
+				requireConversationResolution: false,
+				requireSignedCommits: false,
+				restrictPushes: true,
+			},
+		);
+		expect(body["required_pull_request_reviews"]).toMatchObject({
+			bypass_pull_request_allowances: { apps: ["bot"], teams: [], users: ["octocat"] },
+			dismissal_restrictions: { teams: ["core"], users: ["octocat"] },
+		});
+		expect(body["restrictions"]).toEqual({ apps: ["bot"], teams: ["core"], users: [] });
+	});
+
 	test("fork approval maps to API policies", () => {
 		expect(forkApprovalPolicy(true)).toBe("all_external_contributors");
 		expect(forkApprovalPolicy(false)).toBe("first_time_contributors");

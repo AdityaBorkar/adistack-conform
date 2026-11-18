@@ -4,7 +4,7 @@ import {
 	isTemplateUpstream,
 	upstreamPlaceholders,
 } from "#/core/project/template.js";
-import type { CheckBase, CheckResult, CheckScope } from "#/core/result.js";
+import type { CheckBase, CheckResult } from "#/core/result.js";
 import { failFixable, failManual, pass } from "#/core/result.js";
 import type { ManifestCompare } from "#/core/upstream/registry.js";
 import { readFileSafe } from "#/utils/fs.js";
@@ -12,16 +12,11 @@ import { isRecord, omitKeys, serializeJson, deepEqual, setOwn } from "#/utils/js
 import { parseJsonc } from "#/utils/jsonc.js";
 
 // Every project result id has the `project:<blueprint>:<name>` shape.
-export function projectBase(
-	blueprint: string,
-	fileName: string,
-	fileTarget: string,
-	scope: CheckScope,
-): CheckBase {
+export function projectBase(blueprint: string, fileName: string, fileTarget: string): CheckBase {
 	return {
 		id: `project:${blueprint}:${fileName}`,
 		kind: "project",
-		scope,
+		scope: "project",
 		target: fileTarget,
 		upstream: `tech-stack:${blueprint}`,
 	};
@@ -183,11 +178,10 @@ export async function checkProjectFileWithUpstream(args: {
 	fileName: string;
 	fileTarget: string;
 	upstream: string;
-	scope: CheckScope;
 	sourceLabel: string;
 	targetPath: string;
 }): Promise<CheckResult> {
-	const base = projectBase(args.blueprint, args.fileName, args.fileTarget, args.scope);
+	const base = projectBase(args.blueprint, args.fileName, args.fileTarget);
 	const compare = { ...EMPTY_COMPARE, ...args.compare };
 	const template = isTemplateUpstream(args.upstream);
 	const targetRead = await readFileSafe(args.targetPath);

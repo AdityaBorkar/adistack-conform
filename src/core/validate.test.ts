@@ -20,30 +20,25 @@ const registry = {
 } as unknown as RegistryDocument;
 
 describe("collectValidateTargets", () => {
-	test("dedupes shared project/github blueprints across desired states", () => {
-		const targets = collectValidateTargets([
-			loaded({ project: { blueprint: "cli-app" } }),
-			loaded({ github: { blueprint: "npm-package" }, project: { blueprint: "cli-app" } }),
-		]);
-		expect(targets.size).toBe(1);
-		expect(targets.get("o/r@main")?.projects).toEqual(["cli-app"]);
-		expect(targets.get("o/r@main")?.githubs).toEqual(["npm-package"]);
-		expect(targets.get("o/r@main")?.machines).toEqual([]);
-	});
-
-	test("keeps machine blueprints separate from projects", () => {
-		const targets = collectValidateTargets([
-			loaded({ machine: { blueprint: "main" }, project: { blueprint: "cli-app" } }),
-		]);
-		expect(targets.get("o/r@main")?.machines).toEqual(["main"]);
-		expect(targets.get("o/r@main")?.projects).toEqual(["cli-app"]);
+	test("maps each configured scope to its blueprint", () => {
+		expect(
+			collectValidateTargets(
+				loaded({ machine: { blueprint: "main" }, project: { blueprint: "cli-app" } }),
+			),
+		).toEqual({
+			github: undefined,
+			id: "o/r",
+			machine: "main",
+			project: "cli-app",
+			ref: "main",
+		});
 	});
 });
 
 describe("validateTargets", () => {
 	test("reports registry plus manifest results in order", async () => {
 		const results = await validateTargets(
-			collectValidateTargets([loaded({ project: { blueprint: "cli-app" } })]),
+			collectValidateTargets(loaded({ project: { blueprint: "cli-app" } })),
 			{
 				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchMachine: () => Promise.reject(new Error("must not be called")),
@@ -66,7 +61,7 @@ describe("validateTargets", () => {
 
 	test("reports registry plus github settings results in order", async () => {
 		const results = await validateTargets(
-			collectValidateTargets([loaded({ github: { blueprint: "npm-package" } })]),
+			collectValidateTargets(loaded({ github: { blueprint: "npm-package" } })),
 			{
 				fetchGithub: () =>
 					Promise.resolve({
@@ -88,7 +83,7 @@ describe("validateTargets", () => {
 
 	test("registry fetch error skips manifests for that ref", async () => {
 		const results = await validateTargets(
-			collectValidateTargets([loaded({ project: { blueprint: "cli-app" } })]),
+			collectValidateTargets(loaded({ project: { blueprint: "cli-app" } })),
 			{
 				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchMachine: () => Promise.reject(new Error("must not be called")),
@@ -105,7 +100,7 @@ describe("validateTargets", () => {
 
 	test("missing machine blueprint is invalid", async () => {
 		const results = await validateTargets(
-			collectValidateTargets([loaded({ machine: { blueprint: "nope" } })]),
+			collectValidateTargets(loaded({ machine: { blueprint: "nope" } })),
 			{
 				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchMachine: () => Promise.reject(new Error("must not be called")),
@@ -122,7 +117,7 @@ describe("validateTargets", () => {
 
 	test("manifest schema error is reported per blueprint", async () => {
 		const results = await validateTargets(
-			collectValidateTargets([loaded({ project: { blueprint: "cli-app" } })]),
+			collectValidateTargets(loaded({ project: { blueprint: "cli-app" } })),
 			{
 				fetchGithub: () => Promise.reject(new Error("must not be called")),
 				fetchMachine: () => Promise.reject(new Error("must not be called")),
@@ -159,7 +154,7 @@ describe("validateTargets", () => {
 			fetchText: () => Promise.resolve("content"),
 		};
 		const ok = await validateTargets(
-			collectValidateTargets([loaded({ machine: { blueprint: "main" } })]),
+			collectValidateTargets(loaded({ machine: { blueprint: "main" } })),
 			deps,
 		);
 		expect(ok.map((item) => item.file)).toEqual([
@@ -168,7 +163,7 @@ describe("validateTargets", () => {
 		]);
 		expect(ok.every((item) => item.ok)).toBe(true);
 		const failing = await validateTargets(
-			collectValidateTargets([loaded({ machine: { blueprint: "main" } })]),
+			collectValidateTargets(loaded({ machine: { blueprint: "main" } })),
 			{
 				...deps,
 				fetchText: () => Promise.reject(new Error("HTTP 404.")),
@@ -206,7 +201,7 @@ describe("validateTargets", () => {
 					: Promise.resolve("content"),
 		};
 		const results = await validateTargets(
-			collectValidateTargets([loaded({ machine: { blueprint: "main" } })]),
+			collectValidateTargets(loaded({ machine: { blueprint: "main" } })),
 			withSecrets,
 		);
 		expect(results[1]?.ok).toBe(false);

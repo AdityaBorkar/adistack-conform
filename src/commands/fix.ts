@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 
 import type { DesiredStateOption, ScopeOptions } from "#/core/config.js";
-import { machineStatesOf } from "#/core/config.js";
+import { machineStateOf } from "#/core/config.js";
 import { unattendedRefusal } from "#/core/fix.js";
 import { fixSelectedAcrossScopes } from "#/core/machine/fix.js";
 import {
@@ -46,7 +46,7 @@ async function run(options: FixOptions): Promise<number> {
 	}
 
 	if (options.all === true && !isInteractive()) {
-		const refusal = unattendedRefusal(fixable, ctx.cwd);
+		const refusal = unattendedRefusal(fixable, ctx.desiredState.dir);
 		if (refusal !== undefined) {
 			console.error(refusal);
 			return 2;
@@ -68,9 +68,9 @@ async function run(options: FixOptions): Promise<number> {
 	}
 	const fixed = await fixSelectedAcrossScopes({
 		home: ctx.home,
-		registries: ctx.registries,
+		registry: ctx.registry,
 		selected: selection.selected,
-		states: machineStatesOf(ctx.desiredStates),
+		state: machineStateOf(ctx.desiredState),
 	});
 
 	const recheckResults = await recheckAfterFix(ctx, results, selection.selected);

@@ -20,10 +20,10 @@ export interface ValidateResult {
 }
 
 export interface ValidateTargets {
-	githubs: string[];
+	github?: string;
 	id: string;
-	machines: string[];
-	projects: string[];
+	machine?: string;
+	project?: string;
 	ref: string;
 }
 
@@ -43,41 +43,14 @@ const defaultDeps: FetchDeps = {
 	fetchText: fetchTextOrThrow,
 };
 
-export function collectValidateTargets(
-	desiredStates: readonly LoadedDesiredState[],
-): Map<string, ValidateTargets> {
-	const targets = new Map<string, ValidateTargets>();
-	const add = (
-		id: string,
-		ref: string,
-		kind: "github" | "machine" | "project",
-		blueprint: string,
-	): void => {
-		const key = `${id}@${ref}`;
-		let entry = targets.get(key);
-		if (entry === undefined) {
-			entry = { githubs: [], id, machines: [], projects: [], ref };
-			targets.set(key, entry);
-		}
-		const list =
-			kind === "machine" ? entry.machines : kind === "github" ? entry.githubs : entry.projects;
-		if (!list.includes(blueprint)) {
-			list.push(blueprint);
-		}
+export function collectValidateTargets(loaded: LoadedDesiredState): ValidateTargets {
+	return {
+		github: loaded.github?.blueprint,
+		id: loaded.source.id,
+		machine: loaded.machine?.blueprint,
+		project: loaded.project?.blueprint,
+		ref: loaded.source.ref,
 	};
-	for (const loaded of desiredStates) {
-		const { id, ref } = loaded.source;
-		if (loaded.project !== undefined) {
-			add(id, ref, "project", loaded.project.blueprint);
-		}
-		if (loaded.github !== undefined) {
-			add(id, ref, "github", loaded.github.blueprint);
-		}
-		if (loaded.machine !== undefined) {
-			add(id, ref, "machine", loaded.machine.blueprint);
-		}
-	}
-	return targets;
 }
 
 function machineEntryError(blueprint: string, registry: RegistryDocument): string | undefined {
@@ -145,7 +118,40 @@ async function validateMachine(
 	return { file: `${manifestRel} (${target.id}@${target.ref})`, ok: true };
 }
 
-async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<ValidateResult[]> {
+async function validateProject(
+	target: ValidateTargets,
+	blueprint: string,
+	registry: RegistryDocument,
+	deps: FetchDeps,
+): Promise<ValidateResult> {
+	try {
+		const manifest = await deps.fetchManifest(target.id, target.ref, blueprint, registry);
+		return { file: `${manifest.blueprintRel} (${target.id}@${target.ref})`, ok: true };
+	} catch (error) {
+		const file = `blueprint "${blueprint}" in registry.json (${target.id}@${target.ref})`;
+		return { error: errorMessage(error), file, ok: false };
+	}
+}
+
+async function validateGithub(
+	target: ValidateTargets,
+	blueprint: string,
+	registry: RegistryDocument,
+	deps: FetchDeps,
+): Promise<ValidateResult> {
+	try {
+		const settings = await deps.fetchGithub(target.id, target.ref, blueprint, registry);
+		return { file: `${settings.githubRel} (${target.id}@${target.ref})`, ok: true };
+	} catch (error) {
+		const file = `github "${blueprint}" in registry.json (${target.id}@${target.ref})`;
+		return { error: errorMessage(error), file, ok: false };
+	}
+}
+
+export async function validateTargets(
+	target: ValidateTargets,
+	deps: FetchDeps = defaultDeps,
+): Promise<ValidateResult[]> {
 	const registryFile = `registry.json (${target.id}@${target.ref})`;
 	let registry: RegistryDocument;
 	try {
@@ -153,53 +159,11 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 	} catch (error) {
 		return [{ error: errorMessage(error), file: registryFile, ok: false }];
 	}
-	const results: ValidateResult[] = [{ file: registryFile, ok: true }];
-	const machineResults = await mapWithConcurrency(target.machines.toSorted(), 8, (blueprint) =>
-		validateMachine(target, blueprint, registry, deps),
-	);
-	const manifestResults = await mapWithConcurrency(
-		target.projects.toSorted(),
-		8,
-		async (blueprint): Promise<ValidateResult> => {
-			const file = `blueprint "${blueprint}" in ${registryFile}`;
-			try {
-				const manifest = await deps.fetchManifest(target.id, target.ref, blueprint, registry);
-				const manifestFile = `${manifest.blueprintRel} (${target.id}@${target.ref})`;
-				return { file: manifestFile, ok: true };
-			} catch (error) {
-				return { error: errorMessage(error), file, ok: false };
-			}
-		},
-	);
-	const githubResults = await mapWithConcurrency(
-		target.githubs.toSorted(),
-		8,
-		async (blueprint): Promise<ValidateResult> => {
-			const file = `github "${blueprint}" in ${registryFile}`;
-			try {
-				const settings = await deps.fetchGithub(target.id, target.ref, blueprint, registry);
-				const settingsFile = `${settings.githubRel} (${target.id}@${target.ref})`;
-				return { file: settingsFile, ok: true };
-			} catch (error) {
-				return { error: errorMessage(error), file, ok: false };
-			}
-		},
-	);
-	return [...results, ...machineResults, ...manifestResults, ...githubResults];
-}
-
-export async function validateTargets(
-	targets: Map<string, ValidateTargets>,
-	deps: FetchDeps = defaultDeps,
-): Promise<ValidateResult[]> {
-	const perKey = await Promise.all(
-		[...targets.keys()].toSorted().map((key) => {
-			const target = targets.get(key);
-			if (target === undefined) {
-				return Promise.resolve([]);
-			}
-			return validateOne(target, deps);
-		}),
-	);
-	return perKey.flat();
+	const { github, machine, project } = target;
+	const checks = await Promise.all([
+		machine === undefined ? undefined : validateMachine(target, machine, registry, deps),
+		project === undefined ? undefined : validateProject(target, project, registry, deps),
+		github === undefined ? undefined : validateGithub(target, github, registry, deps),
+	]);
+	return [{ file: registryFile, ok: true }, ...checks.filter((item) => item !== undefined)];
 }

@@ -35,18 +35,6 @@ Your `conform.json` `blueprint` matches by the first hit:
 
 </Step>
 
-<Step title="Path basename (`.json` ignored)">
-
-`cli-app` matches the basename of an entry path, with a trailing `.json` stripped. Short and usually unambiguous.
-
-</Step>
-
-<Step title="Your string's own basename">
-
-A full path you pass also resolves by its basename. Last resort, but it works.
-
-</Step>
-
 </Steps>
 
 <Callout type="warning" title="No match, no mercy">

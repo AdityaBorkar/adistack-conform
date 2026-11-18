@@ -1,39 +1,10 @@
-import { defaultRunner } from "#/core/machine/managers/types.js";
-import type {
-	InstalledPackages,
-	PackageManager,
-	PackageRef,
-	Runner,
-} from "#/core/machine/managers/types.js";
+import { captureCommand } from "#/core/machine/managers/types.js";
+import type { InstalledPackages } from "#/core/machine/managers/types.js";
 
-export function createBunManager(runner: Runner = defaultRunner): PackageManager {
-	return {
-		id: "bun",
-		async install(entries: PackageRef[]): Promise<void> {
-			if (entries.length === 0) {
-				return;
-			}
-			await runner.run([
-				"bun",
-				"add",
-				"-g",
-				...entries.map((entry) => `${entry.name}@${entry.version}`),
-			]);
-		},
-		async list(): Promise<InstalledPackages> {
-			const versions = parseBunGlobalVersions(await runner.capture(["bun", "pm", "-g", "ls"]));
-			return { explicit: new Set(versions.keys()), versions };
-		},
-		async remove(names: string[]): Promise<void> {
-			if (names.length === 0) {
-				return;
-			}
-			await runner.run(["bun", "remove", "-g", ...names]);
-		},
-	};
+export async function listBunPackages(): Promise<InstalledPackages> {
+	const versions = parseBunGlobalVersions(await captureCommand(["bun", "pm", "-g", "ls"]));
+	return { explicit: new Set(versions.keys()), versions };
 }
-
-export const bunManager: PackageManager = createBunManager();
 
 // `bun pm -g ls` prints tree lines ending in `<name>@<version>`; scoped
 // names (`@scope/name@version`) split on the last `@`. Header lines without

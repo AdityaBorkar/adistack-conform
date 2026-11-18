@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import type { MachineRunState } from "#/core/config.js";
-import { checkMachine, recheckMachineSelected } from "#/core/machine/index.js";
+import { checkMachine } from "#/core/machine/index.js";
 import type { MachineCheckInput, MachineLive } from "#/core/machine/index.js";
-import type { RegistryDocument } from "#/core/upstream/registry.js";
 import type { MachineManifest } from "#/schemas/machine-manifest.js";
 
 const encoder = new TextEncoder();
@@ -140,18 +138,5 @@ describe("checkMachine templates", () => {
 		expect(results[0]?.ok).toBe(false);
 		expect(results[0]?.fix).toBeUndefined();
 		expect(results[0]?.hint).toContain("sops");
-	});
-});
-
-describe("recheckMachineSelected", () => {
-	test("empty selection short-circuits without network", async () => {
-		const state: MachineRunState = { blueprint: "main", id: "o/r", ref: "main" };
-		const results = await recheckMachineSelected(
-			state,
-			{} as RegistryDocument,
-			new Set<string>(),
-			false,
-		);
-		expect(results).toEqual([]);
 	});
 });

@@ -1,17 +1,13 @@
 import type { Command } from "commander";
 
 import type { DesiredStateOption } from "#/core/config.js";
-import { loadDesiredStates } from "#/core/config.js";
+import { loadDesiredState } from "#/core/config.js";
 import { okMark } from "#/core/report.js";
 import { collectValidateTargets, validateTargets } from "#/core/validate.js";
 
 async function run(options: DesiredStateOption): Promise<number> {
-	const desiredStates = await loadDesiredStates(options.desiredState);
-	const results = await validateTargets(collectValidateTargets(desiredStates));
-	if (results.length === 0) {
-		console.error("Validate: no tech-stack targets configured.");
-		return 2;
-	}
+	const desiredState = await loadDesiredState(options.desiredState);
+	const results = await validateTargets(collectValidateTargets(desiredState));
 	for (const result of results) {
 		if (result.ok) {
 			console.log(`${okMark(true)} ${result.file}`);
