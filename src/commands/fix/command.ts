@@ -2,8 +2,9 @@ import { isAbsolute, relative, resolve } from "node:path";
 
 import type { Command } from "commander";
 
-import { fixSelected } from "#/commands/fix/apply.js";
+import { applyMachineFixes } from "#/commands/fix/run.js";
 import { isInteractive, resolveSelection } from "#/commands/fix/select.js";
+import { machineStateOf } from "#/utils/config.js";
 import { errorMessage } from "#/utils/fs.js";
 import {
 	formatDuration,
@@ -54,11 +55,14 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 
 	if (cmdOptions.all === true && !isInteractive()) {
 		const risky = fixable.filter(
-			(item) => item.fix?.kind === "run-command" || item.fix?.kind === "github-api",
+			(item) =>
+				item.fix?.kind === "run-command" ||
+				item.fix?.kind === "symlink" ||
+				item.fix?.kind === "github-api",
 		);
 		if (risky.length > 0) {
 			console.error(
-				`Refusing --all in non-TTY: ${risky.length} fix(es) run commands or edit GitHub (${risky.map((item) => item.id).join(", ")}). Re-run in a terminal or select file-only fixes.`,
+				`Refusing --all in non-TTY: ${risky.length} fix(es) run commands or edit GitHub (${risky.map((item) => item.id).join(", ")}). Run again in a terminal or select file-only fixes.`,
 			);
 			return 2;
 		}
@@ -67,7 +71,7 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 		);
 		if (outside.length > 0) {
 			console.error(
-				`Refusing --all in non-TTY: ${outside.length} file fix(es) write outside the project dir (${outside.map((item) => item.id).join(", ")}). Re-run in a terminal to confirm.`,
+				`Refusing --all in non-TTY: ${outside.length} file fix(es) write outside the project dir (${outside.map((item) => item.id).join(", ")}). Run again in a terminal to confirm.`,
 			);
 			return 2;
 		}
@@ -76,7 +80,7 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 	const selection = await resolveSelection(fixable, cmdOptions.all);
 	if (selection.kind === "no-tty") {
 		console.error(
-			`Not a TTY: re-run with --all to fix non-interactively. (${formatDuration(performance.now() - start)})`,
+			`Not a TTY: run again with --all to fix non-interactively. (${formatDuration(performance.now() - start)})`,
 		);
 		return 2;
 	}
@@ -88,12 +92,16 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 	if (cmdOptions.diff !== false) {
 		renderFixDiffs(selection.selected);
 	}
-	const fixed = await fixSelected(selection.selected);
+	const states = desiredStates.flatMap((loaded) => {
+		const state = machineStateOf(loaded);
+		return state === undefined ? [] : [state];
+	});
+	const fixed = await applyMachineFixes({ home, registries, selected: selection.selected, states });
 
-	let rerunResults: CheckResult[];
+	let recheckResults: CheckResult[];
 	try {
 		const selectedIds = new Set(selection.selected.map((item) => item.id));
-		const refreshed = await recheckSelected({
+		const rechecked = await recheckSelected({
 			cwd,
 			desiredStates,
 			home,
@@ -101,20 +109,20 @@ export async function runFixCommand(cmd: Command, cmdOptions: FixCmdOptions): Pr
 			registries,
 			selectedIds,
 		});
-		const byId = new Map(refreshed.map((item) => [item.id, item]));
-		rerunResults = results.map((item) => byId.get(item.id) ?? item);
+		const byId = new Map(rechecked.map((item) => [item.id, item]));
+		recheckResults = results.map((item) => byId.get(item.id) ?? item);
 	} catch (error) {
 		console.error(`Selective re-check failed, running a full re-check: ${errorMessage(error)}`);
-		const rerun = await runAllChecks({ cwd, desiredStates, home, only, registries });
-		rerunResults = rerun.results;
+		const recheck = await runAllChecks({ cwd, desiredStates, home, only, registries });
+		recheckResults = recheck.results;
 	}
-	const remaining = rerunResults.filter((item) => !item.ok && item.skipped !== true);
+	const remaining = recheckResults.filter((item) => !item.ok && item.skipped !== true);
 	const elapsedMs = performance.now() - start;
 	console.log(
-		`\nFixed ${fixed}/${selection.selected.length}. ${remaining.length} result(s) still failing in ${formatDuration(elapsedMs)}.`,
+		`\nFixed ${fixed.length}/${selection.selected.length}. ${remaining.length} result(s) still failing in ${formatDuration(elapsedMs)}.`,
 	);
 	if (remaining.length > 0) {
-		printResults(rerunResults, undefined, { verbose: false });
+		printResults(recheckResults, undefined, { verbose: false });
 		return 1;
 	}
 	await outroAllPassed(elapsedMs);

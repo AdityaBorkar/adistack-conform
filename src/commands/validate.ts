@@ -1,8 +1,16 @@
 import type { Command } from "commander";
 
-import { blueprintDirRel, findMachineEntry } from "#/stack/registry.js";
+import { machineSecretsRel } from "#/stack/machine-live.js";
+import { blueprintRel, findMachineEntry } from "#/stack/registry.js";
 import type { RegistryDocument } from "#/stack/registry.js";
-import { fetchGithubSettings, fetchProjectManifest, fetchRegistry } from "#/stack/remote.js";
+import {
+	fetchGithubSettings,
+	fetchMachineManifest,
+	fetchProjectManifest,
+	fetchRegistry,
+	fetchTextOrThrow,
+	rawUrl,
+} from "#/stack/remote.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
 import type { LoadedDesiredState } from "#/utils/config.js";
 import { errorMessage } from "#/utils/fs.js";
@@ -25,14 +33,18 @@ export interface ValidateTargets {
 
 type FetchDeps = {
 	fetchGithub: typeof fetchGithubSettings;
+	fetchMachine: typeof fetchMachineManifest;
 	fetchManifest: typeof fetchProjectManifest;
 	fetchRegistry: typeof fetchRegistry;
+	fetchText: typeof fetchTextOrThrow;
 };
 
 const defaultDeps: FetchDeps = {
 	fetchGithub: fetchGithubSettings,
+	fetchMachine: fetchMachineManifest,
 	fetchManifest: fetchProjectManifest,
 	fetchRegistry,
+	fetchText: fetchTextOrThrow,
 };
 
 export function collectValidateTargets(
@@ -78,14 +90,63 @@ function machineEntryError(blueprint: string, registry: RegistryDocument): strin
 		return `Machine blueprint "${blueprint}" not found in the tech-stack repo.`;
 	}
 	try {
-		const dirRel = blueprintDirRel(entry.path);
-		if (dirRel === "") {
-			return `Machine blueprint "${blueprint}" has an empty path in the registry.`;
-		}
+		blueprintRel(entry.path);
 	} catch (error) {
 		return errorMessage(error);
 	}
 	return undefined;
+}
+
+async function validateMachine(
+	target: ValidateTargets,
+	blueprint: string,
+	registry: RegistryDocument,
+	deps: FetchDeps,
+): Promise<ValidateResult> {
+	const file = `machine "${blueprint}" in registry.json (${target.id}@${target.ref})`;
+	const entryError = machineEntryError(blueprint, registry);
+	if (entryError !== undefined) {
+		return { error: entryError, file, ok: false };
+	}
+	let manifest: Awaited<ReturnType<FetchDeps["fetchMachine"]>>["manifest"];
+	let manifestRel: string;
+	try {
+		const fetched = await deps.fetchMachine(target.id, target.ref, blueprint, registry);
+		manifest = fetched.manifest;
+		manifestRel = fetched.manifestRel;
+	} catch (error) {
+		return { error: errorMessage(error), file, ok: false };
+	}
+	// Names and managers are enforced by the manifest schema; here only the
+	// source bytes must exist (same fetch order as project scope).
+	const sources = manifest.files.map((entry) => entry.source);
+	const errors = await mapWithConcurrency(sources, 8, async (source) => {
+		try {
+			await deps.fetchText(rawUrl(target.id, target.ref, source), `machine file ${source}`);
+			return null;
+		} catch (error) {
+			return `${source}: ${errorMessage(error)}`;
+		}
+	});
+	const missing = errors.filter((item) => item !== null);
+	if (missing.length > 0) {
+		return { error: `Unfetchable machine sources: ${missing.join("; ")}`, file, ok: false };
+	}
+	// Templates render from the sops-encrypted secrets next to the manifest;
+	// a manifest whose secrets file is unfetchable can never render.
+	if (manifest.files.some((entry) => (entry.secrets?.length ?? 0) > 0)) {
+		const secretsRel = machineSecretsRel(manifestRel);
+		try {
+			await deps.fetchText(rawUrl(target.id, target.ref, secretsRel), `secrets file ${secretsRel}`);
+		} catch (error) {
+			return {
+				error: `Unfetchable machine secrets ${secretsRel}: ${errorMessage(error)}`,
+				file,
+				ok: false,
+			};
+		}
+	}
+	return { file: `${manifestRel} (${target.id}@${target.ref})`, ok: true };
 }
 
 async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<ValidateResult[]> {
@@ -97,12 +158,9 @@ async function validateOne(target: ValidateTargets, deps: FetchDeps): Promise<Va
 		return [{ error: errorMessage(error), file: registryFile, ok: false }];
 	}
 	const results: ValidateResult[] = [{ file: registryFile, ok: true }];
-	const machineResults = target.machines.toSorted().map((blueprint): ValidateResult => {
-		const error = machineEntryError(blueprint, registry);
-		return error === undefined
-			? { file: `machine "${blueprint}" in ${registryFile}`, ok: true }
-			: { error, file: `machine "${blueprint}" in ${registryFile}`, ok: false };
-	});
+	const machineResults = await mapWithConcurrency(target.machines.toSorted(), 8, (blueprint) =>
+		validateMachine(target, blueprint, registry, deps),
+	);
 	const manifestResults = await mapWithConcurrency(
 		target.projects.toSorted(),
 		8,

@@ -57,7 +57,11 @@ export async function checkGeneral(
 		actual = await repoInfo();
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot read repo settings", "set GITHUB_TOKEN to verify");
+			return skipped(
+				base,
+				"cannot read repo settings",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
 		}
 		throw error;
 	}
@@ -142,7 +146,7 @@ export async function checkGeneral(
 			base,
 			discussionsNote,
 			"repo settings match",
-			"Toggle Discussions in Settings → General → Features, then re-run check.",
+			"Toggle Discussions in Settings → General → Features, then re-check.",
 		);
 	}
 	const step: GithubApiStep = { body: state.body, method: "PATCH", path: repoPath(repo, "") };
@@ -176,7 +180,11 @@ export async function checkReleases(
 		enabled = current !== undefined;
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot read immutable releases", "set GITHUB_TOKEN to verify");
+			return skipped(
+				base,
+				"cannot read immutable releases",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
 		}
 		throw error;
 	}
@@ -227,7 +235,11 @@ export async function checkCodeowners(
 		);
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot read CODEOWNERS", "set GITHUB_TOKEN to verify");
+			return skipped(
+				base,
+				"cannot read CODEOWNERS",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
 		}
 		throw error;
 	}
@@ -239,7 +251,7 @@ export async function checkCodeowners(
 		base,
 		"<missing>",
 		`${upstream.codeowners} exists`,
-		`Create ${upstream.codeowners} with per-team reviewers, then re-run check.`,
+		`Create ${upstream.codeowners} with per-team reviewers, then re-check.`,
 	);
 }
 
@@ -268,7 +280,11 @@ export async function checkIssueTemplates(
 		);
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot read issue templates", "set GITHUB_TOKEN to verify");
+			return skipped(
+				base,
+				"cannot read issue templates",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
 		}
 		throw error;
 	}
@@ -280,7 +296,7 @@ export async function checkIssueTemplates(
 		base,
 		"<missing>",
 		".github/ISSUE_TEMPLATE exists",
-		"Add issue templates under .github/ISSUE_TEMPLATE/, then re-run check.",
+		"Add issue templates under .github/ISSUE_TEMPLATE/, then re-check.",
 	);
 }
 
@@ -301,7 +317,7 @@ export async function checkRulesets(
 		)) as Array<{ enforcement?: unknown; name?: unknown }>;
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot list rulesets", "set GITHUB_TOKEN to verify");
+			return skipped(base, "cannot list rulesets", "set GITHUB_TOKEN (private repo or rate limit)");
 		}
 		throw error;
 	}
@@ -316,6 +332,6 @@ export async function checkRulesets(
 		base,
 		`missing or inactive: ${missing.join(", ")}`,
 		`active: ${upstream.rulesets.join(", ")}`,
-		`Create/activate ruleset(s) ${missing.join(", ")} in Settings → Rules, then re-run check.`,
+		`Create/activate ruleset(s) ${missing.join(", ")} in Settings → Rules, then re-check.`,
 	);
 }

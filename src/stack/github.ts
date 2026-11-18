@@ -107,7 +107,7 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 		results.push(
 			skipped(
 				baseFor(blueprint, "social-preview", target),
-				"custom preview unverifiable via API",
+				"custom preview not readable via API",
 				"upload in Settings → General → Social preview",
 			),
 		);
@@ -115,8 +115,8 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 	results.push(
 		skipped(
 			baseFor(blueprint, "agent-suggestions", target),
-			`agent suggestions unverifiable via API (want ${upstream.agentSuggestions})`,
-			"verify Agent suggestions for issues in repo Settings",
+			`agent suggestions not readable via API (want ${upstream.agentSuggestions})`,
+			"confirm Agent suggestions for issues in repo Settings",
 		),
 	);
 	const archive = upstream.archiveSettings;
@@ -130,20 +130,20 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 	results.push(
 		skipped(
 			baseFor(blueprint, "archive-settings", target),
-			`archive toggles unverifiable via API (${archiveWant.join(", ")})`,
-			"verify in Settings → General → Archives/Pushes",
+			`archive toggles not readable via API (${archiveWant.join(", ")})`,
+			"confirm in Settings → General → Archives/Pushes",
 		),
 		skipped(
 			baseFor(blueprint, "copilot-autofix", target),
-			`Copilot Autofix toggle unverifiable via API (want ${upstream.security.copilotAutofix ? "on" : "off"})`,
-			`verify Copilot Autofix is ${upstream.security.copilotAutofix ? "on" : "off"} in Settings → Code security`,
+			`Copilot Autofix toggle not readable via API (want ${upstream.security.copilotAutofix ? "on" : "off"})`,
+			`confirm Copilot Autofix is ${upstream.security.copilotAutofix ? "on" : "off"} in Settings → Code security`,
 		),
 		...(upstream.security.dependencyAutoSubmit
 			? [
 					skipped(
 						baseFor(blueprint, "dependency-auto-submit", target),
-						"dependency auto-submit unverifiable via repo API",
-						"verify automatic dependency submission in Settings → Code security",
+						"dependency auto-submit not readable via repo API",
+						"confirm automatic dependency submission in Settings → Code security",
 					),
 				]
 			: []),
@@ -166,7 +166,7 @@ export async function runGithubChecks(
 					base,
 					"<settings reference missing>",
 					`registry github_configs entry for "${state.blueprint}"`,
-					`Add "${state.blueprint}" to registry.json github_configs (e.g. "./github-configs/<name>.json", see config/github-manifest.json), then re-run check.`,
+					`Add "${state.blueprint}" to registry.json github_configs (e.g. "./github-configs/<name>.json", see config/github-manifest.json), then re-check.`,
 				),
 			];
 		}
@@ -257,7 +257,7 @@ export async function runGithubChecks(
 				skipped(
 					baseFor(state.blueprint, "auth", target),
 					"cannot read repo settings",
-					"set GITHUB_TOKEN to verify (private repo or rate limit)",
+					"set GITHUB_TOKEN (private repo or rate limit)",
 				),
 			];
 		}

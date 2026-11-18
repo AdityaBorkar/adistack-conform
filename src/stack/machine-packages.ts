@@ -1,0 +1,154 @@
+import { splitDeclared } from "#/stack/managers/parse.js";
+import type { InstalledPackages, ManagerId, PackageRef } from "#/stack/managers/types.js";
+import type { CheckBase, CheckResult, RunCommandFix } from "#/utils/result.js";
+import { failFixable, pass, skipped } from "#/utils/result.js";
+
+export type PackageMode = "conform" | "drift";
+
+export interface DeclaredPackage {
+	manager: ManagerId;
+	name: string;
+	version: string;
+}
+
+export interface ManifestPackages {
+	bun: Record<string, string>;
+	pacman: Record<string, string>;
+}
+
+export interface EvaluatePackagesArgs {
+	allowlist: Record<ManagerId, Set<string>>;
+	blueprint: string;
+	declared: DeclaredPackage[];
+	installed: Record<ManagerId, InstalledPackages>;
+	mode: PackageMode;
+}
+
+const MANAGERS: ManagerId[] = ["bun", "pacman"];
+
+// Declared maps (name -> version) flatten to one entry per manager+name.
+// Record keys are unique by construction, so no dedupe pass is needed.
+export function declaredFromManifest(packages: ManifestPackages): DeclaredPackage[] {
+	const declared: DeclaredPackage[] = [];
+	for (const [name, version] of Object.entries(packages.pacman)) {
+		declared.push({ manager: "pacman", name, version });
+	}
+	for (const [name, version] of Object.entries(packages.bun)) {
+		declared.push({ manager: "bun", name, version });
+	}
+	return declared;
+}
+
+function installFix(manager: ManagerId, entry: PackageRef): RunCommandFix {
+	if (manager === "pacman") {
+		const spec = entry.version === "latest" ? entry.name : `${entry.name}=${entry.version}`;
+		return {
+			args: ["pacman", "-S", "--needed", "--noconfirm", spec],
+			command: "sudo",
+			kind: "run-command",
+			label: `sudo pacman -S --needed --noconfirm ${spec}`,
+		};
+	}
+	return {
+		args: ["add", "-g", `${entry.name}@${entry.version}`],
+		command: "bun",
+		kind: "run-command",
+		label: `bun add -g ${entry.name}@${entry.version}`,
+	};
+}
+
+function removeFix(manager: ManagerId, name: string): RunCommandFix {
+	if (manager === "pacman") {
+		return {
+			args: ["pacman", "-Rs", "--noconfirm", name],
+			command: "sudo",
+			kind: "run-command",
+			label: `sudo pacman -Rs --noconfirm ${name}`,
+		};
+	}
+	return {
+		args: ["remove", "-g", name],
+		command: "bun",
+		kind: "run-command",
+		label: `bun remove -g ${name}`,
+	};
+}
+
+// One result per declared package plus one per extra. Missing and version
+// drift fail both predicates (a declared requirement is unmet); extras pass
+// satisfies and fail inDrift. In conform mode extras are skipped results so
+// they never count as drift.
+export function evaluatePackages(args: EvaluatePackagesArgs): CheckResult[] {
+	const upstream = `tech-stack:${args.blueprint}`;
+	const results: CheckResult[] = [];
+	for (const manager of MANAGERS) {
+		const wanted = new Map<string, string>();
+		for (const entry of args.declared) {
+			if (entry.manager === manager) {
+				wanted.set(entry.name, entry.version);
+			}
+		}
+		const declaredNames = [...wanted.keys()].toSorted();
+		const { explicit, versions } = args.installed[manager] ?? {
+			explicit: new Set<string>(),
+			versions: new Map<string, string>(),
+		};
+		const allow = args.allowlist[manager] ?? new Set<string>();
+		const { extra, missing } = splitDeclared(declaredNames, explicit, allow);
+		const missingSet = new Set(missing);
+		for (const name of declaredNames) {
+			const version = wanted.get(name) ?? "latest";
+			const base: CheckBase = {
+				id: `machine:${args.blueprint}:${manager}:${name}`,
+				kind: "machine",
+				scope: "machine",
+				target: `${manager}:${name}`,
+				upstream,
+			};
+			if (missingSet.has(name)) {
+				results.push(
+					failFixable(
+						base,
+						`missing: ${name} is not installed`,
+						`package ${name} installed`,
+						installFix(manager, { name, version }),
+					),
+				);
+			} else if (version !== "latest" && versions.get(name) !== version) {
+				results.push(
+					failFixable(
+						base,
+						`version drift: ${name} is ${versions.get(name) ?? "<unknown>"}, want ${version}`,
+						`package ${name}@${version} installed`,
+						installFix(manager, { name, version }),
+					),
+				);
+			} else {
+				results.push(pass(base, `package ${name} installed`, `package ${name} installed`));
+			}
+		}
+		const expectedExtras = `only declared ${manager} packages installed`;
+		for (const name of extra) {
+			const base: CheckBase = {
+				id: `machine:${args.blueprint}:${manager}:${name}`,
+				kind: "machine",
+				scope: "machine",
+				target: `${manager}:${name}`,
+				upstream,
+			};
+			if (args.mode === "drift") {
+				results.push(
+					failFixable(
+						base,
+						`extra: ${name} is installed but not declared`,
+						expectedExtras,
+						removeFix(manager, name),
+					),
+				);
+			} else {
+				results.push(skipped(base, expectedExtras, `extra: ${name} is installed but not declared`));
+			}
+		}
+	}
+	return results;
+}

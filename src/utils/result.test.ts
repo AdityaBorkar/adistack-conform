@@ -20,7 +20,7 @@ describe("describeFix", () => {
 			describeFix({
 				actual: "",
 				expected: "",
-				fix: { args: ["a"], command: "nix", kind: "run-command", label: "l" },
+				fix: { args: ["a"], command: "tool", kind: "run-command", label: "l" },
 				id: "i",
 				kind: "k",
 				ok: false,

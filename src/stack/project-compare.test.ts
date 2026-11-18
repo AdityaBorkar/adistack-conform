@@ -164,7 +164,7 @@ describe("checkProjectFileWithUpstream", () => {
 		expect(placeholderResult.actual).toContain("still holds placeholders");
 	});
 
-	test("placeholders fail manual on type mismatch", async () => {
+	test("placeholders fail manual on type drift", async () => {
 		const upstream = '{"keywords":["<keyword>"]}\n';
 		const path = tmp("required-type.json");
 		await Bun.write(path, '{"keywords":"not-an-array"}\n');

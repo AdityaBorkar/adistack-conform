@@ -171,7 +171,7 @@ export function checkPrChecks(
 			base,
 			`<branch ${upstream.defaultBranch} missing>`,
 			`required checks: ${upstream.checks.join(", ")}`,
-			`Push branch ${upstream.defaultBranch} first, then re-run check.`,
+			`Push branch ${upstream.defaultBranch} first, then re-check.`,
 		);
 	}
 	const current = checkNames(
@@ -193,7 +193,7 @@ export function checkPrChecks(
 			base,
 			`required checks: ${current.join(", ") || "<none>"}`,
 			`required checks: ${want.join(", ") || "<none>"}`,
-			"Add a push allowlist (users/teams) in Settings → Branches, then re-run check.",
+			"Add a push allowlist (users/teams) in Settings → Branches, then re-check.",
 		);
 	}
 	const input = protectionInput(upstream);
@@ -229,7 +229,7 @@ export async function checkReviews(
 			base,
 			`<branch ${upstream.defaultBranch} missing>`,
 			"code reviews enforced",
-			`Push branch ${upstream.defaultBranch} first, then re-run check.`,
+			`Push branch ${upstream.defaultBranch} first, then re-check.`,
 		);
 	}
 	const reviews =
@@ -293,7 +293,7 @@ export async function checkReviews(
 			base,
 			diffSummary(diffs),
 			"code reviews match",
-			"Add a push allowlist (users/teams) in Settings → Branches, then re-run check.",
+			"Add a push allowlist (users/teams) in Settings → Branches, then re-check.",
 		);
 	}
 	const input = protectionInput(upstream);

@@ -20,7 +20,11 @@ export async function checkActionsPermissions(
 		actual = (await apiJson(repoPath(repo, "/actions/permissions"))) as Record<string, unknown>;
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot read Actions permissions", "set GITHUB_TOKEN to verify");
+			return skipped(
+				base,
+				"cannot read Actions permissions",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
 		}
 		throw error;
 	}
@@ -61,7 +65,11 @@ export async function checkActionsWorkflow(
 		>;
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot read workflow permissions", "set GITHUB_TOKEN to verify");
+			return skipped(
+				base,
+				"cannot read workflow permissions",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
 		}
 		throw error;
 	}
@@ -108,7 +116,7 @@ export async function checkActionsWorkflow(
 			return skipped(
 				base,
 				"cannot read fork approval policy",
-				"verify fork PR approval in Settings → Actions",
+				"confirm fork PR approval in Settings → Actions",
 			);
 		}
 		return pass(base, "workflow permissions match", "workflow permissions match");
@@ -140,7 +148,7 @@ export async function checkActionsWorkflow(
 		fix,
 	);
 	if (forkUnknown) {
-		result.hint = "Fork approval policy is unverified; verify it in Settings → Actions.";
+		result.hint = "Fork approval policy is unconfirmed; confirm it in Settings → Actions.";
 	}
 	return result;
 }
@@ -159,7 +167,11 @@ export async function checkActionsRetention(
 		};
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot read retention policy", "set GITHUB_TOKEN to verify");
+			return skipped(
+				base,
+				"cannot read retention policy",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
 		}
 		throw error;
 	}
@@ -193,7 +205,7 @@ export async function checkActionsOidc(
 ): Promise<CheckResult> {
 	const base = baseFor(blueprint, "actions-oidc", target);
 	if (!upstream.actions.oidcImmutableSubject) {
-		return skipped(base, "immutable OIDC subject not required", "verify in Settings → Actions");
+		return skipped(base, "immutable OIDC subject not required", "confirm in Settings → Actions");
 	}
 	// Check-only: the customization endpoint has no documented immutable-subject mapping.
 	let current: unknown;
@@ -203,17 +215,21 @@ export async function checkActionsOidc(
 		});
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "OIDC customization unavailable", "verify in Settings → Actions → OIDC");
+			return skipped(
+				base,
+				"OIDC customization unavailable",
+				"confirm in Settings → Actions → OIDC",
+			);
 		}
 		throw error;
 	}
 	if (current === undefined) {
-		return skipped(base, "OIDC customization unavailable", "verify in Settings → Actions → OIDC");
+		return skipped(base, "OIDC customization unavailable", "confirm in Settings → Actions → OIDC");
 	}
 	return skipped(
 		base,
 		`customization: ${JSON.stringify(current).slice(0, 120)}`,
-		"verify immutable subject claim in Settings → Actions → OIDC",
+		"confirm immutable subject claim in Settings → Actions → OIDC",
 	);
 }
 
@@ -235,7 +251,11 @@ export async function checkEnvironments(
 		names = items.map((entry) => String(entry.name));
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot list environments", "set GITHUB_TOKEN to verify environments");
+			return skipped(
+				base,
+				"cannot list environments",
+				"set GITHUB_TOKEN (private repo or rate limit)",
+			);
 		}
 		throw error;
 	}

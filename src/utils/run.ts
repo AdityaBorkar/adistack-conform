@@ -1,11 +1,12 @@
 import type { Command } from "commander";
 
 import { recheckGithubSelected, runGithubChecks } from "#/stack/github.js";
-import { recheckMachineSelected, runMachineChecks } from "#/stack/machine.js";
+import type { PackageMode } from "#/stack/machine-packages.js";
+import { recheckMachineSelected, runMachine } from "#/stack/machine.js";
 import { recheckProjectSelected, runProjectChecks } from "#/stack/project.js";
 import type { RegistryDocument } from "#/stack/registry.js";
 import { fetchRegistry, repoKey } from "#/stack/remote.js";
-import type { LoadedDesiredState } from "#/utils/config.js";
+import type { LoadedDesiredState, MachineRunState } from "#/utils/config.js";
 import {
 	discoverDesiredStates,
 	loadDesiredState,
@@ -69,17 +70,20 @@ export function requireRegistry(
 ): RegistryDocument {
 	const registry = registries.get(repoKey(id, ref));
 	if (registry === undefined) {
-		throw new Error(`Cannot find registry for ${repoKey(id, ref)}: refetch failed, re-run check.`);
+		throw new Error(`Cannot find registry for ${repoKey(id, ref)}: refetch failed, re-check.`);
 	}
 	return registry;
 }
 
-function toSafeResults(task: Promise<CheckResult[]>, scope: CheckScope): Promise<CheckResult[]> {
+export function toSafeResults(
+	task: Promise<CheckResult[]>,
+	scope: CheckScope,
+): Promise<CheckResult[]> {
 	return task.catch((error) => [
 		{
 			actual: errorMessage(error),
 			expected: `${scope} checks complete`,
-			hint: `Re-run with only this scope to see the full error: ${errorMessage(error)}`,
+			hint: `Re-check with only this scope to see the full error: ${errorMessage(error)}`,
 			id: `${scope}:internal-error`,
 			kind: "internal",
 			ok: false,
@@ -93,6 +97,24 @@ async function timed<T>(task: Promise<T>): Promise<{ elapsedMs: number; value: T
 	const start = performance.now();
 	const value = await task;
 	return { elapsedMs: performance.now() - start, value };
+}
+
+// Machine runs read live system state; run them one at a time.
+export async function runMachineStates(
+	states: readonly MachineRunState[],
+	registries: Map<string, RegistryDocument>,
+	mode: PackageMode,
+): Promise<CheckResult[]> {
+	const out: CheckResult[][] = [];
+	for (const state of states) {
+		out.push(
+			await toSafeResults(
+				runMachine(state, requireRegistry(registries, state.id, state.ref), mode),
+				"machine",
+			),
+		);
+	}
+	return out.flat();
 }
 
 // One registry fetch per unique repo@ref, shared by every desired state in the run,
@@ -117,18 +139,18 @@ export async function fetchRegistries(
 		]),
 	);
 	const registries = new Map<string, RegistryDocument>();
-	const failures: string[] = [];
+	const errors: string[] = [];
 	for (const entry of entries) {
 		if (entry.status === "fulfilled") {
 			registries.set(entry.value[0], entry.value[1]);
 		} else {
-			failures.push(errorMessage(entry.reason));
+			errors.push(errorMessage(entry.reason));
 		}
 	}
-	// Independent desired states still run: scopes whose registry failed throw
+	// Independent desired states still run: scopes with a missing registry throw
 	// via requireRegistry and surface as scope errors, not silent passes.
-	if (registries.size === 0 && failures.length > 0) {
-		throw new Error(failures.join("\n"));
+	if (registries.size === 0 && errors.length > 0) {
+		throw new Error(errors.join("\n"));
 	}
 	return registries;
 }
@@ -146,7 +168,7 @@ export async function runAllChecks(args: {
 	results: CheckResult[];
 }> {
 	const projectTasks: Promise<CheckResult[]>[] = [];
-	const machineRuns: Array<() => Promise<CheckResult[]>> = [];
+	const machineStates: MachineRunState[] = [];
 	const githubTasks: Promise<CheckResult[]>[] = [];
 	for (const loaded of args.desiredStates) {
 		for (const scope of activeScopes(args.only)) {
@@ -168,10 +190,7 @@ export async function runAllChecks(args: {
 			} else if (scope === "machine") {
 				const state = machineStateOf(loaded);
 				if (state !== undefined) {
-					const registry = requireRegistry(args.registries, state.id, state.ref);
-					// Defer the call: building the promise here would start the
-					// nix switch immediately and defeat the sequential run below.
-					machineRuns.push(() => toSafeResults(runMachineChecks(state, registry), "machine"));
+					machineStates.push(state);
 				}
 			} else {
 				const state = githubStateOf(loaded);
@@ -184,23 +203,16 @@ export async function runAllChecks(args: {
 	}
 	const [project, machine, github] = await Promise.all([
 		timed(Promise.all(projectTasks)),
-		// Machine checks share the nix store lock; run them one at a time.
-		timed(
-			(async () => {
-				const out: CheckResult[][] = [];
-				for (const run of machineRuns) {
-					out.push(await run());
-				}
-				return out;
-			})(),
-		),
+		// Machine runs share live system state, so they run sequentially
+		// while the other scopes run concurrently.
+		timed(runMachineStates(machineStates, args.registries, "conform")),
 		timed(Promise.all(githubTasks)),
 	]);
 	return {
 		githubElapsedMs: githubTasks.length > 0 ? github.elapsedMs : undefined,
-		machineElapsedMs: machineRuns.length > 0 ? machine.elapsedMs : undefined,
+		machineElapsedMs: machineStates.length > 0 ? machine.elapsedMs : undefined,
 		projectElapsedMs: projectTasks.length > 0 ? project.elapsedMs : undefined,
-		results: [...project.value.flat(), ...machine.value.flat(), ...github.value.flat()],
+		results: [...project.value.flat(), ...machine.value, ...github.value.flat()],
 	};
 }
 
@@ -212,9 +224,9 @@ export async function recheckSelected(args: {
 	registries: Map<string, RegistryDocument>;
 	selectedIds: ReadonlySet<string>;
 }): Promise<CheckResult[]> {
-	const refreshed = await Promise.all(
+	const rechecked = await Promise.all(
 		args.desiredStates.map(async (loaded) => {
-			const reruns: CheckResult[][] = [];
+			const rechecks: CheckResult[][] = [];
 			for (const scope of activeScopes(args.only)) {
 				if (scope === "project") {
 					const state = projectStateOf(loaded);
@@ -225,7 +237,7 @@ export async function recheckSelected(args: {
 						[...args.selectedIds].filter((id) => id.startsWith(`project:${state.blueprint}:`)),
 					);
 					if (scopedIds.size > 0) {
-						reruns.push(
+						rechecks.push(
 							await recheckProjectSelected(
 								state,
 								{ baseDir: args.cwd, home: args.home, scope: "project" },
@@ -240,10 +252,10 @@ export async function recheckSelected(args: {
 						continue;
 					}
 					const scopedIds = new Set(
-						[...args.selectedIds].filter((id) => id === `machine:${state.blueprint}`),
+						[...args.selectedIds].filter((id) => id.startsWith(`machine:${state.blueprint}:`)),
 					);
 					if (scopedIds.size > 0) {
-						reruns.push(
+						rechecks.push(
 							await recheckMachineSelected(
 								state,
 								requireRegistry(args.registries, state.id, state.ref),
@@ -260,7 +272,7 @@ export async function recheckSelected(args: {
 						[...args.selectedIds].filter((id) => id.startsWith(`github:${state.blueprint}:`)),
 					);
 					if (scopedIds.size > 0) {
-						reruns.push(
+						rechecks.push(
 							await recheckGithubSelected(
 								state,
 								requireRegistry(args.registries, state.id, state.ref),
@@ -270,10 +282,10 @@ export async function recheckSelected(args: {
 					}
 				}
 			}
-			return reruns.flat();
+			return rechecks.flat();
 		}),
 	);
-	return refreshed.flat();
+	return rechecked.flat();
 }
 
 export async function prepareRun(cmd: Command, cmdOptions: ScopeOptions) {

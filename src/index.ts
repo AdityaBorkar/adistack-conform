@@ -6,6 +6,7 @@ import { Command } from "commander";
 
 import { runCheckCommand, type CheckCmdOptions } from "#/commands/check.js";
 import { runFixCommand, type FixCmdOptions } from "#/commands/fix/command.js";
+import { runSwitchCommand, type SwitchCmdOptions } from "#/commands/switch.js";
 import { runValidateCommand } from "#/commands/validate.js";
 import { errorMessage } from "#/utils/fs.js";
 
@@ -74,6 +75,18 @@ program
 	.action(async (cmdOptions: FixCmdOptions, cmd: Command) => {
 		try {
 			process.exit(await runFixCommand(cmd, cmdOptions));
+		} catch (error) {
+			failWith(error);
+		}
+	});
+
+program
+	.command("switch")
+	.description("Enforce the machine blueprint state (drift mode).")
+	.option("--dry-run", "Show drift without writing.")
+	.action(async (cmdOptions: SwitchCmdOptions, cmd: Command) => {
+		try {
+			process.exit(await runSwitchCommand(cmd, cmdOptions));
 		} catch (error) {
 			failWith(error);
 		}

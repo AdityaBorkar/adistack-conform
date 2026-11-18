@@ -420,7 +420,7 @@ function semanticResult(args: SemanticArgs): CheckResult | undefined {
 				args.base,
 				`fields differ from the template: ${differing.join(", ")}`,
 				"template with per-project values (no <...> placeholders)",
-				`Reconcile ${args.targetPath} with the ${args.fileName} blueprint (keeping per-project values where the upstream uses <...> placeholders), then re-run check.`,
+				`Reconcile ${args.targetPath} with the ${args.fileName} blueprint (keeping per-project values where the upstream uses <...> placeholders), then re-check.`,
 			);
 		}
 		return pass(args.base, "matches template", args.upstream);
@@ -468,7 +468,7 @@ export async function checkProjectFileWithUpstream(args: {
 				base,
 				"<missing>",
 				"exists (templated from blueprint)",
-				`Copy ${args.sourceLabel} to ${args.targetPath}, adapt per-project fields, then re-run check.`,
+				`Copy ${args.sourceLabel} to ${args.targetPath}, adapt per-project fields, then re-check.`,
 			);
 		}
 		return failFixable(base, "<missing>", args.upstream, {
@@ -489,7 +489,7 @@ export async function checkProjectFileWithUpstream(args: {
 				base,
 				`contains placeholders: ${unadapted.join(", ")}`,
 				"adapted template (no <...> placeholders)",
-				`Replace ${unadapted.join(", ")} in ${args.targetPath} with per-project values (copied from ${args.sourceLabel}), then re-run check.`,
+				`Replace ${unadapted.join(", ")} in ${args.targetPath} with per-project values (copied from ${args.sourceLabel}), then re-check.`,
 			);
 		}
 	} else if (targetRead.text === args.upstream) {
@@ -561,7 +561,7 @@ export async function checkFileStructureEntry(args: {
 				"code" in error &&
 				(error as { code?: unknown }).code === "ENOENT"
 			) {
-				// shortcut: manual for now; upgrade to ensure-dir fix if dir auto-creation is wanted.
+				// shortcut: manual for now; extend to an ensure-dir fix if dir auto-creation is wanted.
 				return failManual(
 					base,
 					"<missing>",
@@ -587,7 +587,7 @@ export async function checkFileStructureEntry(args: {
 			base,
 			"<missing>",
 			"exists (generate per-project content)",
-			`${args.entryName} is missing. Generate one for this project, then re-run check.`,
+			`${args.entryName} is missing. Generate one for this project, then re-check.`,
 		);
 	}
 	return failManual(

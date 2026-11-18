@@ -48,7 +48,7 @@ export const GithubSchema = z.compile(
 				.prefault({}),
 			agentSuggestions: z
 				.enum(["full-control", "disabled"])
-				.describe("Agent suggestions for issues. Check-only: no public API, verify in the UI.")
+				.describe("Agent suggestions for issues. Check-only: no public API, confirm in the UI.")
 				.default("full-control"),
 			archiveSettings: z
 				.object({
@@ -68,7 +68,7 @@ export const GithubSchema = z.compile(
 						.describe("Max branches/tags updated in a single push. Omit to skip (no public API).")
 						.optional(),
 				})
-				.describe("Repo archive/push toggles. Check-only: no public API, verify in Settings.")
+				.describe("Repo archive/push toggles. Check-only: no public API, confirm in Settings.")
 				.strict()
 				.prefault({}),
 			checks: z
@@ -152,7 +152,7 @@ export const GithubSchema = z.compile(
 				.object({
 					copilotAutofix: z
 						.boolean()
-						.describe("Copilot Autofix. Check-only: no public API, verify in the UI.")
+						.describe("Copilot Autofix. Check-only: no public API, confirm in the UI.")
 						.default(false),
 					dependabot: z.boolean().describe("Dependabot security updates.").default(true),
 					dependencyAutoSubmit: z.boolean().default(true),

@@ -14,18 +14,8 @@ export type RegistryEntry = {
 	path: string;
 };
 
-export const MAX_LIST_SHOWN = 10;
-
 function normalizeEntryPath(value: string): string {
 	return value.replace(/\/+$/u, "").replace(/^\.\//u, "").replace(/^\/+/u, "");
-}
-
-function dirKey(value: string): string {
-	const segments = normalizeEntryPath(value)
-		.split("/")
-		.filter((part) => part !== "");
-	const base = segments.at(-1) ?? "";
-	return base.endsWith(".json") ? base.slice(0, -".json".length) : base;
 }
 
 function findInPathMap(
@@ -40,29 +30,22 @@ function findInPathMap(
 	if (direct !== undefined) {
 		return { name: want, path: direct };
 	}
+	// Fall back to repo-relative path equality so a stored
+	// "./projects/cli-app.json" still resolves from "projects/cli-app.json".
+	// Basename-only matching is deliberately unsupported: it silently resolves
+	// typos to the wrong blueprint.
 	const wantPath = normalizeEntryPath(want);
 	for (const [key, path] of Object.entries(map)) {
 		if (normalizeEntryPath(path) === wantPath) {
 			return { name: key, path };
 		}
 	}
-	for (const [key, path] of Object.entries(map)) {
-		if (dirKey(path) === want) {
-			return { name: key, path };
-		}
-	}
-	const wantDir = dirKey(want);
-	if (wantDir !== "") {
-		for (const [key, path] of Object.entries(map)) {
-			if (dirKey(path) === wantDir) {
-				return { name: key, path };
-			}
-		}
-	}
 	return undefined;
 }
 
-function hint(names: string[], label: string): string {
+export const MAX_LIST_SHOWN = 10;
+
+export function availableHint(names: string[], label: string): string {
 	if (names.length > MAX_LIST_SHOWN) {
 		return ` Available ${label}: ${names.slice(0, MAX_LIST_SHOWN).join(", ")} (+${names.length - MAX_LIST_SHOWN} more).`;
 	}
@@ -102,29 +85,7 @@ export function findMachineEntry(
 	name: string,
 	registry: RegistryDocument,
 ): RegistryEntry | undefined {
-	const want = name.trim();
-	if (want === "") {
-		return undefined;
-	}
-	const direct = registry.machines[want];
-	if (direct !== undefined) {
-		return { name: want, path: direct.path };
-	}
-	for (const [key, entry] of Object.entries(registry.machines)) {
-		if (entry.name === want) {
-			return { name: key, path: entry.path };
-		}
-	}
-	const paths = Object.fromEntries(
-		Object.entries(registry.machines).map(([key, entry]) => [key, entry.path]),
-	);
-	return findInPathMap(name, paths);
-}
-
-export function machineNotFoundError(name: string, registry: RegistryDocument): Error {
-	return new Error(
-		`Machine blueprint "${name}" not found in the tech-stack repo.${hint(listMachineBlueprintNames(registry), "machine blueprints")}`,
-	);
+	return findInPathMap(name, registry.machines);
 }
 
 // Repo-relative location of a project source file for raw fetches.
@@ -160,16 +121,13 @@ function assertSafeRel(normalized: string, original: string, label: string): str
 	return normalized;
 }
 
-export function blueprintDirRel(entryPath: string): string {
-	return assertSafeRel(normalizeEntryPath(entryPath), entryPath, "Machine blueprint path");
-}
-
-// Repo-relative location of a blueprint file itself (project manifest or GitHub settings).
+// Repo-relative location of a blueprint file itself (project manifest,
+// machine manifest, or GitHub settings).
 export function blueprintRel(entryPath: string): string {
 	const normalized = normalizeEntryPath(entryPath);
 	if (!normalized.endsWith(".json")) {
 		throw new Error(
-			`Registry entry "${entryPath}" must be a project blueprint file (e.g. ./projects/cli-app.json); directory entries are no longer supported.`,
+			`Registry entry "${entryPath}" must be a blueprint file (e.g. ./machines/main.json); directory entries are no longer supported.`,
 		);
 	}
 	return assertSafeRel(normalized, entryPath, "Registry entry");

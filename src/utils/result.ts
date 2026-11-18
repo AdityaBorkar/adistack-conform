@@ -13,6 +13,13 @@ export interface RunCommandFix {
 	label: string;
 }
 
+export interface SymlinkFix {
+	cachePath: string;
+	kind: "symlink";
+	label: string;
+	targetAbs: string;
+}
+
 export interface GithubApiStep {
 	body?: unknown;
 	method: "DELETE" | "PATCH" | "POST" | "PUT";
@@ -25,7 +32,7 @@ export interface GithubApiFix {
 	steps: GithubApiStep[];
 }
 
-export type CheckFix = OverwriteFileFix | RunCommandFix | GithubApiFix;
+export type CheckFix = OverwriteFileFix | RunCommandFix | SymlinkFix | GithubApiFix;
 
 export interface CheckResult {
 	actual: string;
@@ -87,7 +94,11 @@ export function partitionResults(results: CheckResult[]): {
 }
 
 export function desiredContent(result: CheckResult): string {
-	if (result.fix?.kind === "run-command" || result.fix?.kind === "github-api") {
+	if (
+		result.fix?.kind === "run-command" ||
+		result.fix?.kind === "symlink" ||
+		result.fix?.kind === "github-api"
+	) {
 		return result.fix.label;
 	}
 	if (result.fix?.kind === "overwrite-file") {

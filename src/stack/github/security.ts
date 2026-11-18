@@ -36,7 +36,9 @@ export async function checkSecurity(
 		analysis = ((await repoInfo()).security_and_analysis ?? {}) as Record<string, unknown>;
 	} catch (error) {
 		if (isAuthError(error)) {
-			return [skipped(base, "cannot read repo settings", "set GITHUB_TOKEN to verify")];
+			return [
+				skipped(base, "cannot read repo settings", "set GITHUB_TOKEN (private repo or rate limit)"),
+			];
 		}
 		throw error;
 	}
@@ -79,7 +81,7 @@ export async function checkSecurity(
 				skipped(
 					baseFor(blueprint, "security-vuln-reporting", target),
 					"cannot read private vulnerability reporting",
-					"set GITHUB_TOKEN to verify",
+					"set GITHUB_TOKEN (private repo or rate limit)",
 				),
 			);
 		} else {
@@ -105,7 +107,7 @@ export async function checkSecurity(
 				skipped(
 					baseFor(blueprint, "security-dependabot", target),
 					"cannot read Dependabot status",
-					"set GITHUB_TOKEN to verify",
+					"set GITHUB_TOKEN (private repo or rate limit)",
 				),
 			);
 		} else {
@@ -130,7 +132,7 @@ export async function checkSecurity(
 				skipped(
 					baseFor(blueprint, "security-dependency-graph", target),
 					"cannot read dependency graph status",
-					"set GITHUB_TOKEN to verify",
+					"set GITHUB_TOKEN (private repo or rate limit)",
 				),
 			);
 		} else {
@@ -146,7 +148,7 @@ export async function checkSecurity(
 				base,
 				diffSummary(diffs),
 				"security settings match",
-				"Toggle in Settings → Code security, then re-run check (needs GITHUB_TOKEN).",
+				"Toggle in Settings → Code security, then re-check (needs GITHUB_TOKEN).",
 			),
 			...notes,
 		];
@@ -176,7 +178,7 @@ export async function checkSecrets(
 		haveVariables = (variableItems as Array<{ name?: unknown }>).map((entry) => String(entry.name));
 	} catch (error) {
 		if (isAuthError(error)) {
-			return skipped(base, "cannot list secrets", "set GITHUB_TOKEN to verify secrets");
+			return skipped(base, "cannot list secrets", "set GITHUB_TOKEN (private repo or rate limit)");
 		}
 		throw error;
 	}
@@ -194,7 +196,7 @@ export async function checkSecrets(
 		`missing: ${missing.join(", ")}`,
 		"secrets/variables present",
 		missingSecrets.length > 0
-			? `Add values with e.g. gh secret set ${missingSecrets[0] ?? "NAME"} --repo ${repo}, then re-run check.`
-			: `Add values with e.g. gh variable set ${missingVariables[0] ?? "NAME"} --repo ${repo}, then re-run check.`,
+			? `Add values with e.g. gh secret set ${missingSecrets[0] ?? "NAME"} --repo ${repo}, then re-check.`
+			: `Add values with e.g. gh variable set ${missingVariables[0] ?? "NAME"} --repo ${repo}, then re-check.`,
 	);
 }

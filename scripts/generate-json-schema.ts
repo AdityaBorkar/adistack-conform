@@ -6,6 +6,7 @@ import * as z from "zod";
 
 import { ConformSchema } from "#/schemas/config.js";
 import { GithubSchema } from "#/schemas/github-settings.js";
+import { MachineManifestSchema } from "#/schemas/machine-manifest.js";
 import { ManifestSchema } from "#/schemas/project-manifest.js";
 import { RegistrySchema } from "#/schemas/registry.js";
 
@@ -14,6 +15,7 @@ export async function generateJsonSchema() {
 
 	const TARGETS = {
 		"github-manifest.json": GithubSchema,
+		"machine-manifest.json": MachineManifestSchema,
 		"project-manifest.json": ManifestSchema,
 		"registry.json": RegistrySchema,
 		"schema.json": ConformSchema,

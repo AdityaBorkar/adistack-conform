@@ -12,7 +12,6 @@ export interface ConformSource {
 
 export interface ConformMachine {
 	blueprint: string;
-	configuration?: string;
 }
 
 export interface ConformGithub {
@@ -41,7 +40,6 @@ export interface ProjectRunState {
 
 export interface MachineRunState {
 	blueprint: string;
-	configuration?: string;
 	id: string;
 	ref: string;
 }
@@ -112,7 +110,6 @@ export function machineStateOf(loaded: LoadedDesiredState): MachineRunState | un
 	}
 	return {
 		blueprint: loaded.machine.blueprint,
-		configuration: loaded.machine.configuration,
 		id: loaded.source.id,
 		ref: loaded.source.ref,
 	};

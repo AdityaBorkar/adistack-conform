@@ -5,14 +5,13 @@ import {
 	findGithubEntry,
 	findMachineEntry,
 	findProjectEntry,
-	blueprintDirRel,
 	blueprintRel,
 	resolveSourceRel,
 } from "#/stack/registry.js";
 
 const registry = {
 	github_configs: { "npm-package": "./github-configs/npm-package.json" },
-	machines: { main: { name: "Primary Developer Machine", path: "./machines/main/" } },
+	machines: { main: "./machines/main.json" },
 	projects: { "cli-app": "./projects/cli-app.json" },
 } as unknown as RegistryDocument;
 
@@ -26,15 +25,21 @@ describe("findProjectEntry", () => {
 		expect(findProjectEntry("projects/cli-app.json", registry)?.path).toBe(
 			"./projects/cli-app.json",
 		);
-		expect(findProjectEntry("projects/cli-app", registry)?.path).toBe("./projects/cli-app.json");
+		expect(findProjectEntry("./projects/cli-app.json", registry)?.path).toBe(
+			"./projects/cli-app.json",
+		);
+	});
+
+	test("basename-only lookups without an exact key do not resolve", () => {
+		expect(findProjectEntry("projects/cli-app", registry)).toBeUndefined();
 	});
 });
 
 describe("findMachineEntry", () => {
-	test("matches by key, display name, and directory", () => {
-		expect(findMachineEntry("main", registry)?.path).toBe("./machines/main/");
-		expect(findMachineEntry("Primary Developer Machine", registry)?.path).toBe("./machines/main/");
-		expect(findMachineEntry("machines/main", registry)?.path).toBe("./machines/main/");
+	test("matches by key and full path", () => {
+		expect(findMachineEntry("main", registry)?.path).toBe("./machines/main.json");
+		expect(findMachineEntry("machines/main.json", registry)?.path).toBe("./machines/main.json");
+		expect(findMachineEntry("machines/main", registry)).toBeUndefined();
 	});
 });
 
@@ -49,17 +54,15 @@ describe("findGithubEntry", () => {
 	});
 });
 
-describe("blueprintRel and blueprintDirRel", () => {
+describe("blueprintRel", () => {
 	test("file entries fetch the file itself", () => {
 		expect(blueprintRel("./projects/cli-app.json")).toBe("projects/cli-app.json");
+		expect(blueprintRel("./machines/main.json")).toBe("machines/main.json");
 	});
 
 	test("directory entries are rejected", () => {
 		expect(() => blueprintRel("./projects/legacy/")).toThrow("no longer supported");
-	});
-
-	test("machine directories pass through", () => {
-		expect(blueprintDirRel("./machines/main/")).toBe("machines/main");
+		expect(() => blueprintRel("./machines/main/")).toThrow("no longer supported");
 	});
 
 	test("repo-relative sources pass through", () => {

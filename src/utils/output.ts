@@ -65,8 +65,8 @@ function scopeSummary(scope: CheckScope, items: CheckResult[]): string | undefin
 	if (items.length === 0) {
 		return undefined;
 	}
-	// The machine scope is always a single machine result, so report its state in
-	// words instead of a meaningless "1 passed".
+	// Machine results are per-item, so summarize the scope state in words
+	// instead of per-item counts.
 	if (scope === "machine") {
 		const failed = items.filter((item) => !item.ok && item.skipped !== true);
 		if (failed.length === 0) {
@@ -154,7 +154,7 @@ const MAX_DIFFS_SHOWN = 20;
 export function renderFixDiffs(fixable: CheckResult[]): void {
 	const shown = fixable.slice(0, MAX_DIFFS_SHOWN);
 	const rendered = shown.map((item) => {
-		if (item.fix?.kind === "run-command") {
+		if (item.fix?.kind === "run-command" || item.fix?.kind === "symlink") {
 			return `\nrun ${sanitize(item.id)} (${sanitize(item.target)})\n${sanitize(item.fix.label)}`;
 		}
 		if (item.fix?.kind === "github-api") {

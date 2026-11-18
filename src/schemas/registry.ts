@@ -17,15 +17,6 @@ function safeRelPath(label: string) {
 		);
 }
 
-const MachineEntrySchema = z
-	.object({
-		name: z.string().min(1).describe("Display name for the blueprint."),
-		path: safeRelPath("Machine flake directory").describe(
-			"Machine flake directory relative to the tech-stack root (e.g. ./machines/main/).",
-		),
-	})
-	.strict();
-
 export const RegistrySchema = z.compile(
 	z
 		.object({
@@ -39,8 +30,8 @@ export const RegistrySchema = z.compile(
 				.record(z.string(), safeRelPath("GitHub settings path"))
 				.describe("GitHub settings blueprints as key/path entries."),
 			machines: z
-				.record(z.string(), MachineEntrySchema)
-				.describe("Machine blueprints as key/entry pairs."),
+				.record(z.string(), safeRelPath("Machine blueprint path"))
+				.describe("Machine blueprints as key/path entries."),
 			projects: z
 				.record(z.string(), safeRelPath("Project blueprint path"))
 				.describe("Project blueprints as key/path entries."),
