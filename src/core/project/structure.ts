@@ -65,7 +65,7 @@ async function checkFileStructureEntry(args: {
 	);
 }
 
-// Blueprint `file_structure[]` entries assert existence only; see ADR 0006.
+// Blueprint `file_structure[]` entries assert existence only; see ADR 0007.
 export async function checkFileStructure(
 	blueprint: string,
 	files: ManifestFile[],

@@ -7,9 +7,7 @@ const TechStackSourceSchema = z
 			.string()
 			.regex(/^[^/\s]+\/[^/\s]+$/u)
 			.describe("GitHub owner/repo holding blueprints."),
-		type: z
-			.literal("github")
-			.describe("Provider hosting the tech-stack source; only github is supported."),
+		type: z.literal("github").describe("Provider hosting the pin; only github is supported."),
 	})
 	.strict();
 
@@ -53,7 +51,7 @@ export const ConformSchema = z.compile(
 			machine: ConformMachineSectionSchema.describe("Machine desired state.").optional(),
 			project: ConformProjectSectionSchema.describe("Project desired state.").optional(),
 			source: TechStackSourceSchema.describe(
-				"Tech-stack source holding the registry and blueprints.",
+				"Pin: the tech-stack repo and ref holding the registry and blueprints.",
 			),
 		})
 		.strict(),

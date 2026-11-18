@@ -4,6 +4,7 @@ import type { ConfigPathOption, ScopeOptions } from "#/core/config.js";
 import { printJsonSummary, printResults } from "#/core/report.js";
 import { isDrift } from "#/core/result.js";
 import { prepareRun } from "#/core/run.js";
+import { githubToken } from "#/utils/net.js";
 
 type CheckOptions = ConfigPathOption &
 	ScopeOptions & {
@@ -18,6 +19,12 @@ async function run(options: CheckOptions): Promise<number> {
 		printJsonSummary(desiredState.path, results);
 	} else {
 		printResults(results, elapsedMs, { verbose: options.verbose === true });
+	}
+	// Branch protection needs auth even on public repos, so no token skips the whole github scope.
+	if (githubToken() === undefined && results.some((item) => item.scope === "github")) {
+		console.error(
+			"⚠ GitHub checks skipped: no GitHub token (set GITHUB_TOKEN or run `gh auth login`)",
+		);
 	}
 	return results.some((item) => isDrift(item)) ? 1 : 0;
 }

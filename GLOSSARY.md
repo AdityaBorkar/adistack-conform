@@ -7,23 +7,19 @@ The domain of declaring the desired state of a project, a machine, and a GitHub 
 ### Desired state
 
 **Desired State**:
-The declaration of which project, machine, and GitHub blueprints a directory, machine, and repo should match, plus the tech-stack source holding them.
+The declaration of which project, machine, and GitHub blueprints a directory, machine, and repo should match, plus the pin holding them.
 _Avoid_: config, spec
 
-**Discovery**:
-Finding the desired state by walking up from the invocation directory, unless an explicit path is given.
-_Avoid_: lookup, search
-
-**Tech-stack source**:
-The repo and ref that hold the registry, blueprints, and upstreams.
-_Avoid_: preset repo, remote
+**Pin**:
+The tech-stack repo and ref a desired state reads its registry, blueprints, and upstreams from.
+_Avoid_: tech-stack source, source, preset repo, remote
 
 **Provider**:
-The kind of host serving the tech-stack source; only GitHub exists.
+The kind of host serving the pin; only GitHub exists.
 _Avoid_: source type, backend
 
 **Registry**:
-The listing of every project, machine, and GitHub blueprint a tech-stack source offers.
+The listing of every project, machine, and GitHub blueprint a pinned tech-stack repo offers.
 _Avoid_: catalog, index
 
 **Blueprint**:
@@ -53,8 +49,8 @@ Narrowing one run to a single scope.
 _Avoid_: scope flag, mode filter
 
 **Source**:
-Where an upstream lives inside the tech-stack source, as declared by a manifest entry.
-_Avoid_: preset path, upstream path
+Where an upstream lives inside the pinned tech-stack repo, as declared by a manifest entry.
+_Avoid_: pin, preset path, upstream path
 
 **Upstream**:
 The tech-stack content a target is compared against, fetched from its source.
@@ -122,10 +118,6 @@ _Avoid_: message, help text
 A check result that was not enforced; it is neither a pass nor drift.
 _Avoid_: ignored, passed
 
-**Kind**:
-The category of a check result: project, machine, GitHub, or internal.
-_Avoid_: type
-
 **Internal error**:
 The single check result standing in for a scope whose run failed outright; it counts as drift.
 _Avoid_: system error, crash
@@ -145,7 +137,7 @@ Checking again after a fix, limited to what was fixed.
 _Avoid_: re-run, refresh
 
 **Validate**:
-Checking the tech-stack source itself for broken blueprints, independent of any local state.
+Checking a local checkout of a tech-stack repo for broken blueprints and missing sources, independent of any desired state.
 _Avoid_: verify
 
 **Dry-run**:

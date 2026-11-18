@@ -25,12 +25,12 @@ import {
 } from "#/utils/net.js";
 import { parseOrThrow } from "#/utils/schema.js";
 
-// Upstream file fetches per scope run; see ADR 0002.
+// Upstream file fetches per scope run; see ADR 0004 and 0013.
 export const UPSTREAM_FETCH_CONCURRENCY = 16;
 
 export function rawUrl(id: string, ref: string, relPath: string): string {
-	assertRepoId(id, "tech-stack source");
-	assertRef(ref, "tech-stack source");
+	assertRepoId(id, "pin");
+	assertRef(ref, "pin");
 	return `https://raw.githubusercontent.com/${id}/${ref}/${encodePathSegments(relPath)}`;
 }
 

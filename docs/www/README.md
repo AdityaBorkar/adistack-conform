@@ -66,6 +66,6 @@ Reference material:
 
 <Callout type="info" title="Requirements">
 
-You need [Bun](https://bun.sh) to run from source. Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits.
+You need [Bun](https://bun.sh) to run from source. Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits (falls back to `gh auth token` when unset).
 
 </Callout>

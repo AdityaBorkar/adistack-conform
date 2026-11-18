@@ -25,9 +25,30 @@ export async function withRetry<T>(
 	throw error;
 }
 
+let ghToken: string | undefined | null = null;
+
+// `gh auth token`, run at most once per process; undefined when gh is missing or logged out.
+function ghAuthToken(): string | undefined {
+	if (ghToken === null) {
+		try {
+			const proc = Bun.spawnSync(["gh", "auth", "token"], {
+				stderr: "ignore",
+				stdin: "ignore",
+				timeout: 5000,
+			});
+			const out = proc.success ? proc.stdout.toString().trim() : "";
+			ghToken = out === "" ? undefined : out;
+		} catch {
+			ghToken = undefined;
+		}
+	}
+	return ghToken;
+}
+
+// GITHUB_TOKEN wins; otherwise fall back to the gh CLI login.
 export function githubToken(): string | undefined {
 	const token = process.env["GITHUB_TOKEN"]?.trim();
-	return token !== undefined && token !== "" ? token : undefined;
+	return token !== undefined && token !== "" ? token : ghAuthToken();
 }
 
 export function userAgentHeaders(): Record<string, string> {

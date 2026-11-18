@@ -16,7 +16,7 @@ export type LoadedDesiredState = Pick<Conform, CheckScope> & {
 	source: { id: string; ref: string };
 };
 
-// One scope's slice of the desired state plus the tech-stack source it reads from.
+// One scope's slice of the desired state plus the pin it reads from.
 export interface RunState {
 	blueprint: string;
 	id: string;

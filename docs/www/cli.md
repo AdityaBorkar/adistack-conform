@@ -25,7 +25,7 @@ adistack-conform check [--path <path>] [--json] [--verbose] [--strict] [--projec
 | `--strict`                                            | Report undeclared machine packages (extras) as drift.     |
 | `--project-only` / `--machine-only` / `--github-only` | Run one scope. Passing two is an error.                   |
 
-Output lists only drift (failing results) plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | manual`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok.
+Output lists only drift (failing results) plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` with timing; `machine: in sync | drift (fixable) | manual`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok. When the github scope runs without a token (`GITHUB_TOKEN`, else `gh auth token`), `check` also prints a `⚠ GitHub checks skipped` warning to stderr (branch protection needs auth even on public repos).
 
 Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="warning">1 drift</Badge> <Badge variant="error">2 desired-state error</Badge>. Drift includes unknown blueprints and scoped-run fetch errors (reported as `<scope>:internal-error` with no `upstream`); top-level registry fetch errors outside the scoped run exit 2. Desired-state errors are a missing file, invalid JSON/schema, or passing two scope flags. An unresolvable GitHub target repo (no `github.repo`, no `$GITHUB_REPOSITORY`, no git origin) is drift (`github:internal-error`, exit 1), not a desired-state error.
 
@@ -104,6 +104,6 @@ Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning
 
 <Callout type="tip" title="Agents and CI">
 
-Prefer `fix --dry-run` to review, then `fix --all` to apply. Keep `GITHUB_TOKEN` set for private tech-stack repos or rate limits — the github scope works unauthenticated on public repos until 401/403/rate-limit (then it skips), and needs admin scope for fixes.
+Prefer `fix --dry-run` to review, then `fix --all` to apply. Keep `GITHUB_TOKEN` set (or log in with `gh auth login`; the env var wins) for private tech-stack repos or rate limits — the github scope works unauthenticated on public repos until 401/403/rate-limit (then it skips), and needs admin scope for fixes.
 
 </Callout>

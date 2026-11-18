@@ -4,7 +4,7 @@
 
 Bun-only TypeScript CLI (`@adistack/conform`, binary compiled to `.output/`) + Commander + @clack/prompts + Zod v4 (`import * as z from "zod"`, finals wrapped in `z.compile()`). Lint oxlint, format oxfmt, typecheck tsrs (not tsc), unused-code knip.
 
-CLI runtime behavior (flags, exit codes, scopes, fix flow) lives in `skills/adistack-conform/SKILL.md` — read it before touching `check`/`fix` logic, and update it plus `docs/www/` when flags, results, or `conform.json` semantics change. User docs start at `docs/www/README.md`. Use `GLOSSARY.md` terms (upstream/source/target, fixable/manual, drift) — except "Discovery", which still says walk-up: `src/core/config.ts` is cwd-only, trust the code.
+CLI runtime behavior (flags, exit codes, scopes, fix flow) lives in `skills/adistack-conform/SKILL.md` — read it before touching `check`/`fix` logic, and update it plus `docs/www/` when flags, results, or `conform.json` semantics change. User docs start at `docs/www/README.md`. Design decisions (no-cache fetch, exit taxonomy, fix safety, id-scoped recheck, fixed tuning constants) are recorded in `docs/adr/` — check the relevant ADR before changing that behavior, and add one for new decisions. Use `GLOSSARY.md` terms (pin/upstream/source/target, fixable/manual, drift).
 
 ## Commands
 
