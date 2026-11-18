@@ -80,7 +80,6 @@ Exits: <Badge variant="success">0 in sync</Badge> (skips count as ok), <Badge va
 adistack-conform fix --dry-run  # preview diffs, never writes, never prompts
 adistack-conform fix            # interactive: space to toggle, enter to apply
 adistack-conform fix --all      # apply everything fixable, no prompt
-adistack-conform fix --no-diff  # skip the diff preview
 ```
 
 `fix` shows the manual items with hints first, applies the rest, then re-checks only the selected IDs. It needs a TTY unless you pass `--all`; `--dry-run` never prompts. The full flag and exit-code reference lives in [cli](./cli.md).

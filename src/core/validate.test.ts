@@ -1,160 +1,148 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import type { LoadedDesiredState } from "#/core/config.js";
-import type { RegistryDocument } from "#/core/upstream/registry.js";
-import { fetchBlueprint } from "#/core/upstream/remote.js";
-import type { FetchDeps } from "#/core/validate.js";
-import { validateDesiredState } from "#/core/validate.js";
+import { validateTechStack } from "#/core/validate.js";
 
-function loaded(overrides: Partial<LoadedDesiredState> = {}): LoadedDesiredState {
-	return {
-		dir: "/tmp",
-		path: "/tmp/conform.json",
-		source: { id: "o/r", ref: "main" },
-		...overrides,
-	};
-}
+let dirs: string[] = [];
 
-const registry = {
-	github_configs: { "npm-package": "./github-configs/npm-package.json" },
-	machines: { main: "./machines/main.json" },
-	projects: { "cli-app": "./projects/cli-app.json" },
-} as unknown as RegistryDocument;
-
-const mustNotCall = () => Promise.reject(new Error("must not be called"));
-
-function blueprint(rel: string, data: unknown): FetchDeps["fetchBlueprint"] {
-	return (() => Promise.resolve({ data, rel })) as unknown as FetchDeps["fetchBlueprint"];
-}
-
-function deps(overrides: Partial<FetchDeps>): FetchDeps {
-	return {
-		fetchBlueprint: mustNotCall as unknown as FetchDeps["fetchBlueprint"],
-		fetchRegistry: () => Promise.resolve(registry),
-		fetchText: mustNotCall,
-		...overrides,
-	};
-}
-
-const machineManifest = (files: unknown[]) => ({
-	allowlist: {},
-	files,
-	packages: { bun: {}, pacman: {} },
+afterEach(async () => {
+	await Promise.all(dirs.map((dir) => rm(dir, { force: true, recursive: true })));
+	dirs = [];
 });
 
-describe("validateDesiredState", () => {
-	test("reports registry plus project blueprint results in order", async () => {
-		const results = await validateDesiredState(
-			loaded({ project: { blueprint: "cli-app" } }),
-			deps({
-				fetchBlueprint: blueprint("projects/cli-app.json", { file_structure: [], files: [] }),
-			}),
-		);
+async function scaffold(files: Record<string, string>): Promise<string> {
+	const dir = await mkdtemp(join(tmpdir(), "conform-validate-"));
+	dirs.push(dir);
+	await Promise.all(
+		Object.entries(files).map(([rel, content]) => Bun.write(join(dir, rel), content)),
+	);
+	return dir;
+}
+
+const registry = (overrides: Record<string, unknown> = {}) =>
+	JSON.stringify({
+		github_configs: { "npm-package": "./github-configs/npm-package.json" },
+		machines: { main: "./machines/main.json" },
+		projects: { "cli-app": "./projects/cli-app.json" },
+		...overrides,
+	});
+
+const projectManifest = (sources: string[] = ["projects/files/tool/config.json"]) =>
+	JSON.stringify({
+		files: sources.map((source, index) => ({
+			name: `file-${index}`,
+			source,
+			target: `out-${index}`,
+		})),
+	});
+
+const machineManifest = (files: unknown[] = []) =>
+	JSON.stringify({ files, packages: { bun: {}, pacman: {} } });
+
+function fullRepo(extra: Record<string, string> = {}): Promise<string> {
+	return scaffold({
+		"github-configs/npm-package.json": "{}",
+		"machines/files/.zshrc": "content",
+		"machines/main.json": machineManifest([
+			{ name: "Zshrc", source: "machines/files/.zshrc", target: "~/.zshrc" },
+		]),
+		"projects/cli-app.json": projectManifest(),
+		"projects/files/tool/config.json": "{}",
+		"registry.json": registry(),
+		...extra,
+	});
+}
+
+describe("validateTechStack", () => {
+	test("reports the registry plus every blueprint in order", async () => {
+		const results = await validateTechStack(await fullRepo());
 		expect(results.map((item) => item.file)).toEqual([
-			"registry.json (o/r@main)",
-			"projects/cli-app.json (o/r@main)",
+			"registry.json",
+			"projects/cli-app.json",
+			"machines/main.json",
+			"github-configs/npm-package.json",
 		]);
 		expect(results.every((item) => item.ok)).toBe(true);
 	});
 
-	test("reports registry plus github settings results in order", async () => {
-		const results = await validateDesiredState(
-			loaded({ github: { blueprint: "npm-package" } }),
-			deps({ fetchBlueprint: blueprint("github-configs/npm-package.json", {}) }),
-		);
-		expect(results.map((item) => item.file)).toEqual([
-			"registry.json (o/r@main)",
-			"github-configs/npm-package.json (o/r@main)",
-		]);
+	test("accepts an explicit registry.json file path", async () => {
+		const dir = await fullRepo();
+		const results = await validateTechStack(join(dir, "registry.json"));
 		expect(results.every((item) => item.ok)).toBe(true);
 	});
 
-	test("registry fetch error skips blueprints for that ref", async () => {
-		const results = await validateDesiredState(
-			loaded({ project: { blueprint: "cli-app" } }),
-			deps({
-				fetchRegistry: () =>
-					Promise.reject(new Error("registry.json fetch failed (boom): HTTP 404.")),
-			}),
+	test("throws when no registry exists", async () => {
+		await expect(validateTechStack(join(tmpdir(), "conform-validate-missing"))).rejects.toThrow(
+			"No tech-stack registry found",
+		);
+	});
+
+	test("registry schema error is a single invalid result", async () => {
+		const results = await validateTechStack(
+			await scaffold({ "registry.json": JSON.stringify({ projects: {} }) }),
 		);
 		expect(results).toHaveLength(1);
 		expect(results[0]?.ok).toBe(false);
-		expect(results[0]?.error).toContain("HTTP 404");
-	});
-
-	test("missing machine blueprint is invalid before any fetch", async () => {
-		const results = await validateDesiredState(
-			loaded({ machine: { blueprint: "nope" } }),
-			deps({ fetchBlueprint }),
-		);
-		expect(results).toHaveLength(2);
-		expect(results[0]?.ok).toBe(true);
-		expect(results[1]?.ok).toBe(false);
-		expect(results[1]?.error).toContain('"nope"');
-		expect(results[1]?.error).toContain("Available machine blueprints: main");
+		expect(results[0]?.error).toContain("Invalid tech-stack registry");
 	});
 
 	test("blueprint schema error is reported per blueprint", async () => {
-		const results = await validateDesiredState(
-			loaded({ project: { blueprint: "cli-app" } }),
-			deps({
-				fetchBlueprint: (() =>
-					Promise.reject(
-						new Error("Invalid blueprint in x:\nfiles: Required"),
-					)) as unknown as FetchDeps["fetchBlueprint"],
-			}),
+		const results = await validateTechStack(
+			await fullRepo({ "projects/cli-app.json": JSON.stringify({ files: "nope" }) }),
 		);
-		expect(results).toHaveLength(2);
+		expect(results).toHaveLength(4);
+		expect(results[0]?.ok).toBe(true);
 		expect(results[1]?.ok).toBe(false);
-		expect(results[1]?.error).toContain("Invalid blueprint");
+		expect(results[1]?.error).toContain("Invalid Project blueprint");
+		expect(results[2]?.ok).toBe(true);
 	});
 
-	test("machine manifest sources must be fetchable", async () => {
-		const machine = blueprint(
-			"machines/main.json",
-			machineManifest([
-				{ name: "Zshrc", source: "machines/main/files/.zshrc", target: "~/.zshrc" },
-			]),
-		);
-		const ok = await validateDesiredState(
-			loaded({ machine: { blueprint: "main" } }),
-			deps({ fetchBlueprint: machine, fetchText: () => Promise.resolve("content") }),
-		);
-		expect(ok.map((item) => item.file)).toEqual([
-			"registry.json (o/r@main)",
-			"machines/main.json (o/r@main)",
-		]);
-		expect(ok.every((item) => item.ok)).toBe(true);
-		const failing = await validateDesiredState(
-			loaded({ machine: { blueprint: "main" } }),
-			deps({ fetchBlueprint: machine, fetchText: () => Promise.reject(new Error("HTTP 404.")) }),
-		);
-		expect(failing[1]?.ok).toBe(false);
-		expect(failing[1]?.error).toContain("Unfetchable machine sources");
+	test("missing blueprint file is invalid", async () => {
+		const dir = await fullRepo();
+		await rm(join(dir, "github-configs/npm-package.json"));
+		const results = await validateTechStack(dir);
+		expect(results[3]?.ok).toBe(false);
+		expect(results[3]?.error).toContain("not found");
 	});
 
-	test("machine manifest with secrets requires a fetchable secrets file", async () => {
-		const results = await validateDesiredState(
-			loaded({ machine: { blueprint: "main" } }),
-			deps({
-				fetchBlueprint: blueprint(
-					"machines/main.json",
-					machineManifest([
-						{
-							name: "Npmrc",
-							secrets: ["npm_auth_token"],
-							source: "machines/main/files/.npmrc",
-							target: "~/.npmrc",
-						},
-					]),
-				),
-				fetchText: (url: string) =>
-					url.endsWith("secrets.yaml")
-						? Promise.reject(new Error("HTTP 404."))
-						: Promise.resolve("content"),
+	test("missing project and machine sources are invalid", async () => {
+		const dir = await fullRepo();
+		await rm(join(dir, "projects/files/tool/config.json"));
+		await rm(join(dir, "machines/files/.zshrc"));
+		const results = await validateTechStack(dir);
+		expect(results[1]?.ok).toBe(false);
+		expect(results[1]?.error).toContain("Missing blueprint sources");
+		expect(results[2]?.ok).toBe(false);
+		expect(results[2]?.error).toContain("machines/files/.zshrc");
+	});
+
+	test("machine manifest with secrets requires the adjacent secrets file", async () => {
+		const results = await validateTechStack(
+			await fullRepo({
+				"machines/files/.npmrc": "content",
+				"machines/main.json": machineManifest([
+					{
+						name: "Npmrc",
+						secrets: ["npm_auth_token"],
+						source: "machines/files/.npmrc",
+						target: "~/.npmrc",
+					},
+				]),
 			}),
 		);
-		expect(results[1]?.ok).toBe(false);
-		expect(results[1]?.error).toContain("machines/secrets.yaml");
+		expect(results[2]?.ok).toBe(false);
+		expect(results[2]?.error).toContain("machines/secrets.yaml");
+	});
+
+	test("directory registry entries are invalid", async () => {
+		const results = await validateTechStack(
+			await fullRepo({
+				"registry.json": registry({ machines: { main: "./machines/main/" } }),
+			}),
+		);
+		expect(results[2]?.ok).toBe(false);
+		expect(results[2]?.error).toContain("must be a blueprint file");
 	});
 });

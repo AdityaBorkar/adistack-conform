@@ -1,4 +1,4 @@
-import type { DesiredStateOption, LoadedDesiredState, ScopeOptions } from "#/core/config.js";
+import type { ConfigPathOption, LoadedDesiredState, ScopeOptions } from "#/core/config.js";
 import { activeScopes, loadDesiredState, scopeOf, stateOf } from "#/core/config.js";
 import { runGithubChecks } from "#/core/github/index.js";
 import { runMachine } from "#/core/machine/index.js";
@@ -132,10 +132,10 @@ export async function recheckAfterFix(
 }
 
 export async function prepareRun(
-	options: DesiredStateOption & ScopeOptions & { strict?: boolean },
+	options: ConfigPathOption & ScopeOptions & { strict?: boolean },
 ): Promise<RunContext & Awaited<ReturnType<typeof runAllChecks>>> {
 	const only = scopeOf(options);
-	const desiredState = await loadDesiredState(options.desiredState);
+	const desiredState = await loadDesiredState(options.path);
 	const scopes = activeScopes(desiredState, only);
 	const { id, ref } = desiredState.source;
 	const ctx: RunContext = {

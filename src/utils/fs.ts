@@ -97,7 +97,7 @@ export function resolveTargetPath(raw: string, baseDir: string, home: string): s
 	return resolveAgainstBase(raw, baseDir, (value) => expandHome(value, home));
 }
 
-export function resolveDesiredStatePath(raw: string): string {
+export function resolveConfigPath(raw: string): string {
 	return resolveAgainstBase(raw, process.cwd(), (value) => expandHome(value, defaultHome()));
 }
 

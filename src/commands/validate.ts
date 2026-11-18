@@ -1,13 +1,11 @@
 import type { Command } from "commander";
 
-import type { DesiredStateOption } from "#/core/config.js";
-import { loadDesiredState } from "#/core/config.js";
+import type { ConfigPathOption } from "#/core/config.js";
 import { okMark } from "#/core/report.js";
-import { validateDesiredState } from "#/core/validate.js";
+import { validateTechStack } from "#/core/validate.js";
 
-async function run(options: DesiredStateOption): Promise<number> {
-	const desiredState = await loadDesiredState(options.desiredState);
-	const results = await validateDesiredState(desiredState);
+async function run(options: ConfigPathOption): Promise<number> {
+	const results = await validateTechStack(options.path);
 	for (const result of results) {
 		if (result.ok) {
 			console.log(`${okMark(true)} ${result.file}`);
@@ -26,7 +24,14 @@ async function run(options: DesiredStateOption): Promise<number> {
 
 export const validateCommand = {
 	configure: (cmd: Command): Command =>
-		cmd.description("Validate the tech-stack registry.json and blueprint files."),
+		cmd
+			.description(
+				"Validate a local tech-stack repo: registry.json, every blueprint, and every referenced source file.",
+			)
+			.option(
+				"--path <path>",
+				"Path to registry.json or tech-stack repo dir (default: ./registry.json).",
+			),
 	name: "validate",
 	run,
 };

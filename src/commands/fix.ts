@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 
-import type { DesiredStateOption, ScopeOptions } from "#/core/config.js";
+import type { ConfigPathOption, ScopeOptions } from "#/core/config.js";
 import { fixSelected, unattendedRefusal } from "#/core/fix.js";
 import {
 	formatDuration,
@@ -14,8 +14,8 @@ import { isDrift, partitionResults } from "#/core/result.js";
 import { prepareRun, recheckAfterFix } from "#/core/run.js";
 import { isInteractive, selectFixes } from "#/core/select.js";
 
-type FixOptions = DesiredStateOption &
-	ScopeOptions & { all?: boolean; diff?: boolean; dryRun?: boolean; strict?: boolean };
+type FixOptions = ConfigPathOption &
+	ScopeOptions & { all?: boolean; dryRun?: boolean; strict?: boolean };
 
 async function run(options: FixOptions): Promise<number> {
 	const start = performance.now();
@@ -36,9 +36,7 @@ async function run(options: FixOptions): Promise<number> {
 	}
 
 	if (options.dryRun) {
-		if (options.diff !== false) {
-			renderFixDiffs(fixable);
-		}
+		renderFixDiffs(fixable);
 		printDryRun(fixable, performance.now() - start);
 		return 1;
 	}
@@ -61,9 +59,7 @@ async function run(options: FixOptions): Promise<number> {
 		prompts.outro(`No fixes made in ${elapsed()}.`);
 		return 1;
 	}
-	if (options.diff !== false) {
-		renderFixDiffs(selection.selected);
-	}
+	renderFixDiffs(selection.selected);
 	const fixed = await fixSelected(selection.selected);
 
 	const recheckResults = await recheckAfterFix(ctx, results, selection.selected);
@@ -84,9 +80,9 @@ export const fixCommand = {
 	configure: (cmd: Command): Command =>
 		cmd
 			.description("Interactively fix drift (space to select, enter to confirm).")
+			.option("--path <path>", "Path to conform.json (default: ./conform.json).")
 			.option("--all", "Fix all fixable items without prompting.")
 			.option("--dry-run", "Show what would be fixed without writing.")
-			.option("--no-diff", "Hide the diff preview.")
 			.option("--strict", "Also remove undeclared machine packages (extras).")
 			.option("--project-only", "Only fix project checks.")
 			.option("--machine-only", "Only fix machine checks.")

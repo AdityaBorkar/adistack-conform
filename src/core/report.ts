@@ -188,7 +188,7 @@ export function renderFixDiffs(fixable: CheckResult[]): void {
 		return `\ndiff ${sanitize(item.id)} (${sanitize(item.target)})\n${renderDiff("actual", "expected", item.actual, desiredContent(item))}`;
 	});
 	if (fixable.length > shown.length) {
-		rendered.push(`\n… and ${fixable.length - shown.length} more (use --no-diff to hide).`);
+		rendered.push(`\n… and ${fixable.length - shown.length} more.`);
 	}
 	process.stdout.write(`${rendered.join("\n")}\n`);
 }

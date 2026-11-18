@@ -4,7 +4,7 @@ import type * as z from "zod";
 
 import type { CheckScope } from "#/core/result.js";
 import { ConformSchema } from "#/schemas/config.js";
-import { readJsonFile, resolveDesiredStatePath } from "#/utils/fs.js";
+import { readJsonFile, resolveConfigPath } from "#/utils/fs.js";
 import { parseOrThrow } from "#/utils/schema.js";
 
 type Conform = z.infer<typeof ConformSchema>;
@@ -43,30 +43,23 @@ function toLoadedDesiredState(path: string, parsed: unknown): LoadedDesiredState
 
 const DESIRED_STATE_FILENAME = "conform.json";
 
-// The global `--desired-state <path>` flag every command accepts.
-export type DesiredStateOption = { desiredState?: string };
+// The per-command `--path <path>` flag: conform.json for check/fix,
+// registry.json (or its directory) for validate.
+export type ConfigPathOption = { path?: string };
 
 async function discoverDesiredStatePath(): Promise<string> {
-	let dir = process.cwd();
-	while (true) {
-		const path = join(dir, DESIRED_STATE_FILENAME);
-		if (await Bun.file(path).exists()) {
-			return path;
-		}
-		const parent = dirname(dir);
-		if (parent === dir) {
-			throw new Error(
-				`No desired state found from ${process.cwd()} up (looked for ${DESIRED_STATE_FILENAME}).`,
-			);
-		}
-		dir = parent;
+	const path = join(process.cwd(), DESIRED_STATE_FILENAME);
+	if (await Bun.file(path).exists()) {
+		return path;
 	}
+	throw new Error(
+		`No desired state found in ${process.cwd()} (looked for ${DESIRED_STATE_FILENAME}).`,
+	);
 }
 
-// An explicit path loads that file; otherwise walk up from the cwd.
+// An explicit path loads that file; otherwise ./conform.json in the cwd.
 export async function loadDesiredState(path: string | undefined): Promise<LoadedDesiredState> {
-	const resolved =
-		path === undefined ? await discoverDesiredStatePath() : resolveDesiredStatePath(path);
+	const resolved = path === undefined ? await discoverDesiredStatePath() : resolveConfigPath(path);
 	return toLoadedDesiredState(resolved, await readJsonFile(resolved, "Desired state"));
 }
 

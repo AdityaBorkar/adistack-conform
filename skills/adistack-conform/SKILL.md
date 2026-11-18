@@ -24,25 +24,25 @@ Bun-only TypeScript CLI that checks the current directory (project files) and th
 - `source.type` is always `"github"`. `source.repo` is `owner/repo`. `source.ref` defaults to `main` (branch, tag, or commit; pin for reproducibility).
 - `project.blueprint` matches a tech-stack root `registry.json` `projects` key, or an entry `path` (e.g. `projects/cli-app.json` matches `./projects/cli-app.json`). Basenames alone never match, so a typo cannot resolve to the wrong blueprint.
 - `machine.blueprint` matches a `registry.json` `machines` key or entry `path` the same way (e.g. `main`).
-- Desired-state discovery: without `--desired-state`, the CLI walks up from the cwd to find `conform.json`. `--desired-state <path>` accepts any path. Project targets resolve against the directory that owns `conform.json`; leading `~` expands against `$HOME`, absolute paths pass through.
+- Desired-state discovery: without `--path`, `check` / `fix` read `./conform.json` in the cwd and `validate` reads `./registry.json` in the cwd (no directory walking). `--path <path>` accepts any path. Project targets resolve against the directory that owns `conform.json`; leading `~` expands against `$HOME`, absolute paths pass through.
 
 ## Commands
 
-Run from anywhere inside the project: project targets resolve against the directory that owns `conform.json`.
+Run from the directory that owns `conform.json`: project targets resolve against that directory.
 
 ```bash
-adistack-conform check [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
-adistack-conform fix [--all] [--dry-run] [--no-diff] [--strict] [--project-only | --machine-only | --github-only]
-adistack-conform validate
+adistack-conform check [--path <path>] [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
+adistack-conform fix [--path <path>] [--all] [--dry-run] [--strict] [--project-only | --machine-only | --github-only]
+adistack-conform validate [--path <path>]
 # from source: bun ./src/index.ts check
 ```
 
 - `check` exits 0 (in sync, skips are not drift), 1 (drift), 2 (desired-state error).
 - `--project-only` + `--machine-only` + `--github-only` are mutually exclusive (passing two is an error). Naming a scope that `conform.json` does not configure exits 2.
 - `--json` prints a machine-readable summary (`{ desiredStates, ok, passed, failed, skipped, total, results }`) — reach for it when parsing results programmatically. `--json` ignores `--verbose` (JSON always carries every result). `--verbose` also shows passing results (default: failing results only).
-- `fix` flow: reports manual items with hints (fixable machine/github results may carry both `fix` and `hint`), shows a diff preview (unless `--no-diff`, diffs over ~200KB skipped; at most 20 diffs shown), prompts with space-to-toggle multiselect (each option shows the fix command), fixes `overwrite-file` first (each writes a `.conform.bak` backup next to the target with the same file mode, numbered `.conform.bak.N` when one already exists; secrets templates keep a single `.conform.bak`; a symlink or non-regular target is refused before anything is read or copied) then links/commands/API fixes (commands time out after 10 minutes), then re-checks the selected IDs (project narrows to them, machine and github re-check whole; full re-check fallback on error). A selected ID missing from the re-check counts as fixed (e.g. a removed extra) only when that scope's re-check hit no new failure — a GitHub auth skip or a machine domain error keeps the previous failure. `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on desired-state error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes or file fixes outside the project dir.
+- `fix` flow: reports manual items with hints (fixable machine/github results may carry both `fix` and `hint`), shows a diff preview (diffs over ~200KB skipped; at most 20 diffs shown), prompts with space-to-toggle multiselect (each option shows the fix command), fixes `overwrite-file` first (each writes a `.conform.bak` backup next to the target with the same file mode, numbered `.conform.bak.N` when one already exists; secrets templates keep a single `.conform.bak`; a symlink or non-regular target is refused before anything is read or copied) then links/commands/API fixes (commands time out after 10 minutes), then re-checks the selected IDs (project narrows to them, machine and github re-check whole; full re-check fallback on error). A selected ID missing from the re-check counts as fixed (e.g. a removed extra) only when that scope's re-check hit no new failure — a GitHub auth skip or a machine domain error keeps the previous failure. `fix` exits 0 when nothing remains failing, 1 when drift remains / cancelled / dry-run with drift, 2 on desired-state error, no-TTY without `--all`, or non-TTY `--all` with command/API fixes or file fixes outside the project dir.
 - `fix` needs a TTY unless `--all` is passed, and non-TTY `--all` refuses command/API fixes and file or link fixes outside the project dir (symlinked parent dirs are resolved first, so `.github -> /elsewhere` counts as outside) (run again in a terminal). In agents/non-TTY runs use `fix --dry-run` (dry-run never writes and never prompts). Prefer `fix --dry-run` before `fix --all` so the diff is reviewed first.
-- `validate` checks the tech-stack `registry.json` plus the blueprint file (e.g. `projects/cli-app.json`) of every configured project blueprint, the settings file (e.g. `github-configs/npm-package.json`) of every configured github blueprint, and the machine manifest (e.g. `machines/main.json`) of every configured machine blueprint including fetchability of every `files[]` source (plus the manifest-adjacent `secrets.yaml` when any file declares `secrets`). Prints one `✓` line per valid file/entry to stdout and `✗` lines with the error detail to stderr, exits 0 when all valid, 1 when any invalid, 2 on desired-state error. The global `--desired-state` flag applies.
+- `validate` is a tech-stack author tool, not a consumer check: it validates the local tech-stack repo at `--path <path>` (a repo directory or `registry.json` file; default `./registry.json` in the cwd) — the `registry.json` schema, every blueprint file in every section (`projects`, `machines`, `github_configs`), every `files[]` source existing on disk, and the manifest-adjacent `secrets.yaml` existing when any machine file declares `secrets`. Prints one `✓` line per valid file to stdout and `✗` lines with the error detail to stderr, exits 0 when all valid, 1 when any invalid, 2 when no registry is found. It never reads `conform.json` (for `validate`, `--path` points at the tech-stack repo directory or `registry.json` file instead); consumers check their own drift with `check`. Tech-stack repos run it from their own `verify` script.
 - Set `GITHUB_TOKEN` when the tech-stack repo is private or fetches hit rate limits. GitHub-scope checks/fixes call the GitHub REST API: public repos work without a token until 401/403/rate-limit (then the scope skips, still exit 0); private repos or rate limits need `GITHUB_TOKEN` (admin scope for fixes); the target repo defaults to `$GITHUB_REPOSITORY`, then the cwd git origin remote (override with `github.repo`). Unresolvable repo (none of the three) is `github:internal-error` drift (exit 1).
 
 ## What each scope checks
@@ -71,9 +71,9 @@ GitHub (fixed check list, id `github:<blueprint>:<name>`, kind `github`):
 
 ## Agent workflow
 
-1. Locate `conform.json` (cwd or `--desired-state`). Confirm the `source.repo@ref` and which scopes are configured.
+1. Locate `conform.json` (cwd or `--path`). Confirm the `source.repo@ref` and which scopes are configured.
 2. Run `check` (add `--json` for parsing, `--project-only`/`--machine-only`/`--github-only` to narrow). Done when every failing result (non-`ok`, non-skipped) is classified fixable vs manual.
-3. For drift, run `fix --dry-run` (plus `--no-diff` only to save tokens on huge files) to preview. Done when the would-fix list matches the fixable set.
+3. For drift, run `fix --dry-run` to preview. Done when the would-fix list matches the fixable set.
 4. Run `fix --all` (non-TTY) or interactive `fix` (TTY). Re-check output is authoritative: done when it reports 0 still failing.
 5. Manual items are never fixed automatically: follow the `hint`. To remove extras too, add `--strict` to `fix`.
 

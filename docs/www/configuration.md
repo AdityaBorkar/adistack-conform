@@ -63,7 +63,7 @@ The upstream is the settings file listed in `registry.json` `github_configs` (e.
 
 ## Loading rules
 
-- Without `--desired-state`, `check` / `fix` / `validate` walk up from your cwd to find `conform.json`; a missing file exits 2.
-- With `--desired-state <path>`, any path is accepted. The path may use `~` (expands against `$HOME`) and resolves against your cwd.
+- Without `--path`, `check` / `fix` read `./conform.json` in your cwd (no directory walking); a missing file exits 2. `validate` never reads `conform.json` — without `--path` it reads `./registry.json` in your cwd instead.
+- With `--path <path>`, any path is accepted. The path may use `~` (expands against `$HOME`) and resolves against your cwd.
 - Invalid JSON or schema violations print a `zod` summary and exit 2.
 - `--project-only` / `--machine-only` / `--github-only` filter at run time; omitting the other scopes from `conform.json` has the same effect permanently.

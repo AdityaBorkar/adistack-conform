@@ -59,6 +59,20 @@ Reference the blueprints in `registry.json` (`machines` + `projects` + `github_c
 - `$schema` fields point at `https://stack.adityab.tech/conform/<VERSION>/schemas/<registry|project-manifest>.json`.
 - Machine manifests (`machines/<name>.json`) declare `packages` (pacman/bun) plus `files[]` (`name` + `source` + `target`, optional `mode` and `secrets`). New dotfiles go under `machines/files/` + a `files[]` entry; entries with `secrets` are secrets templates rendered from `source`: each listed name fills its `@@NAME@@` slot from the sops-encrypted `secrets.yaml` next to the manifest (flat `KEY: value`), unlisted secrets are never substituted, and the file is written and enforced with `mode` (default `0600`).
 
+## Validate before rollout
+
+Run the CLI from the repo root — it checks `registry.json`, every blueprint in every section, every `files[]` source existing on disk, and the adjacent `secrets.yaml` when any machine file declares `secrets`:
+
+```bash
+adistack-conform validate
+```
+
+Wire it into your `verify` script so broken blueprints fail before consumers pin them:
+
+```jsonc
+{ "scripts": { "verify": "biome check --fix && adistack-conform validate" } }
+```
+
 ## Versioning and rollout
 
 Consumers pin `source.ref` (branch, tag, or commit). Publish a tag for breaking blueprint changes and let repos adopt it deliberately; keep `main` moving for small fixes. Since the CLI has no local cache, pushing a blueprint change takes effect on the next `check`.

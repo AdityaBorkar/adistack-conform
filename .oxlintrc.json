@@ -18,6 +18,7 @@
 				"src/core/fix.ts",
 				"src/core/machine/managers/bun.ts",
 				"src/core/config.ts",
+				"src/core/validate.ts",
 				"src/utils/concurrency.ts",
 				"src/utils/net.ts",
 				"src/core/run.ts"

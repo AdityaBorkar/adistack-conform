@@ -41,7 +41,6 @@ program
 		"Check the current project/machine/repo against the desired state in the current directory.",
 	)
 	.name("adistack-conform")
-	.option("--desired-state <path>", "Path to conform.json (default: walks up from the cwd)")
 	.version(VERSION);
 
 // Each command module owns its flags (`configure`) and logic (`run`, which
@@ -49,17 +48,16 @@ program
 function register<Options extends OptionValues>(definition: {
 	configure: (cmd: Command) => Command;
 	name: string;
-	run: (options: Options) => Promise<number>;
+	run: (options: Options, cmd: Command) => Promise<number>;
 }): void {
-	definition
-		.configure(program.command(definition.name))
-		.action(async (_options: unknown, cmd: Command) => {
-			try {
-				process.exit(await definition.run(cmd.optsWithGlobals<Options>()));
-			} catch (error) {
-				failWith(error);
-			}
-		});
+	definition.configure(program.command(definition.name)).action(async (...args: unknown[]) => {
+		try {
+			const cmd = args.at(-1) as Command;
+			process.exit(await definition.run(cmd.opts<Options>(), cmd));
+		} catch (error) {
+			failWith(error);
+		}
+	});
 }
 
 register(checkCommand);

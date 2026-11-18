@@ -1,11 +1,11 @@
 import type { Command } from "commander";
 
-import type { DesiredStateOption, ScopeOptions } from "#/core/config.js";
+import type { ConfigPathOption, ScopeOptions } from "#/core/config.js";
 import { printJsonSummary, printResults } from "#/core/report.js";
 import { isDrift } from "#/core/result.js";
 import { prepareRun } from "#/core/run.js";
 
-type CheckOptions = DesiredStateOption &
+type CheckOptions = ConfigPathOption &
 	ScopeOptions & {
 		json?: boolean;
 		strict?: boolean;
@@ -28,6 +28,7 @@ export const checkCommand = {
 			.description(
 				"Check the desired state in the current directory against the current project/machine/repo.",
 			)
+			.option("--path <path>", "Path to conform.json (default: ./conform.json).")
 			.option("--json", "Print machine-readable JSON.")
 			.option("--verbose", "Show passing results too.")
 			.option("--strict", "Report undeclared machine packages (extras) as drift.")

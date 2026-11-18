@@ -6,16 +6,16 @@ icon: Command
 
 One binary, three verbs. Global shape first:
 
-`adistack-conform [--desired-state <path>] <command>`
+`adistack-conform <command> [--path <path>]`
 
-Without `--desired-state`, the CLI walks up from your cwd to find `conform.json`; `--desired-state` accepts any path.
+Without `--path`, `check` / `fix` read `./conform.json` in your cwd and `validate` reads `./registry.json` in your cwd (no directory walking); `--path` accepts any path and goes after the command.
 
 ## `check`
 
 Look, don't touch:
 
 ```bash
-adistack-conform check [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
+adistack-conform check [--path <path>] [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
 ```
 
 | Flag                                                  | Meaning                                                   |
@@ -50,14 +50,13 @@ Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="war
 Change things, carefully:
 
 ```bash
-adistack-conform fix [--all] [--dry-run] [--no-diff] [--strict] [--project-only | --machine-only | --github-only]
+adistack-conform fix [--path <path>] [--all] [--dry-run] [--strict] [--project-only | --machine-only | --github-only]
 ```
 
 | Flag                                                  | Meaning                                                                                                  |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `--all`                                               | Apply all fixable items without prompting. Required for non-TTY use.                                     |
 | `--dry-run`                                           | Show what would be fixed without writing. Never prompts, never writes. Implies exit 1 when drift exists. |
-| `--no-diff`                                           | Hide the unified diff preview (useful for huge files).                                                   |
 | `--strict`                                            | Also remove undeclared machine packages (extras).                                                        |
 | `--project-only` / `--machine-only` / `--github-only` | Fix one scope. Passing two is an error.                                                                  |
 
@@ -71,7 +70,7 @@ adistack-conform fix [--all] [--dry-run] [--no-diff] [--strict] [--project-only 
 
 <Step title="Review the diff">
 
-Unless you passed `--no-diff`, you get a unified diff preview (diffs over ~200KB are skipped; `run-command` fixes print the command and `github-api` fixes print the REST steps instead of a diff).
+You get a unified diff preview (diffs over ~200KB are skipped; `run-command` fixes print the command and `github-api` fixes print the REST steps instead of a diff).
 
 </Step>
 
@@ -93,16 +92,15 @@ Exit codes: <Badge variant="success">0 nothing remains failing</Badge> <Badge va
 
 ## `validate`
 
-Check the tech-stack source itself, not your files:
+A tech-stack author tool — not a consumer check:
 
 ```bash
-adistack-conform validate
-adistack-conform --desired-state ./packages/a/conform.json validate
+adistack-conform validate [--path <path>]
 ```
 
-Validates `registry.json` plus the blueprint file of every configured project blueprint and the settings file of every configured `github` blueprint, and the machine manifest of every configured machine blueprint, including fetchability of each `files[]` source and of the adjacent `secrets.yaml` when any file declares `secrets`, at the pinned `source.repo@ref`. Prints one `✓` line per valid file/entry to stdout and `✗` lines with the error detail to stderr. The global `--desired-state` flag applies here too.
+Validates the local tech-stack repo at `--path <path>` (a repo directory or a `registry.json` file; default `./registry.json` in the cwd): the `registry.json` schema, every blueprint file in every section (`projects`, `machines`, `github_configs`), every `files[]` source existing on disk, and the manifest-adjacent `secrets.yaml` existing when any machine file declares `secrets`. Prints one `✓` line per valid file to stdout and `✗` lines with the error detail to stderr. It never reads `conform.json` (for `validate`, `--path` points at the tech-stack repo directory or `registry.json` file instead) — consumers check their own drift with `check`. Tech-stack repos run it from their own `verify` script.
 
-Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 desired-state error</Badge>.
+Exit codes: <Badge variant="success">0 all valid</Badge> <Badge variant="warning">1 invalid</Badge> <Badge variant="error">2 no registry found</Badge>.
 
 <Callout type="tip" title="Agents and CI">
 
