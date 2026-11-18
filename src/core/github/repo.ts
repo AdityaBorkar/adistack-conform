@@ -220,8 +220,8 @@ export async function checkCodeowners(
 	target: string,
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "codeowners", target);
-	if (upstream.codeowners === undefined) {
-		return skipped(base, "no codeowners configured", "set codeowners to enforce presence");
+	if (upstream.codeowners === "") {
+		return pass(base, "codeowners not required", "codeowners match");
 	}
 	const candidates =
 		upstream.codeowners === ".github/CODEOWNERS"
@@ -262,7 +262,7 @@ export async function checkIssueTemplates(
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "issue-templates", target);
 	if (!upstream.features.issueTemplates) {
-		return skipped(base, "issue templates not required", "set features.issueTemplates to enforce");
+		return pass(base, "issue templates not required", "issue templates match");
 	}
 	const candidates = [
 		".github/ISSUE_TEMPLATE",
@@ -307,7 +307,7 @@ export async function checkRulesets(
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "rulesets", target);
 	if (upstream.rulesets.length === 0) {
-		return skipped(base, "no rulesets required", "list rulesets to enforce presence");
+		return pass(base, "no rulesets required", "rulesets match");
 	}
 	let current: Array<{ enforcement?: unknown; name?: unknown }>;
 	try {

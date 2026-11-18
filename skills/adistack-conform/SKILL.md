@@ -111,7 +111,7 @@ Drift owner by `actual`: `<blueprint fetch failed>` → network/token, retry; `<
 
 ### github (fixed check list via REST, ADR 0008)
 
-Ids `github:<bp>:<check>`: `general`, `releases`, `codeowners`, `issue-templates`, `pr-checks`, `reviews`, `rulesets`, `actions-*` (permissions, workflow incl. fork approval, retention, `actions-oidc`), `environments`, `security`, `secrets`. Fixes are `github-api` (admin token, TTY only). Skipped with UI hint: no public API (social preview, archive toggles, Copilot Autofix, dependency auto-submit, agent suggestions, OIDC); `actions-oidc` always; 401/403.
+Ids `github:<bp>:<check>`: `general`, `releases`, `codeowners`, `issue-templates`, `pr-checks`, `reviews`, `rulesets`, `actions-*` (permissions, workflow incl. fork approval, retention, `actions-oidc`), `environments`, `security`, `secrets`, `webhooks`. Fixes are `github-api` (admin token, TTY only). Disabled/empty upstreams pass (`codeowners: ""`, `issueTemplates: false`, `rulesets/environments/secrets/variables/webhooks: []`, `oidcImmutableSubject: false`, check-only items when off). Skipped with UI hint: check-only items when on (social preview, archive toggles, Copilot Autofix, dependency auto-submit, agent suggestions, OIDC); 404/unreadable OIDC and fork policy; 401/403.
 
 ## Authoring a tech-stack repo
 

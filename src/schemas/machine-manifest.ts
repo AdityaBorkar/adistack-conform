@@ -57,9 +57,9 @@ const MachineAllowlistSchema = z
 export const MachineManifestSchema = z.compile(
 	z
 		.object({
+			$description: z.string().optional(),
+			$name: z.string().min(1).optional(),
 			$schema: z.string().optional(),
-			"@description": z.string().optional(),
-			"@name": z.string().min(1).optional(),
 			allowlist: MachineAllowlistSchema.default({}),
 			files: z.array(MachineFileSchema).default([]),
 			packages: MachinePackagesSchema.default({ bun: {}, pacman: {} }),

@@ -4,13 +4,13 @@ description: blueprint files, upstream fetching, and per-target enforcement rule
 icon: Wrench
 ---
 
-A project blueprint is a JSON file (e.g. `projects/cli-app.json`) with `@name`/`@description` + `files[]` and optional `file_structure[]`:
+A project blueprint is a JSON file (e.g. `projects/cli-app.json`) with `$name`/`$description` + `files[]` and optional `file_structure[]`:
 
 ```jsonc
 {
 	"$schema": "https://stack.adityab.tech/conform/<VERSION>/schemas/project-manifest.json",
-	"@name": "CLI",
-	"@description": "CLI Application using Commander",
+	"$name": "CLI",
+	"$description": "CLI Application using Commander",
 	"files": [
 		{ "name": "Bun Config", "source": "projects/files/bunfig/base.toml", "target": "bunfig.toml" },
 	],

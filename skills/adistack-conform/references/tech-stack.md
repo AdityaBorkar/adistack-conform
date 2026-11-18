@@ -36,8 +36,8 @@ Registry and manifests are strict JSON (check: `python3 -m json.tool f`). Payloa
 
 ```json
 {
-	"@name": "CLI",
-	"@description": "CLI Application using Commander",
+	"$name": "CLI",
+	"$description": "CLI Application using Commander",
 	"files": [
 		{ "name": "Bun Config", "source": "projects/files/bunfig/base.toml", "target": "bunfig.toml" },
 		{
@@ -73,7 +73,7 @@ Template slots only work in JSON/JSONC object or array upstreams. A `<...>` insi
 
 ```json
 {
-	"@name": "Primary Developer Machine",
+	"$name": "Primary Developer Machine",
 	"packages": {
 		"pacman": { "git": "latest", "neovim": "0.11.0-1" },
 		"bun": { "@biomejs/biome": "latest" }
@@ -99,7 +99,7 @@ Template slots only work in JSON/JSONC object or array upstreams. A `<...>` insi
 
 ## GitHub settings manifest
 
-All fields optional with defaults (strict object). Keys: `defaultBranch`, `features{issues,issueTemplates,discussions,projects,wiki}`, `merge{mergeCommit,squashMerge,rebaseMerge,autoMerge,deleteHeadBranches,mergeTitle,mergeMessage,squashTitle,squashMessage}`, `reviews{requiredApprovals,dismissStale,requireCodeOwner,requireConversationResolution,requireSignedCommits,restrictPushes}`, `checks[]` (required status contexts on default branch), `codeowners` (path), `environments[]` (fix creates), `rulesets[]` (names; manual), `secrets[]`/`variables[]` (presence only), `actions{allowed,defaultWorkflowPermissions,allowApprovePRs,approvalForExternal,retentionDays,shaPinningRequired,oidcImmutableSubject}`, `security{dependabot,dependencyGraph,dependencyAutoSubmit,privateVulnerabilityReporting,pushProtection,secretProtection,copilotAutofix}`, `releasesImmutable`, `signoffRequired`. Check-only (no public API, skipped with UI hint): `socialPreview`, `archiveSettings`, `agentSuggestions`, `security.copilotAutofix`, `security.dependencyAutoSubmit`. Read `src/schemas/github-settings.ts` for enums/defaults.
+All fields required (strict object; empty array, empty string, `false`, or `null` explicitly disables a check). Keys: `defaultBranch`, `features{issues,issueTemplates,discussions,projects,wiki}`, `merge{mergeCommit,squashMerge,rebaseMerge,autoMerge,deleteHeadBranches,mergeTitle,mergeMessage,squashTitle,squashMessage}`, `reviews{requiredApprovals,dismissStale,requireCodeOwner,requireConversationResolution,requireSignedCommits,restrictPushes}`, `checks[]` (required status contexts on default branch), `codeowners` (path; `""` disables the presence check), `environments[]` (fix creates; `[]` passes), `rulesets[]` (names; manual; `[]` passes), `secrets[]`/`variables[]` (presence only; both `[]` passes), `webhooks[]{url,events[],active,contentType}` (matched by URL; fix creates/updates; secrets stay manual), `actions{allowed,defaultWorkflowPermissions,allowApprovePRs,approvalForExternal,retentionDays,shaPinningRequired,oidcImmutableSubject}` (`false`/`[]` passes instead of skipping), `security{dependabot,dependencyGraph,dependencyAutoSubmit,privateVulnerabilityReporting,pushProtection,secretProtection,copilotAutofix}`, `releasesImmutable`, `signoffRequired`. Check-only (no public API): `socialPreview`, `archiveSettings` (`pushUpdateLimit: null` disables), `planning.agentSuggestions`, `security.copilotAutofix`, `security.dependencyAutoSubmit` — each passes when off/disabled and skips with a UI hint only when on. Read `src/schemas/github-settings.ts` for enums.
 
 ## Validate
 

@@ -41,9 +41,70 @@ const projectManifest = (sources: string[] = ["projects/files/tool/config.json"]
 const machineManifest = (files: unknown[] = []) =>
 	JSON.stringify({ files, packages: { bun: {}, pacman: {} } });
 
+const githubManifest = () =>
+	JSON.stringify({
+		actions: {
+			allowApprovePRs: false,
+			allowed: "all",
+			approvalForExternal: true,
+			defaultWorkflowPermissions: "read",
+			oidcImmutableSubject: true,
+			retentionDays: 90,
+			shaPinningRequired: true,
+		},
+		archiveSettings: { commitComments: false, includeLfsInArchives: false, pushUpdateLimit: null },
+		checks: ["conform"],
+		codeowners: ".github/CODEOWNERS",
+		defaultBranch: "main",
+		environments: ["production"],
+		features: {
+			discussions: false,
+			issueTemplates: true,
+			issues: true,
+			projects: false,
+			wiki: false,
+		},
+		merge: {
+			autoMerge: false,
+			deleteHeadBranches: true,
+			mergeCommit: false,
+			mergeMessage: "pr-body",
+			mergeTitle: "pr-title",
+			rebaseMerge: false,
+			squashMerge: true,
+			squashMessage: "pr-body",
+			squashTitle: "pr-title",
+		},
+		planning: { agentSuggestions: "full-control" },
+		releasesImmutable: true,
+		reviews: {
+			dismissStale: true,
+			requireCodeOwner: true,
+			requireConversationResolution: true,
+			requireSignedCommits: false,
+			requiredApprovals: 1,
+			restrictPushes: true,
+		},
+		rulesets: [],
+		secrets: [],
+		security: {
+			copilotAutofix: false,
+			dependabot: true,
+			dependencyAutoSubmit: true,
+			dependencyGraph: true,
+			privateVulnerabilityReporting: true,
+			pushProtection: true,
+			secretProtection: true,
+		},
+		signoffRequired: false,
+		socialPreview: true,
+		variables: [],
+		webhooks: [],
+	});
+
 function fullRepo(extra: Record<string, string> = {}): Promise<string> {
 	return scaffold({
-		"github-configs/npm-package.json": "{}",
+		"github-configs/npm-package.json": githubManifest(),
 		"machines/files/.zshrc": "content",
 		"machines/main.json": machineManifest([
 			{ name: "Zshrc", source: "machines/files/.zshrc", target: "~/.zshrc" },

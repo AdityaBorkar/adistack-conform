@@ -22,7 +22,7 @@ bun run check:conform                # dogfood self-check (bun dev check); NOT p
 - Never hand-edit `config/*.json` — generated from `src/schemas/*` by `scripts/generate-json-schema.ts` (runs inside `build`). There is no standalone `gen:json-schema` script.
 - Pre-commit runs `bun fmt --staged` (Bun builtin, not `bun run format` which is oxfmt). Commits must pass commitlint with types restricted to `chore docs feat fix refactor release revert test` (see `.commitlintrc.json`).
 - No directory walking: `check`/`fix` read `./conform.json` in the cwd, `validate` reads `./registry.json` in the cwd; `--path <path>` overrides. Run from the directory that owns the file.
-- Set `GITHUB_TOKEN` for private tech-stack repos, rate limits, and the `github` scope (public repos work unauthenticated until 401/403/rate-limit, then skip).
+- Auth: `GITHUB_TOKEN`, else `gh auth token`. Needed for private tech-stack repos, rate limits, and all `github`-scope fixes. Without a token, 401/403 makes the `github` scope skip (exit 0) with a stderr warning instead of failing.
 
 ## Release
 

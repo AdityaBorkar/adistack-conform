@@ -1,7 +1,4 @@
-.certs
-.local
 .output
-.tanstack
 config
 node_modules
 

@@ -164,7 +164,7 @@ export async function checkSecrets(
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "secrets", target);
 	if (upstream.secrets.length === 0 && upstream.variables.length === 0) {
-		return skipped(base, "no secrets/variables required", "list names to enforce presence");
+		return pass(base, "no secrets/variables required", "secrets/variables match");
 	}
 	let haveSecrets: string[] = [];
 	let haveVariables: string[] = [];

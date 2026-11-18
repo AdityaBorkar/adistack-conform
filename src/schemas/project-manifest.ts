@@ -35,14 +35,14 @@ const ManifestFileStructureSchema = z
 export const ManifestSchema = z.compile(
 	z
 		.object({
+			$description: z.string().describe("Human-readable blueprint description.").optional(),
+			$name: z.string().min(1).describe("Human-readable blueprint name.").optional(),
 			$schema: z
 				.string()
 				.describe(
 					"JSON Schema reference, e.g. https://stack.adityab.tech/conform/<VERSION>/schemas/project-manifest.json.",
 				)
 				.optional(),
-			"@description": z.string().describe("Human-readable blueprint description.").optional(),
-			"@name": z.string().min(1).describe("Human-readable blueprint name.").optional(),
 			file_structure: z
 				.array(ManifestFileStructureSchema)
 				.describe("Existence-only entries enforced by this blueprint (no content compare).")

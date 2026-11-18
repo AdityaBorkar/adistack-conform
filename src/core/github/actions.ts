@@ -204,7 +204,7 @@ export async function checkActionsOidc(
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "actions-oidc", target);
 	if (!upstream.actions.oidcImmutableSubject) {
-		return skipped(base, "immutable OIDC subject not required", "confirm in Settings → Actions");
+		return pass(base, "immutable OIDC subject not required", "OIDC matches");
 	}
 	// Check-only: the customization endpoint has no documented immutable-subject mapping.
 	let current: unknown;
@@ -240,7 +240,7 @@ export async function checkEnvironments(
 ): Promise<CheckResult> {
 	const base = checkBase("github", blueprint, "environments", target);
 	if (upstream.environments.length === 0) {
-		return skipped(base, "no environments required", "list environments to enforce presence");
+		return pass(base, "no environments required", "environments match");
 	}
 	let names: string[];
 	try {

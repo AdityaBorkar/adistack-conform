@@ -18,8 +18,9 @@ import {
 import { checkSecrets, checkSecurity } from "#/core/github/security.js";
 import type { GithubSettings } from "#/core/github/shared.js";
 import { resolveTargetRepo } from "#/core/github/target-repo.js";
+import { checkWebhooks } from "#/core/github/webhooks.js";
 import type { CheckResult } from "#/core/result.js";
-import { checkBase, failManual, skipped } from "#/core/result.js";
+import { checkBase, failManual, pass, skipped } from "#/core/result.js";
 import type { TechStack } from "#/core/upstream/tech-stack.js";
 import { UpstreamMissingError } from "#/core/upstream/tech-stack.js";
 import { mapWithConcurrency } from "#/utils/concurrency.js";
@@ -59,43 +60,93 @@ function checkUiOnly(blueprint: string, upstream: GithubSettings, target: string
 				"upload in Settings → General → Social preview",
 			),
 		);
+	} else {
+		results.push(
+			pass(
+				checkBase("github", blueprint, "social-preview", target),
+				"social preview off",
+				"social preview match",
+			),
+		);
 	}
-	results.push(
-		skipped(
-			checkBase("github", blueprint, "agent-suggestions", target),
-			`agent suggestions not readable via API (want ${upstream.agentSuggestions})`,
-			"confirm Agent suggestions for issues in repo Settings",
-		),
-	);
+	if (upstream.planning.agentSuggestions === "disabled") {
+		results.push(
+			pass(
+				checkBase("github", blueprint, "agent-suggestions", target),
+				"agent suggestions disabled",
+				"agent suggestions match",
+			),
+		);
+	} else {
+		results.push(
+			skipped(
+				checkBase("github", blueprint, "agent-suggestions", target),
+				`agent suggestions not readable via API (want ${upstream.planning.agentSuggestions})`,
+				"confirm Agent suggestions for issues in repo Settings",
+			),
+		);
+	}
 	const archive = upstream.archiveSettings;
-	const archiveWant = [
-		`lfs-in-archives: ${String(archive.includeLfsInArchives)}`,
-		`commit-comments: ${String(archive.commitComments)}`,
-		...(archive.pushUpdateLimit === undefined
-			? []
-			: [`push-update-limit: ${String(archive.pushUpdateLimit)}`]),
-	];
-	results.push(
-		skipped(
-			checkBase("github", blueprint, "archive-settings", target),
-			`archive toggles not readable via API (${archiveWant.join(", ")})`,
-			"confirm in Settings → General → Archives/Pushes",
-		),
-		skipped(
-			checkBase("github", blueprint, "copilot-autofix", target),
-			`Copilot Autofix toggle not readable via API (want ${upstream.security.copilotAutofix ? "on" : "off"})`,
-			`confirm Copilot Autofix is ${upstream.security.copilotAutofix ? "on" : "off"} in Settings → Code security`,
-		),
-		...(upstream.security.dependencyAutoSubmit
-			? [
-					skipped(
-						checkBase("github", blueprint, "dependency-auto-submit", target),
-						"dependency auto-submit not readable via repo API",
-						"confirm automatic dependency submission in Settings → Code security",
-					),
-				]
-			: []),
-	);
+	const archiveOff =
+		!archive.includeLfsInArchives && !archive.commitComments && archive.pushUpdateLimit === null;
+	if (archiveOff) {
+		results.push(
+			pass(
+				checkBase("github", blueprint, "archive-settings", target),
+				"archive toggles off",
+				"archive toggles match",
+			),
+		);
+	} else {
+		const archiveWant = [
+			`lfs-in-archives: ${String(archive.includeLfsInArchives)}`,
+			`commit-comments: ${String(archive.commitComments)}`,
+			...(archive.pushUpdateLimit === null
+				? []
+				: [`push-update-limit: ${String(archive.pushUpdateLimit)}`]),
+		];
+		results.push(
+			skipped(
+				checkBase("github", blueprint, "archive-settings", target),
+				`archive toggles not readable via API (${archiveWant.join(", ")})`,
+				"confirm in Settings → General → Archives/Pushes",
+			),
+		);
+	}
+	if (upstream.security.copilotAutofix) {
+		results.push(
+			skipped(
+				checkBase("github", blueprint, "copilot-autofix", target),
+				"Copilot Autofix toggle not readable via API (want on)",
+				"confirm Copilot Autofix is on in Settings → Code security",
+			),
+		);
+	} else {
+		results.push(
+			pass(
+				checkBase("github", blueprint, "copilot-autofix", target),
+				"copilot autofix off",
+				"copilot autofix match",
+			),
+		);
+	}
+	if (upstream.security.dependencyAutoSubmit) {
+		results.push(
+			skipped(
+				checkBase("github", blueprint, "dependency-auto-submit", target),
+				"dependency auto-submit not readable via repo API",
+				"confirm automatic dependency submission in Settings → Code security",
+			),
+		);
+	} else {
+		results.push(
+			pass(
+				checkBase("github", blueprint, "dependency-auto-submit", target),
+				"dependency auto-submit off",
+				"dependency auto-submit match",
+			),
+		);
+	}
 	return results;
 }
 
@@ -150,6 +201,7 @@ export const runGithubChecks: ScopeCheck = async ({ state, techStack }) => {
 			() => checkEnvironments(state.blueprint, repo, upstream, target),
 			() => checkSecurity(state.blueprint, repo, upstream, target, getRepoInfo),
 			() => checkSecrets(state.blueprint, repo, upstream, target),
+			() => checkWebhooks(state.blueprint, repo, upstream, target),
 		];
 		const settled = await mapWithConcurrency(checks, GITHUB_API_CONCURRENCY, (run) =>
 			Promise.resolve(run()),
