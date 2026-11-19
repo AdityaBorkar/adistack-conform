@@ -1,10 +1,10 @@
 import { constants } from "node:fs";
 import type { Stats } from "node:fs";
-import { copyFile, lstat, rename, symlink, unlink } from "node:fs/promises";
+import { copyFile, lstat, unlink } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 
 import { fixGithubApiFix } from "#/core/github/api.js";
-import type { CheckFix, CheckResult, OverwriteFileFix, SymlinkFix } from "#/core/result.js";
+import type { CheckFix, CheckResult, OverwriteFileFix, RunCommandStep } from "#/core/result.js";
 import { errorMessage } from "#/utils/error.js";
 import { isMissingError, realPathOf, writeFileEnsuringDir } from "#/utils/fs.js";
 import { runCommand } from "#/utils/process.js";
@@ -32,9 +32,9 @@ async function unlinkIfPresent(path: string): Promise<void> {
 	}
 }
 
-// Backs up a regular file to the next free .conform.bak[.N]. Refuses before
-// reading a byte when the path is a symlink (a planted link must never copy
-// its target into the workspace) or not a regular file. copyFile keeps the
+// Backs up a regular file to the next free .conform.bak[.N]. A symlink is
+// replaced without a backup (it holds no content; unlinking never copies its
+// target). Directories and special files refuse. copyFile keeps the
 // mode, so a 0600 file never gets a world-readable backup; COPYFILE_EXCL never
 // overwrites an older backup. `single` keeps one backup (secrets files), so
 // decrypted copies do not pile up.
@@ -44,7 +44,8 @@ async function backupExistingFile(filePath: string, single = false): Promise<str
 		return undefined;
 	}
 	if (info.isSymbolicLink()) {
-		throw new Error(`Refusing to write through symlink: ${filePath}`);
+		await unlinkIfPresent(filePath);
+		return undefined;
 	}
 	if (!info.isFile()) {
 		throw new Error(`Refusing to replace ${filePath}: not a regular file.`);
@@ -64,21 +65,6 @@ async function backupExistingFile(filePath: string, single = false): Promise<str
 		}
 	}
 	throw new Error(`Too many backups of ${filePath}; remove old .conform.bak files first.`);
-}
-
-// Writes the checked upstream bytes to the cache, then swaps the link in
-// atomically (symlink to a temp name, rename over the target). A symlink at
-// the target needs no backup; a regular file is backed up first.
-async function linkToCache(fix: SymlinkFix): Promise<string | undefined> {
-	const current = await lstatOrMissing(fix.targetAbs);
-	const backup =
-		current?.isSymbolicLink() === true ? undefined : await backupExistingFile(fix.targetAbs);
-	await writeFileEnsuringDir(fix.cachePath, fix.content);
-	const tmp = `${fix.targetAbs}.conform-tmp`;
-	await unlinkIfPresent(tmp);
-	await symlink(fix.cachePath, tmp);
-	await rename(tmp, fix.targetAbs);
-	return backup;
 }
 
 // Applies an overwrite once per path: an identical second write is a no-op,
@@ -112,6 +98,12 @@ function backupNote(backup: string | undefined): string | undefined {
 export type FixPreview = { lines: string[]; verb: string } | { expected: string; verb: "diff" };
 
 type FixOf<K extends CheckFix["kind"]> = Extract<CheckFix, { kind: K }>;
+
+// Setup steps first, main command last. A fix is itself a step, so it trails
+// its own preCommands.
+function runCommandSteps(fix: FixOf<"run-command">): RunCommandStep[] {
+	return [...(fix.preCommands ?? []), fix];
+}
 
 // Everything one fix kind does, in one place. The mapped table below fails to
 // compile until a new kind provides every member.
@@ -154,20 +146,17 @@ const FIX_KINDS: { [K in CheckFix["kind"]]: FixKind<FixOf<K>> } = {
 	},
 	"run-command": {
 		apply: async (fix) => {
-			await runCommand([fix.command, ...fix.args], fix.label, FIX_TIMEOUT_MS);
+			for (const step of runCommandSteps(fix)) {
+				await runCommand([step.command, ...step.args], step.label, FIX_TIMEOUT_MS);
+			}
 		},
-		describe: (fix) => `run ${fix.label}`,
+		describe: (fix) =>
+			`run ${runCommandSteps(fix)
+				.map((step) => step.label)
+				.join(" && ")}`,
 		forJson: (fix) => fix,
-		preview: (fix) => ({ lines: [fix.label], verb: "run" }),
+		preview: (fix) => ({ lines: runCommandSteps(fix).map((step) => step.label), verb: "run" }),
 		risky: true,
-	},
-	symlink: {
-		apply: async (fix) => backupNote(await linkToCache(fix)),
-		describe: (fix) => fix.label,
-		forJson: ({ content: _content, ...fix }) => fix,
-		preview: (fix) => ({ lines: [fix.label], verb: "link" }),
-		risky: false,
-		writes: (fix) => fix.targetAbs,
 	},
 };
 

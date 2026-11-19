@@ -9,6 +9,7 @@ import { githubToken } from "#/utils/net.js";
 type CheckOptions = ConfigPathOption &
 	ScopeOptions & {
 		json?: boolean;
+		skipSecrets?: boolean;
 		strict?: boolean;
 		verbose?: boolean;
 	};
@@ -39,6 +40,10 @@ export const checkCommand = {
 			.option("--json", "Print machine-readable JSON.")
 			.option("--verbose", "Show passing results too.")
 			.option("--strict", "Report undeclared machine packages (extras) as drift.")
+			.option(
+				"--skip-secrets",
+				"Skip secret values: secrets templates check existence and structure only.",
+			)
 			.option("--project-only", "Only run project checks.")
 			.option("--machine-only", "Only run machine checks.")
 			.option("--github-only", "Only run GitHub repo checks."),

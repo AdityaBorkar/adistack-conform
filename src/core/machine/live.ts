@@ -1,9 +1,11 @@
-import { lstat, mkdtemp, readlink, rm, stat } from "node:fs/promises";
+import { lstat, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { LinkStat } from "#/core/machine/links.js";
+import type { FileStat } from "#/core/machine/files.js";
 import type { InstalledPackages, ManagerId } from "#/core/machine/managers/types.js";
+import type { SystemManager } from "#/core/machine/os.js";
+import { detectSystemManager as detectHostSystemManager } from "#/core/machine/os.js";
 import { MANAGERS } from "#/core/machine/packages.js";
 import type { SecretsTemplateTarget } from "#/core/machine/templates.js";
 import { machineSecretsRel } from "#/core/upstream/blueprint.js";
@@ -18,14 +20,17 @@ import { captureCommand } from "#/utils/process.js";
 // Failures reject with a cause; check code surfaces the message in hints.
 export interface MachineLive {
 	decryptSecrets: () => Promise<Record<string, string>>;
-	fetchSource: (rel: string) => Promise<Uint8Array>;
+	fetchSource: (rel: string) => Promise<string>;
 	fetchText: (rel: string) => Promise<string>;
 	listPackages: (manager: ManagerId) => Promise<InstalledPackages>;
 	readSecretsTemplateTarget: (abs: string) => Promise<SecretsTemplateTarget>;
-	statLink: (targetAbs: string) => Promise<LinkStat>;
+	statFile: (targetAbs: string) => Promise<FileStat>;
+	// The distro's system manager (undefined when unsupported): decides
+	// whether apt or pacman packages run alongside bun globals.
+	detectSystemManager: () => Promise<SystemManager | undefined>;
 }
 
-async function statLinkPath(targetAbs: string): Promise<LinkStat> {
+async function statFilePath(targetAbs: string): Promise<FileStat> {
 	let info: Awaited<ReturnType<typeof lstat>>;
 	try {
 		info = await lstat(targetAbs);
@@ -36,17 +41,12 @@ async function statLinkPath(targetAbs: string): Promise<LinkStat> {
 		throw error;
 	}
 	if (info.isSymbolicLink()) {
-		const dest = await readlink(targetAbs);
-		let bytes: Uint8Array | undefined;
-		try {
-			bytes = new Uint8Array(await Bun.file(targetAbs).arrayBuffer());
-		} catch {
-			// Dangling link: dest alone still classifies wrong-link/dangling.
-			bytes = undefined;
-		}
-		return { bytes, dest, kind: "symlink" };
+		return { kind: "symlink" };
 	}
-	return { isFile: info.isFile(), kind: "other" };
+	if (!info.isFile()) {
+		return { isFile: false, kind: "other" };
+	}
+	return { kind: "file", text: await Bun.file(targetAbs).text() };
 }
 
 async function readSecretsTemplateTarget(abs: string): Promise<SecretsTemplateTarget> {
@@ -68,17 +68,17 @@ async function readSecretsTemplateTarget(abs: string): Promise<SecretsTemplateTa
 	return { exists: true, mode, text: await Bun.file(abs).text() };
 }
 
-// Flat `KEY: value` lines only (values are strings); skips comments and
-// document markers. Anything else (indented or nested lines) throws instead
-// of silently dropping data, so a secrets file with unexpected structure
-// fails loudly at decrypt time rather than rendering empty values.
+// Flat `KEY: value` lines only (CAPITAL_CASING keys, values are strings); skips
+// comments and document markers. Anything else (lowercase, dotted, indented or
+// nested lines) throws instead of silently dropping data, so a secrets file with
+// unexpected structure fails loudly at decrypt time rather than rendering empty values.
 export function parseSimpleMapping(text: string): Record<string, string> {
 	const values: Record<string, string> = {};
 	for (const [index, raw] of text.split("\n").entries()) {
 		if (raw === "" || raw.startsWith("#") || raw === "---" || raw === "...") {
 			continue;
 		}
-		const match = /^([A-Za-z_][\w.-]*)\s*:\s*(.*?)\s*$/u.exec(raw);
+		const match = /^([A-Z][A-Z0-9_]*)\s*:\s*(.*?)\s*$/u.exec(raw);
 		if (match?.[1] === undefined) {
 			throw new Error(
 				`Unsupported secrets line ${index + 1}: ${JSON.stringify(raw)} (flat KEY: value only; nested blocks are not supported).`,
@@ -145,10 +145,11 @@ export function defaultLive(techStack: TechStack, manifestRel: string): MachineL
 	const secretsRel = machineSecretsRel(manifestRel);
 	return {
 		decryptSecrets: () => decryptSecretsLive(techStack, secretsRel),
-		fetchSource: (rel: string) => techStack.bytes(rel, `blueprint file ${rel}`),
+		detectSystemManager: async () => (await detectHostSystemManager()).manager,
+		fetchSource: (rel: string) => techStack.text(rel, `blueprint file ${rel}`),
 		fetchText: (rel: string) => techStack.text(rel, `blueprint file ${rel}`),
 		listPackages: (manager) => MANAGERS[manager].list(),
 		readSecretsTemplateTarget,
-		statLink: statLinkPath,
+		statFile: statFilePath,
 	};
 }

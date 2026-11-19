@@ -72,9 +72,9 @@ _Avoid_: parameterized file, scaffold
 Project-manifest entries that require a file or directory to exist without checking its content.
 _Avoid_: required docs, required dirs
 
-**Link**:
-A machine file enforced as a symlink to its upstream.
-_Avoid_: symlink entry, dotfile
+**Machine file**:
+A machine file enforced as a regular file matching its upstream.
+_Avoid_: link, symlink entry, dotfile
 
 **Secrets template**:
 A machine file rendered from its upstream with values from the machine's encrypted secrets.

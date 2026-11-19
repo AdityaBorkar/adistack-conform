@@ -6,6 +6,9 @@
 	"github": {
 		"blueprint": "npm-package"
 	},
+	"machine": {
+		"blueprint": "main"
+	},
 	"source": {
 		"type": "github",
 		"ref": "main",

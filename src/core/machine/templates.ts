@@ -8,10 +8,10 @@ import { errorMessage } from "#/utils/error.js";
 // written and enforced owner-only.
 const DEFAULT_SECRETS_MODE = "0600";
 
-const LEFTOVER_PATTERN = /@@[^@\s]+@@/gu;
+const SECRET_PATTERN = /\$\$[A-Z][A-Z0-9_]*\$\$/gu;
 
-// Replaces @@NAME@@ slots with the given values (names used as-is). Slots
-// without a value stay in place and are reported as leftovers, so unresolved
+// Replaces $$NAME$$ slots with the given values (names used as-is, CAPITAL_CASING).
+// Slots without a value stay in place and are reported as leftovers, so unresolved
 // placeholders never pass as clean.
 export function renderSecretsTemplate(
 	sourceText: string,
@@ -19,9 +19,10 @@ export function renderSecretsTemplate(
 ): { leftover: string[]; text: string } {
 	let text = sourceText;
 	for (const [name, value] of Object.entries(values)) {
-		text = text.replaceAll(`@@${name}@@`, value);
+		// Replacer function: `$` sequences in secret values stay literal.
+		text = text.replaceAll(`$$${name}$$`, () => value);
 	}
-	return { leftover: [...new Set(text.match(LEFTOVER_PATTERN) ?? [])], text };
+	return { leftover: [...new Set(text.match(SECRET_PATTERN) ?? [])], text };
 }
 
 interface SecretsTemplate {
@@ -45,6 +46,8 @@ interface CheckSecretsTemplatesArgs {
 	decryptSecrets: () => Promise<Record<string, string>>;
 	fetchSource: (source: string) => Promise<string>;
 	readTarget: (path: string) => Promise<SecretsTemplateTarget>;
+	// check --skip-secrets: match structure only, never decrypt.
+	skipSecrets?: boolean;
 	templates: SecretsTemplate[];
 }
 
@@ -69,6 +72,83 @@ function normalizeMode(mode: string): string {
 // Rendered and live text hold decrypted secrets: keep them out of reports.
 function redacted(text: string): string {
 	return `<redacted: ${text.length} chars with secrets>`;
+}
+
+// --skip-secrets: every $$NAME$$ slot matches any value, so structure is
+// checked without decrypting. Literals are escaped, slots become non-greedy.
+function templateStructurePattern(sourceText: string): RegExp {
+	const literals = sourceText
+		.split(SECRET_PATTERN)
+		.map((part) => part.replaceAll(/([.*+?^${}()|[\]\\])/gu, "\\$1"));
+	return new RegExp(`^${literals.join(".*?")}$`, "su");
+}
+
+function skipSecretsResult(
+	blueprint: string,
+	template: SecretsTemplate,
+	observed: Observed,
+): CheckResult {
+	const base = templateBase(blueprint, template);
+	if (observed.kind === "target") {
+		return failManual(
+			base,
+			"<unreadable>",
+			template.source,
+			`Cannot read ${template.target}: ${observed.error}`,
+		);
+	}
+	if (observed.kind === "source") {
+		return failManual(
+			base,
+			"<blueprint fetch failed>",
+			template.source,
+			`Cannot fetch blueprint file ${template.source}: ${observed.error}; fix the network or blueprint, then re-check.`,
+		);
+	}
+	const { live } = observed;
+	if (!live.exists) {
+		return failManual(
+			base,
+			"<missing>",
+			"secrets template target exists (--skip-secrets)",
+			`${template.target} is missing; re-run check without --skip-secrets for the fixable diff.`,
+		);
+	}
+	if (live.text === undefined) {
+		return failManual(
+			base,
+			"<not a regular file>",
+			"secrets template target exists (--skip-secrets)",
+			`${template.target} is not a regular file; move it aside, then re-check.`,
+		);
+	}
+	const mode = template.mode ?? DEFAULT_SECRETS_MODE;
+	const modeMismatch = live.mode !== undefined && normalizeMode(live.mode) !== normalizeMode(mode);
+	if (!templateStructurePattern(observed.sourceText).test(live.text)) {
+		const outcome = failManual(
+			base,
+			redacted(live.text),
+			"matches secrets template structure (secrets skipped)",
+			`${template.target} does not match ${template.source} structure (secrets skipped); re-run check without --skip-secrets for the fixable diff.`,
+		);
+		if (modeMismatch) {
+			outcome.hint += ` Mode is ${live.mode ?? "<unknown>"}, want ${mode}.`;
+		}
+		return outcome;
+	}
+	if (modeMismatch) {
+		return failManual(
+			base,
+			redacted(live.text),
+			"matches secrets template structure (secrets skipped)",
+			`Mode is ${live.mode ?? "<unknown>"}, want ${mode}: chmod ${mode} ${template.target} or re-run check without --skip-secrets to fix, then re-check.`,
+		);
+	}
+	return pass(
+		base,
+		"matches secrets template structure (secrets skipped)",
+		`rendered ${template.source}`,
+	);
 }
 
 function templateResult(
@@ -120,7 +200,7 @@ function templateResult(
 		return failManual(
 			base,
 			`contains placeholders: ${rendered.leftover.join(", ")}`,
-			"rendered secrets template (no @@PLACEHOLDER@@ slots)",
+			"rendered secrets template (no $$PLACEHOLDER$$ slots)",
 			`Declare ${rendered.leftover.join(", ")} in the file's secrets list (and secrets.yaml), then re-check.`,
 		);
 	}
@@ -177,6 +257,17 @@ export async function checkSecretsTemplates(
 ): Promise<CheckResult[]> {
 	if (args.templates.length === 0) {
 		return [];
+	}
+	// --skip-secrets never decrypts (no sops/age key needed); structure only.
+	if (args.skipSecrets === true) {
+		const observed = await mapWithConcurrency(
+			args.templates,
+			UPSTREAM_FETCH_CONCURRENCY,
+			(template) => observe(args, template),
+		);
+		return args.templates.map((template, index) =>
+			skipSecretsResult(args.blueprint, template, observed[index] as Observed),
+		);
 	}
 	// One decrypt per run, shared by every template; failures keep their cause.
 	const secretsTask = args.decryptSecrets().then(

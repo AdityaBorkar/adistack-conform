@@ -50,33 +50,3 @@ describe("secret fixes", () => {
 		expect(diff).toContain("diff hidden");
 	});
 });
-
-describe("link fixes", () => {
-	test("JSON summary leaves the link bytes out", () => {
-		const link: CheckResult = {
-			actual: "<missing>",
-			expected: "symlink to /h/.zshrc.conform-src",
-			fix: {
-				cachePath: "/h/.zshrc.conform-src",
-				content: new TextEncoder().encode("bytes"),
-				kind: "symlink",
-				label: "link /h/.zshrc -> /h/.zshrc.conform-src",
-				targetAbs: "/h/.zshrc",
-			},
-			id: "machine:main:link:Zshrc",
-			kind: "machine",
-			ok: false,
-			scope: "machine",
-			target: "/h/.zshrc",
-		};
-		const parsed = JSON.parse(capture(() => printJsonSummary("/p/conform.json", [link]))) as {
-			results: Array<{ fix: Record<string, unknown> }>;
-		};
-		expect(parsed.results[0]?.fix).toEqual({
-			cachePath: "/h/.zshrc.conform-src",
-			kind: "symlink",
-			label: "link /h/.zshrc -> /h/.zshrc.conform-src",
-			targetAbs: "/h/.zshrc",
-		});
-	});
-});

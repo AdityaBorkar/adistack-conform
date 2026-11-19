@@ -28,6 +28,8 @@ interface ScopeContext {
 	// The dir that owns conform.json: project targets resolve against it, not the cwd.
 	baseDir: string;
 	home: string;
+	// check --skip-secrets: secrets templates match structure only, never decrypt.
+	skipSecrets?: boolean;
 	state: RunState;
 	strict: boolean;
 	// The pinned tech-stack repo, opened once for the whole run.

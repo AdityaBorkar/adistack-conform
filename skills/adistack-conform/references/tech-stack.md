@@ -75,6 +75,7 @@ Template slots only work in JSON/JSONC object or array upstreams. A `<...>` insi
 {
 	"$name": "Primary Developer Machine",
 	"packages": {
+		"apt": { "curl": "latest" },
 		"pacman": { "git": "latest", "neovim": "0.11.0-1" },
 		"bun": { "@biomejs/biome": "latest" }
 	},
@@ -85,16 +86,16 @@ Template slots only work in JSON/JSONC object or array upstreams. A `<...>` insi
 			"name": "Npmrc",
 			"source": "machines/files/npmrc",
 			"target": "~/.npmrc",
-			"secrets": ["npm_auth_token"],
+			"secrets": ["NPM_AUTH_TOKEN"],
 			"mode": "0600"
 		}
 	]
 }
 ```
 
-- Managers: `pacman`, `bun` (global). Value `"latest"` or exact version (no whitespace). Package names `^[A-Za-z0-9@_+][\w@.+/-]*$`.
+- Managers: `apt`, `pacman`, `bun` (global). Value `"latest"` or exact version (no whitespace). Package names `^[A-Za-z0-9@_+][\w@.+/-]*$`.
 - `allowlist`: distro-base names never reported as extras.
-- `files[]` without `secrets` → link (consumer `target` symlinks to materialized upstream). With `secrets` → secrets template: source holds `@@npm_auth_token@@`; `secrets.yaml` (sops-encrypted, flat `KEY: value`, keys `[A-Za-z_][\w.-]*`) sits in the manifest's directory. `mode` (`0600` | `0644`) allowed only with `secrets`. Never commit plaintext values.
+- `files[]` without `secrets` → plain file (consumer `target` is a regular file matching the upstream). With `secrets` → secrets template: source holds `$$NPM_AUTH_TOKEN$$`; `secrets.yaml` (sops-encrypted, flat `KEY: value`, keys `CAPITAL_CASING` `^[A-Z][A-Z0-9_]*$`) sits in the manifest's directory. `mode` (`0600` | `0644`) allowed only with `secrets`. Never commit plaintext values.
 - Names unique; at least one package or file.
 
 ## GitHub settings manifest

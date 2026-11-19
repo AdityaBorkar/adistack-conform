@@ -15,15 +15,16 @@ Without `--path`, `check` / `fix` read `./conform.json` in your cwd and `validat
 Look, don't touch:
 
 ```bash
-bunx @adistack/conform check [--path <path>] [--json] [--verbose] [--strict] [--project-only | --machine-only | --github-only]
+bunx @adistack/conform check [--path <path>] [--json] [--verbose] [--strict] [--skip-secrets] [--project-only | --machine-only | --github-only]
 ```
 
-| Flag                                                  | Meaning                                                   |
-| ----------------------------------------------------- | --------------------------------------------------------- |
-| `--json`                                              | Print a machine-readable summary instead of human lines.  |
-| `--verbose`                                           | Show passing results too (default: failing results only). |
-| `--strict`                                            | Report undeclared machine packages (extras) as drift.     |
-| `--project-only` / `--machine-only` / `--github-only` | Run one scope. Passing two is an error.                   |
+| Flag                                                  | Meaning                                                                                      |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `--json`                                              | Print a machine-readable summary instead of human lines.                                     |
+| `--verbose`                                           | Show passing results too (default: failing results only).                                    |
+| `--strict`                                            | Report undeclared machine packages (extras) as drift.                                        |
+| `--skip-secrets`                                      | Skip secret values: secrets templates check existence, mode, and structure only (no `sops`). |
+| `--project-only` / `--machine-only` / `--github-only` | Run one scope. Passing two is an error.                                                      |
 
 Output lists only drift (failing results) plus a per-scope summary (`project: N passed, M failed (K fixable), S skipped` — the `(K fixable)` part is omitted when nothing failed — with timing; `machine: in sync | drift (fixable) | manual`; `github: …` likewise). Skips print as `○ … skipped: <reason>` and count as ok. When the github scope runs without a token (`GITHUB_TOKEN`, else `gh auth token`), `check` also prints a `⚠ GitHub checks skipped` warning to stderr (branch protection needs auth even on public repos).
 
@@ -43,7 +44,7 @@ Exit codes: <Badge variant="success">0 everything ok</Badge> <Badge variant="war
 }
 ```
 
-`--json` ignores `--verbose` (JSON always carries every result). Each result carries `id` (`project:<blueprint>:<name>`; machine uses `machine:<blueprint>:<section>:<name>` with section `pacman`/`bun`/`link`/`secrets-template`, or `machine:<blueprint>:<domain>` when a whole domain cannot run; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `machine` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `target`, `expected`, `actual`, plus `upstream` (`tech-stack:<blueprint>`, omitted on `internal-error` where `target` is the scope name), `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label`, `symlink` with `cachePath`/`targetAbs`/`label` (the link bytes stay out of the JSON), or `github-api` multi-step REST calls) and/or `hint` (manual always hints; fixable machine/github results may carry both), and `skipped: true` when skipped.
+`--json` ignores `--verbose` (JSON always carries every result). Each result carries `id` (`project:<blueprint>:<name>`; machine uses `machine:<blueprint>:<section>:<name>` with section `apt`/`pacman`/`bun`/`file`/`secrets-template`, or `machine:<blueprint>:<domain>` when a whole domain cannot run; github uses `github:<blueprint>:<name>`; scope failures use `<scope>:internal-error`), `kind` (`project` | `machine` | `github` | `internal`), `scope` (`project` | `machine` | `github`), `target`, `expected`, `actual`, plus `upstream` (`tech-stack:<blueprint>`, omitted on `internal-error` where `target` is the scope name), `fix` (`overwrite-file` with `filePath`/`newContent`, `run-command` with `command`/`args`/`label` plus optional `preCommands[]` setup steps (run first), or `github-api` multi-step REST calls) and/or `hint` (manual always hints; fixable machine/github results may carry both), and `skipped: true` when skipped.
 
 ## `fix`
 
@@ -70,13 +71,13 @@ bunx @adistack/conform fix [--path <path>] [--all] [--dry-run] [--strict] [--pro
 
 <Step title="Review the diff">
 
-You get a unified diff preview (diffs over ~200KB are skipped; `run-command` fixes print the command and `github-api` fixes print the REST steps instead of a diff).
+You get a unified diff preview (diffs over ~200KB are skipped; `run-command` fixes print every command — setup steps first — and `github-api` fixes print the REST steps instead of a diff).
 
 </Step>
 
 <Step title="Pick and apply">
 
-A group-multiselect prompt lists each fix (each option shows the fix command; space toggles). `overwrite-file` fixes apply first, then links, commands and API fixes. Each `overwrite-file` fix writes a `.conform.bak` backup next to the target before writing (numbered `.conform.bak.N` when one already exists; secrets templates keep one); a symlink or non-regular target is refused before anything is copied. Non-TTY `--all` refuses the whole run when any fixable writes or links outside the project directory (judged by real path, symlinked parent directories resolved first) — nothing is applied; re-run in a terminal instead.
+A group-multiselect prompt lists each fix (each option shows the fix command; space toggles). `overwrite-file` fixes apply first, then commands and API fixes. Each `overwrite-file` fix writes a `.conform.bak` backup next to the target before writing (numbered `.conform.bak.N` when one already exists; secrets templates keep one; symlinks are replaced without a backup); a non-regular target is refused before anything is copied. Non-TTY `--all` refuses the whole run when any fixable writes outside the project directory (judged by real path, symlinked parent directories resolved first) — nothing is applied; re-run in a terminal instead.
 
 </Step>
 

@@ -29,6 +29,25 @@ export const pacmanManager: PackageManager = {
 			command: "sudo",
 			kind: "run-command",
 			label: `sudo pacman -S --needed --noconfirm -- ${spec}`,
+			preCommands: [
+				// -Syu refreshes and upgrades in one step (pacman has no separate update).
+				{
+					args: ["pacman", "-Syu", "--noconfirm"],
+					command: "sudo",
+					label: "sudo pacman -Syu --noconfirm",
+				},
+				// Orphan names come from pacman itself at runtime, never from upstream
+				// data, so no package name can act as a flag here.
+				{
+					args: [
+						"sh",
+						"-c",
+						'[ -z "$(pacman -Qtdq)" ] || pacman -Qtdq | pacman -Rns --noconfirm -',
+					],
+					command: "sudo",
+					label: `sudo sh -c '[ -z "$(pacman -Qtdq)" ] || pacman -Qtdq | pacman -Rns --noconfirm -'`,
+				},
+			],
 		};
 	},
 	list: async () => {

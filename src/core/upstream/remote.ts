@@ -88,8 +88,7 @@ function fetchTextOrThrow(url: string, label: string): Promise<string> {
 	return withRetry(async () => (await fetchOkResponse(url, label)).text(), isFetchRetryable);
 }
 
-// Byte-exact fetch for link upstreams: response.text() would corrupt binary
-// dotfiles, so materialize and compare on raw bytes instead.
+// Byte-exact fetch for binary-safe reads (validate existence checks).
 function fetchBytesOrThrow(url: string, label: string): Promise<Uint8Array> {
 	return withRetry(
 		async () => new Uint8Array(await (await fetchOkResponse(url, label)).arrayBuffer()),

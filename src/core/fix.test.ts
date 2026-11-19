@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readlink, stat, symlink } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { fixSelected, unattendedRefusal } from "#/core/fix.js";
+import { describeFix, fixPreview, fixSelected, unattendedRefusal } from "#/core/fix.js";
 import type { CheckResult } from "#/core/result.js";
 
 const originalLog = console.log;
@@ -33,26 +33,6 @@ function overwrite(id: string, filePath: string, newContent: string): CheckResul
 	};
 }
 
-function linkFix(target: string, cache: string, content: string): CheckResult {
-	return {
-		actual: "<missing>",
-		expected: `symlink to ${cache}`,
-		fix: {
-			cachePath: cache,
-			content: new TextEncoder().encode(content),
-			kind: "symlink",
-			label: `link ${target} -> ${cache}`,
-			targetAbs: target,
-		},
-		id: "machine:main:link:Zshrc",
-		kind: "machine",
-		ok: false,
-		scope: "machine",
-		target,
-		upstream: "tech-stack:main",
-	};
-}
-
 describe("fixSelected", () => {
 	test("writes a backup and dedupes identical same-file fixes", async () => {
 		const filePath = join(tmpdir(), `conform-fix-${process.pid}-${Date.now()}`, "sub", "f.json");
@@ -77,46 +57,55 @@ describe("fixSelected", () => {
 		expect(await Bun.file(filePath).text()).toBe('{"a":2}\n');
 	});
 
-	test("link fix backs up a regular file, writes the checked bytes, then links", async () => {
-		const dir = join(tmpdir(), `conform-fix-ln-${process.pid}-${Date.now()}`);
+	test("direct file fix backs up a regular file and writes the upstream", async () => {
+		const dir = join(tmpdir(), `conform-fix-file-${process.pid}-${Date.now()}`);
 		const target = join(dir, ".zshrc");
-		const cache = `${target}.conform-src`;
 		await Bun.write(target, "mine\n");
-		expect(await fixSelected([linkFix(target, cache, "upstream\n")])).toHaveLength(1);
+		const fix = {
+			...overwrite("machine:main:file:Zshrc", target, "upstream\n"),
+			target,
+		};
+		expect(await fixSelected([fix])).toHaveLength(1);
 		expect(await Bun.file(`${target}.conform.bak`).text()).toBe("mine\n");
-		expect(await readlink(target)).toBe(cache);
 		expect(await Bun.file(target).text()).toBe("upstream\n");
 	});
 
-	test("link fix replaces a wrong symlink without a backup", async () => {
+	test("direct file fix replaces a symlink without a backup", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "conform-fix-relink-"));
 		const target = join(dir, ".zshrc");
 		await Bun.write(join(dir, "elsewhere"), "x\n");
 		await symlink(join(dir, "elsewhere"), target);
-		expect(await fixSelected([linkFix(target, `${target}.conform-src`, "up\n")])).toHaveLength(1);
-		expect(await readlink(target)).toBe(`${target}.conform-src`);
+		const fix = {
+			...overwrite("machine:main:file:Zshrc", target, "up\n"),
+			target,
+		};
+		expect(await fixSelected([fix])).toHaveLength(1);
+		expect((await stat(target)).isFile()).toBe(true);
+		expect(await Bun.file(target).text()).toBe("up\n");
 		expect(await Bun.file(`${target}.conform.bak`).exists()).toBe(false);
 	});
 
-	test("link fix refuses a directory target", async () => {
-		const dir = await mkdtemp(join(tmpdir(), "conform-fix-lndir-"));
+	test("direct file fix refuses a directory target", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "conform-fix-filedir-"));
 		const target = join(dir, "conf");
 		await mkdir(target);
-		expect(await fixSelected([linkFix(target, `${target}.conform-src`, "up\n")])).toHaveLength(0);
+		const fix = { ...overwrite("machine:main:file:Conf", target, "up\n"), target };
+		expect(await fixSelected([fix])).toHaveLength(0);
 		expect((await stat(target)).isDirectory()).toBe(true);
 	});
 
-	test("a symlinked target is refused before anything is copied into a backup", async () => {
+	test("a symlinked target is replaced without copying its target into a backup", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "conform-fix-planted-"));
 		const secret = join(dir, "id_ed25519");
 		await Bun.write(secret, "SECRET\n");
 		const planted = join(dir, "AGENTS.md");
 		await symlink(secret, planted);
 		expect(await fixSelected([overwrite("project:b:agents", planted, "# agents\n")])).toHaveLength(
-			0,
+			1,
 		);
 		expect(await Bun.file(`${planted}.conform.bak`).exists()).toBe(false);
 		expect(await Bun.file(secret).text()).toBe("SECRET\n");
+		expect(await Bun.file(planted).text()).toBe("# agents\n");
 	});
 
 	test("secret fixes keep a single backup instead of piling up decrypted copies", async () => {
@@ -168,6 +157,44 @@ describe("fixSelected", () => {
 	});
 });
 
+function commandFix(id: string, pre: string): CheckResult {
+	return {
+		actual: "missing",
+		expected: "installed",
+		fix: {
+			args: [],
+			command: "true",
+			kind: "run-command",
+			label: "true",
+			preCommands: [{ args: [], command: pre, label: pre }],
+		},
+		id,
+		kind: "machine",
+		ok: false,
+		scope: "machine",
+		target: "true",
+	};
+}
+
+describe("run-command with preCommands", () => {
+	test("setup steps run before the main command", async () => {
+		expect(await fixSelected([commandFix("machine:main:apt:x", "true")])).toHaveLength(1);
+	});
+
+	test("a failing setup step aborts the main command", async () => {
+		expect(await fixSelected([commandFix("machine:main:apt:x", "false")])).toHaveLength(0);
+	});
+
+	test("preview and description list every step", () => {
+		const item = commandFix("machine:main:apt:x", "sudo apt-get update");
+		expect(fixPreview(item)).toEqual({
+			lines: ["sudo apt-get update", "true"],
+			verb: "run",
+		});
+		expect(describeFix(item)).toBe("run sudo apt-get update && true");
+	});
+});
+
 describe("unattendedRefusal", () => {
 	const command: CheckResult = {
 		actual: "missing",
@@ -197,14 +224,14 @@ describe("unattendedRefusal", () => {
 		expect(await unattendedRefusal([command], dir)).toContain("run commands");
 	});
 
-	test("refuses writes and links outside the project", async () => {
+	test("refuses writes outside the project", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "conform-refuse-out-"));
 		const outside = join(tmpdir(), "elsewhere.json");
 		expect(await unattendedRefusal([overwrite("project:b:f", outside, "{}")], dir)).toContain(
 			"outside the project",
 		);
-		const link = linkFix(join(dir, "..", "x"), join(dir, "..", "x.conform-src"), "y");
-		expect(await unattendedRefusal([link], dir)).toContain("outside the project");
+		const outsideFile = overwrite("machine:main:file:X", join(dir, "..", "x"), "y");
+		expect(await unattendedRefusal([outsideFile], dir)).toContain("outside the project");
 	});
 
 	test("refuses a write through a symlinked parent dir that leaves the project", async () => {

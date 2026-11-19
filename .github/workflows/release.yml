@@ -33,6 +33,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
+      - run: git config user.name "github-actions[bot]"
+      - run: git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
       # No-ops when there is nothing to version; otherwise bumps
       # package.json and prepends the new entries to CHANGELOG.md.
       - uses: changesets/action/version@v2

@@ -26,7 +26,7 @@ bunx @adistack/conform check            # bin of the package; this repo's source
 Run from the dir owning `conform.json` (no directory walking; `--path <file>` overrides, `~` expands). `bunx @adistack/conform` runs the published package (verified: `bunx` resolves the scoped package to its single bin); this repo's source runs via `bun dev check`.
 
 ```bash
-bunx @adistack/conform check [--json] [--verbose] [--strict] [--project-only|--machine-only|--github-only] [--path p]
+bunx @adistack/conform check [--json] [--verbose] [--strict] [--skip-secrets] [--project-only|--machine-only|--github-only] [--path p]
 bunx @adistack/conform fix   [--all] [--dry-run] [--strict] [--project-only|--machine-only|--github-only] [--path p]
 bunx @adistack/conform validate [--path <tech-stack dir | registry.json>]
 ```
@@ -64,29 +64,29 @@ bunx @adistack/conform validate [--path <tech-stack dir | registry.json>]
 
 ### Results
 
-Id `<scope>:<blueprint>:<name>` (machine: `machine:<bp>:<section>:<name>`, section `pacman|bun|link|secrets-template`; whole-scope failure: `<scope>:internal-error`, no `upstream`, `target` = scope name).
+Id `<scope>:<blueprint>:<name>` (machine: `machine:<bp>:<section>:<name>`, section `apt|pacman|bun|file|secrets-template`; whole-scope failure: `<scope>:internal-error`, no `upstream`, `target` = scope name).
 
-| Bucket         | Meaning                                                                 | Action                         |
-| -------------- | ----------------------------------------------------------------------- | ------------------------------ |
-| ok             | matches upstream                                                        | —                              |
-| skipped        | not enforced (no API, auth 401/403, extras without `--strict`)          | none; not drift                |
-| fixable        | carries `fix`: `overwrite-file`, `symlink`, `run-command`, `github-api` | `fix`                          |
-| manual         | `hint` only                                                             | human follows hint             |
-| internal-error | scope threw                                                             | read `actual`; counts as drift |
+| Bucket         | Meaning                                                        | Action                         |
+| -------------- | -------------------------------------------------------------- | ------------------------------ |
+| ok             | matches upstream                                               | —                              |
+| skipped        | not enforced (no API, auth 401/403, extras without `--strict`) | none; not drift                |
+| fixable        | carries `fix`: `overwrite-file`, `run-command`, `github-api`   | `fix`                          |
+| manual         | `hint` only                                                    | human follows hint             |
+| internal-error | scope threw                                                    | read `actual`; counts as drift |
 
 `--json` → `{ desiredStates, ok, passed, failed, skipped, total, results[] }`; result fields `id kind scope upstream target expected actual fix? hint? skipped?`. Gate on exit code or `ok`; exclude skips. `--json` ignores `--verbose`. Probe with `check --json`; preview with `fix --dry-run`.
 
 ### Fix flow and safety (ADR 0010/0011)
 
-1. Lists manual items + hints. 2. Diff preview (≤20 diffs, skip >~200KB; commands/REST steps printed). 3. Multiselect (TTY) or `--all`. 4. Apply: `overwrite-file` first, then links/commands/API (commands 10-min timeout). 5. Re-check selected ids (project narrowed; machine/github whole; full fallback on error). Ends `Fixed X/Y. N still failing` — re-check is authoritative.
+1. Lists manual items + hints. 2. Diff preview (≤20 diffs, skip >~200KB; commands/REST steps printed). 3. Multiselect (TTY) or `--all`. 4. Apply: `overwrite-file` first, then commands/API (commands 10-min timeout). 5. Re-check selected ids (project narrowed; machine/github whole; full fallback on error). Ends `Fixed X/Y. N still failing` — re-check is authoritative.
 
-- Backup `<target>.conform.bak[.N]` before replacing a regular file (secrets templates keep one). Symlink/non-regular target refused before reading. Conflicting writes to one path abort.
+- Backup `<target>.conform.bak[.N]` before replacing a regular file (secrets templates keep one; symlinks are replaced without a backup). Non-regular target refused before reading. Conflicting writes to one path abort.
 - Non-TTY `--all`: if even one fix runs a command, calls the GitHub API, or writes outside the project (real path, symlinked parents resolved), the whole run is refused with exit 2 ("Re-run in a terminal") — nothing is applied, risky fixes are not skipped-and-continued. Never try to work around this; hand those to a human.
 - A selected id missing from re-check = resolved (e.g. removed extra) only if that scope's re-check had no new failure; a re-check skip never replaces a failure.
 
 ### Agent recipe
 
-1. Read `conform.json`: pin, scopes. 2. `check --json` (narrow with `--*-only`). Classify every non-ok non-skipped result fixable vs manual. 3. `fix --dry-run`; confirm would-fix list = fixable set. 4. Non-TTY: `fix --all` only when every fixable is a project file/link (if even one runs a command, calls the GitHub API, or writes outside the project, the whole run is refused with exit 2); machine package installs, github API fixes → ask user to run `fix` in a terminal. 5. Manual → follow `hint` (edit file, fill template placeholders, mkdir, author fixes upstream). 6. Done when `check` exits 0.
+1. Read `conform.json`: pin, scopes. 2. `check --json` (narrow with `--*-only`). Classify every non-ok non-skipped result fixable vs manual. 3. `fix --dry-run`; confirm would-fix list = fixable set. 4. Non-TTY: `fix --all` only when every fixable is a project file (if even one runs a command, calls the GitHub API, or writes outside the project, the whole run is refused with exit 2); machine package installs, github API fixes → ask user to run `fix` in a terminal. 5. Manual → follow `hint` (edit file, fill template placeholders, mkdir, author fixes upstream). 6. Done when `check` exits 0.
 
 Drift owner by `actual`: `<blueprint fetch failed>` → network/token, retry; `<blueprint file missing>` → tech-stack author (manifest `source` points nowhere); `<unreadable>` → local permissions. Fetched-blueprint schema violation is drift in that scope (author's bug), not exit 2. A `registry.json` that cannot be fetched at all is exit 2, not drift.
 
@@ -103,11 +103,11 @@ Drift owner by `actual`: `<blueprint fetch failed>` → network/token, retry; `<
 
 ### machine (packages + `files[]`)
 
-- Packages `packages.pacman|bun: { name: version|"latest" }`. Missing or wrong pinned version → fixable install (`name=ver` / `name@ver`; pacman gets `--` before names). Dependency-installed counts as present.
+- Packages `packages.apt|pacman|bun: { name: version|"latest" }`. Auto-OS detection from `/etc/os-release`: Arch-based distros check `pacman`, Ubuntu/Debian-based distros check `apt` (the other system's packages are ignored), `bun` globals always run alongside. Unsupported distros check `bun` only plus a skipped `machine:<bp>:packages:system` warning (`It seems you have not defined any system packages OR your OS Distro is not supported.`). Missing or wrong pinned version → fixable install (`name=ver` for apt/pacman, `name@ver` for bun; apt/pacman get `--` before names). apt/pacman installs first refresh, upgrade, and autoremove (`apt-get update`, `upgrade -y`, `autoremove -y`; `pacman -Syu` plus orphan removal), then install. Dependency-installed counts as present.
 - Extras = explicitly installed, undeclared, not in `allowlist` → skipped; `--strict` makes them fixable removals. Clean `check` + dirty `check --strict` is normal.
-- File without `secrets` = **link**: `target` must symlink to materialized upstream `<target>.conform-src`. Missing/wrong/dangling/regular file → fixable (regular file backed up, link swapped atomically). Directory/special file at target → manual. Extra files never drift.
-- File with `secrets: [NAME…]` = **secrets template**: one `sops --decrypt` per run of manifest-adjacent `secrets.yaml` (flat `KEY: value`); only listed names fill `@@NAME@@`; `mode` (`0600` default | `0644`) always enforced, narrowed before write. Content always `<redacted>` in output/JSON/diffs. Missing `sops`/age key, absent secret, leftover `@@…@@` → manual.
-- Probes (`pacman -Q`, `bun pm -g ls`, `sops`) time out at 60s. Domain failure → `machine:<bp>:<domain>` result.
+- File without `secrets` = **plain file**: `target` must be a regular file matching the upstream. Missing/mismatch → fixable (backed up, then overwritten). Symlink → fixable (replaced with a regular file). Directory/special file at target → manual. Extra files never drift.
+- File with `secrets: [NAME…]` = **secrets template**: one `sops --decrypt` per run of manifest-adjacent `secrets.yaml` (flat `KEY: value`, `CAPITAL_CASING` keys); only listed names fill `$$NAME$$`; `mode` (`0600` default | `0644`) always enforced, narrowed before write. Content always `<redacted>` in output/JSON/diffs. Missing `sops`/age key, absent secret, leftover `$$…$$` → manual. `check --skip-secrets` skips decrypting: each `$$NAME$$` matches any value (regex structure check) plus existence/mode; mismatches are manual with no fix — re-run without the flag for the fixable diff.
+- Probes (`apt-mark showmanual`, `dpkg-query -W`, `pacman -Q`, `bun pm -g ls`, `sops`) time out at 60s. Only the distro's system manager is listed (a manager whose tools are absent anyway contributes nothing); other domain failures → `machine:<bp>:<domain>` result.
 
 ### github (fixed check list via REST, ADR 0008)
 

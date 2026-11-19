@@ -16,8 +16,8 @@ describe("checkBase", () => {
 			target: "tsconfig.json",
 			upstream: "tech-stack:app",
 		});
-		expect(checkBase("machine", "main", "link:Zshrc", "~/.zshrc").id).toBe(
-			"machine:main:link:Zshrc",
+		expect(checkBase("machine", "main", "file:Zshrc", "~/.zshrc").id).toBe(
+			"machine:main:file:Zshrc",
 		);
 		expect(checkBase("machine", "main", "bun:typescript", "bun:typescript").id).toBe(
 			"machine:main:bun:typescript",

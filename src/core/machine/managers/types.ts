@@ -1,6 +1,6 @@
 import type { RunCommandFix } from "#/core/result.js";
 
-export type ManagerId = "bun" | "pacman";
+export type ManagerId = "apt" | "bun" | "pacman";
 
 // A declared requirement: version is an exact version or "latest" (unpinned).
 interface PackageRef {

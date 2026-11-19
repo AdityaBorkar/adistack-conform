@@ -2,22 +2,18 @@ import { describe, expect, test } from "bun:test";
 
 import { checkMachine } from "#/core/machine/index.js";
 import type { MachineCheckInput, MachineLive } from "#/core/machine/index.js";
+import { systemManagerForOsRelease } from "#/core/machine/os.js";
 import type { MachineManifest } from "#/schemas/machine-manifest.js";
-
-const encoder = new TextEncoder();
-
-function utf8(text: string): Uint8Array {
-	return encoder.encode(text);
-}
 
 function fakeLive(overrides: Partial<MachineLive> = {}): MachineLive {
 	return {
 		decryptSecrets: () => Promise.resolve({}),
-		fetchSource: () => Promise.resolve(utf8("content")),
+		detectSystemManager: () => Promise.resolve("pacman"),
+		fetchSource: () => Promise.resolve("content"),
 		fetchText: () => Promise.resolve("content"),
 		listPackages: () => Promise.resolve({ explicit: new Set<string>(), versions: new Map() }),
 		readSecretsTemplateTarget: () => Promise.resolve({ exists: false }),
-		statLink: () => Promise.resolve({ kind: "missing" }),
+		statFile: () => Promise.resolve({ kind: "missing" }),
 		...overrides,
 	};
 }
@@ -26,7 +22,7 @@ function manifest(overrides: Partial<MachineManifest> = {}): MachineManifest {
 	return {
 		allowlist: {},
 		files: [],
-		packages: { bun: {}, pacman: { ripgrep: "latest" } },
+		packages: { apt: {}, bun: {}, pacman: { ripgrep: "latest" } },
 		...overrides,
 	};
 }
@@ -48,6 +44,7 @@ function input(overrides: Partial<MachineCheckInput> = {}): MachineCheckInput {
 		home: "/home/ada",
 		live: fakeLive({ listPackages: pacmanOnly(["ripgrep"]) }),
 		manifest: manifest(),
+		skipSecrets: false,
 		strict: false,
 		...overrides,
 	};
@@ -94,26 +91,72 @@ describe("checkMachine packages", () => {
 			expect(missing?.fix?.kind).toBe("run-command");
 		}
 	});
+
+	test("debian runs apt plus bun and ignores pacman", async () => {
+		const results = await checkMachine(
+			input({
+				live: fakeLive({
+					detectSystemManager: () => Promise.resolve("apt"),
+					listPackages: (manager) =>
+						Promise.resolve(installed(manager === "apt" ? ["ripgrep"] : [])),
+				}),
+				manifest: manifest({
+					packages: {
+						apt: { ripgrep: "latest" },
+						bun: {},
+						pacman: { "should-be-ignored": "latest" },
+					},
+				}),
+			}),
+		);
+		expect(results.find((item) => item.id === "machine:main:apt:ripgrep")?.ok).toBe(true);
+		expect(results.some((item) => item.id.includes("should-be-ignored"))).toBe(false);
+		expect(results.some((item) => item.id === "machine:main:packages:system")).toBe(false);
+	});
+
+	test("unsupported distros check bun only and warn instead of failing", async () => {
+		const results = await checkMachine(
+			input({
+				live: fakeLive({
+					detectSystemManager: () => Promise.resolve(systemManagerForOsRelease("ID=fedora\n")),
+					listPackages: (manager) =>
+						Promise.resolve(installed(manager === "bun" ? ["eas-cli"] : [])),
+				}),
+				manifest: manifest({
+					packages: {
+						apt: { "apt-pkg": "latest" },
+						bun: { "eas-cli": "latest" },
+						pacman: { "pacman-pkg": "latest" },
+					},
+				}),
+			}),
+		);
+		const warning = results.find((item) => item.id === "machine:main:packages:system");
+		expect(warning?.skipped).toBe(true);
+		expect(warning?.actual).toBe(
+			"It seems you have not defined any system packages OR your OS Distro is not supported.",
+		);
+		expect(results.some((item) => item.id.includes("apt-pkg"))).toBe(false);
+		expect(results.some((item) => item.id.includes("pacman-pkg"))).toBe(false);
+		expect(results.find((item) => item.id === "machine:main:bun:eas-cli")?.ok).toBe(true);
+	});
 });
 
-describe("checkMachine links", () => {
-	test("missing link is fixable with a link label pointing at .conform-src", async () => {
+describe("checkMachine files", () => {
+	test("missing file is fixable with an overwrite carrying the upstream", async () => {
 		const results = await checkMachine(
 			input({
 				live: fakeLive(),
 				manifest: manifest({
 					files: [{ name: "Zshrc", source: "machines/main/files/.zshrc", target: "~/.zshrc" }],
-					packages: { bun: {}, pacman: {} },
+					packages: { apt: {}, bun: {}, pacman: {} },
 				}),
 			}),
 		);
 		expect(results).toHaveLength(1);
-		expect(results[0]?.id).toBe("machine:main:link:Zshrc");
+		expect(results[0]?.id).toBe("machine:main:file:Zshrc");
 		expect(results[0]?.ok).toBe(false);
-		expect(results[0]?.fix?.kind).toBe("symlink");
-		if (results[0]?.fix?.kind === "symlink") {
-			expect(results[0].fix.label).toContain(".conform-src");
-		}
+		expect(results[0]?.fix?.kind).toBe("overwrite-file");
 	});
 });
 
@@ -127,12 +170,12 @@ describe("checkMachine templates", () => {
 						{
 							mode: "0600",
 							name: "Npmrc",
-							secrets: ["npm_auth_token"],
+							secrets: ["NPM_AUTH_TOKEN"],
 							source: "machines/main/files/.npmrc",
 							target: "~/.npmrc",
 						},
 					],
-					packages: { bun: {}, pacman: {} },
+					packages: { apt: {}, bun: {}, pacman: {} },
 				}),
 			}),
 		);
@@ -141,5 +184,33 @@ describe("checkMachine templates", () => {
 		expect(results[0]?.ok).toBe(false);
 		expect(results[0]?.fix).toBeUndefined();
 		expect(results[0]?.hint).toContain("sops");
+	});
+
+	test("skipSecrets checks structure without decrypting", async () => {
+		const results = await checkMachine(
+			input({
+				live: fakeLive({
+					decryptSecrets: () => Promise.reject(new Error("must not decrypt")),
+					fetchText: () => Promise.resolve("token=$$NPM_AUTH_TOKEN$$\n"),
+					readSecretsTemplateTarget: () =>
+						Promise.resolve({ exists: true, mode: "600", text: "token=anything\n" }),
+				}),
+				manifest: manifest({
+					files: [
+						{
+							mode: "0600",
+							name: "Npmrc",
+							secrets: ["NPM_AUTH_TOKEN"],
+							source: "machines/main/files/.npmrc",
+							target: "~/.npmrc",
+						},
+					],
+					packages: { apt: {}, bun: {}, pacman: {} },
+				}),
+				skipSecrets: true,
+			}),
+		);
+		expect(results).toHaveLength(1);
+		expect(results[0]?.ok).toBe(true);
 	});
 });

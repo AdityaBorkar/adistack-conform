@@ -54,7 +54,7 @@ Project targets resolve against the directory that holds `conform.json`. A leadi
 | ----------- | -------- | ------- | -------- | -------------------------------------------------------------- |
 | `blueprint` | `string` | none    | yes      | Key or entry path in the registry `machines` map, e.g. `main`. |
 
-Machine targets resolve against `$HOME`, not the project. In a monorepo, declare `machine` in one `conform.json` only. See [machine](./machine.md) for packages, links, and secrets templates.
+Machine targets resolve against `$HOME`, not the project. In a monorepo, declare `machine` in one `conform.json` only. See [machine](./machine.md) for packages, files, and secrets templates.
 
 ## `github`
 

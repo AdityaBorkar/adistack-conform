@@ -10,21 +10,17 @@ export interface OverwriteFileFix {
 	secret?: boolean;
 }
 
-export interface RunCommandFix {
+export interface RunCommandStep {
 	args: string[];
 	command: string;
-	kind: "run-command";
 	label: string;
 }
 
-// The fix writes `content` (the upstream bytes the check compared) to
-// `cachePath`, then points `targetAbs` at it, so it links exactly what was checked.
-export interface SymlinkFix {
-	cachePath: string;
-	content: Uint8Array;
-	kind: "symlink";
-	label: string;
-	targetAbs: string;
+export interface RunCommandFix extends RunCommandStep {
+	kind: "run-command";
+	// Setup steps run in order before the main command (e.g. refresh, upgrade
+	// and autoremove before a package install).
+	preCommands?: RunCommandStep[];
 }
 
 export interface GithubApiStep {
@@ -39,7 +35,7 @@ export interface GithubApiFix {
 	steps: GithubApiStep[];
 }
 
-export type CheckFix = OverwriteFileFix | RunCommandFix | SymlinkFix | GithubApiFix;
+export type CheckFix = OverwriteFileFix | RunCommandFix | GithubApiFix;
 
 export interface CheckResult {
 	actual: string;

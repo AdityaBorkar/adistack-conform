@@ -60,7 +60,7 @@ Reference material:
 
 - [Blueprints](./blueprints.md) — how names resolve to blueprint files.
 - [Blueprint files](./blueprint-files.md) — per-file compare and fix rules.
-- [Machine](./machine.md) — packages, dotfile links, and secrets templates.
+- [Machine](./machine.md) — packages, dotfiles, and secrets templates.
 - [Authoring](./authoring.md) — writing your own tech-stack repo.
 - [API](./api.md) — JSON output and schemas.
 - [Monorepo](./monorepo.md) — one `conform.json` per package.

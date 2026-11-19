@@ -22,31 +22,139 @@ function short(value: string, max = 160): string {
 
 // Blueprint-controlled strings (ids, paths, labels) reach the terminal through
 // picocolors: strip control characters so a hostile name cannot emit escapes.
+// Newlines are preserved for diff bodies; single-line fields use short() to flatten.
 function sanitize(value: string): string {
 	// oxlint-disable-next-line no-control-regex
 	return value.replaceAll(/[\u0000-\u001F\u007F]/gu, "");
 }
 
-function formatResult(result: CheckResult): string {
-	const upstream = result.upstream === undefined ? "" : ` (${sanitize(result.upstream)})`;
-	if (result.skipped === true) {
-		return `${pc.gray("○")} ${pc.bold(sanitize(result.id))}${upstream} skipped: ${short(sanitize(result.actual))}`;
+function scopeDisplay(scope: CheckScope): string {
+	if (scope === "github") {
+		return "GitHub";
 	}
-	const tag = isFixable(result) ? ` ${pc.yellow("[fixable]")}` : "";
-	const lines = [
-		`${okMark(result.ok)} ${pc.bold(sanitize(result.id))}${tag}${upstream}`,
-		`    target   : ${sanitize(result.target)}`,
-	];
-	if (!result.ok) {
-		lines.push(
-			`    expected : ${short(sanitize(result.expected))}`,
-			`    actual   : ${short(sanitize(result.actual))}`,
-		);
-		if (result.hint) {
-			lines.push(`    hint     : ${short(sanitize(result.hint))}`);
+	return `${scope.at(0)?.toUpperCase() ?? ""}${scope.slice(1)}`;
+}
+
+function prettify(token: string): string {
+	return token
+		.split(/[-_]+/u)
+		.map((word) => (word === "" ? word : `${word.at(0)?.toUpperCase() ?? ""}${word.slice(1)}`))
+		.join(" ");
+}
+
+// Human title from the wire id. Machine ids carry a section
+// (`machine:<bp>:<section>:<name>` -> `Section: name`); project and github
+// ids show the trailing name; domain and internal-error ids prettify the last part.
+function titleFor(result: CheckResult): string {
+	const parts = result.id.split(":");
+	if (result.scope === "machine") {
+		if (parts.length >= 4) {
+			return `${prettify(parts.at(2) ?? "")}: ${parts.slice(3).join(":")}`;
 		}
-		if (result.fix !== undefined) {
-			lines.push(`    fix      : ${sanitize(describeFix(result))}`);
+		if (parts.length === 3) {
+			return prettify(parts.at(2) ?? "");
+		}
+		return prettify(parts.at(-1) ?? result.id);
+	}
+	if (parts.length >= 3) {
+		return parts.slice(2).join(":");
+	}
+	return result.id;
+}
+
+// Absolute paths get an OSC8 file link so Ctrl+Click opens them. The inner
+// text is sanitized first so the ESC wrappers survive.
+function fileLink(absPath: string): string {
+	const clean = sanitize(absPath);
+	const uri = `file://${clean}`;
+	return `\u001B]8;;${uri}\u001B\\${clean}\u001B]8;;\u001B\\`;
+}
+
+// `(target)` suffix, or "" when the target carries no path info beyond the title
+// (package ids like `apt:autoconf`, structure names like `Source Dir`, github
+// repo targets, scope-only internal errors). Fixable files always show the
+// absolute fix path so it stays clickable.
+function targetSuffix(result: CheckResult): string {
+	const fixPath = result.fix?.kind === "overwrite-file" ? result.fix.filePath : undefined;
+	if (fixPath !== undefined) {
+		return ` (${fileLink(fixPath)})`;
+	}
+	const target = sanitize(result.target);
+	if (target.startsWith("/")) {
+		return ` (${fileLink(target)})`;
+	}
+	// Relative file paths (`dir/file`, `name.ext`) stay; bare labels do not.
+	if (target.includes("/") && !target.includes(" ") && !target.includes("(")) {
+		return ` (${target})`;
+	}
+	if (
+		target.includes(".") &&
+		!target.includes(" ") &&
+		!target.includes(":") &&
+		!target.includes("(")
+	) {
+		return ` (${target})`;
+	}
+	return "";
+}
+
+function isSentinel(text: string): boolean {
+	const trimmed = text.trim();
+	return (
+		trimmed.length >= 2 &&
+		trimmed.startsWith("<") &&
+		trimmed.endsWith(">") &&
+		!trimmed.includes("\n")
+	);
+}
+
+// Unified diff for file drift, shown instead of the old truncated
+// expected/actual lines. Package/command/api drift has no diff: the fix line
+// already carries the command.
+function diffBody(result: CheckResult): string | undefined {
+	if (result.fix?.kind === "overwrite-file" && result.fix.secret === true) {
+		return "<diff hidden: content holds secrets>";
+	}
+	if (result.fix?.kind === "overwrite-file") {
+		const actual = isSentinel(result.actual) ? "" : result.actual;
+		return renderDiff("actual", "expected", actual, result.fix.newContent);
+	}
+	if (result.fix === undefined && !isSentinel(result.actual) && !isSentinel(result.expected)) {
+		const singleLine = !result.actual.includes("\n") && !result.expected.includes("\n");
+		if (singleLine && result.actual.length < 200 && result.expected.length < 200) {
+			return undefined;
+		}
+		return renderDiff("actual", "expected", result.actual, result.expected);
+	}
+	return undefined;
+}
+
+function formatResult(result: CheckResult): string {
+	const heading = pc.bold(`[${scopeDisplay(result.scope)}] ${sanitize(titleFor(result))}`);
+	const target = targetSuffix(result);
+	if (result.skipped === true) {
+		return `${pc.gray("○")} ${heading}${target} skipped: ${short(sanitize(result.actual))}`;
+	}
+	if (result.ok) {
+		return `${okMark(true)} ${heading}${target}`;
+	}
+	const tag = isFixable(result) ? ` ${pc.yellow("[fixable]")}` : ` ${pc.red("[manual]")}`;
+	const fixDesc = result.fix === undefined ? undefined : sanitize(describeFix(result));
+	const hint = result.hint === undefined ? undefined : sanitize(result.hint);
+	const fixText =
+		fixDesc !== undefined && hint !== undefined
+			? `${fixDesc} — ${hint}`
+			: (fixDesc ?? hint ?? "manual");
+	const lines = [`${okMark(false)} ${heading}${target}${tag}`, `    fix: ${fixText}`];
+	const diff = diffBody(result);
+	if (diff !== undefined) {
+		if (diff.includes("\n")) {
+			lines.push("    diff:");
+			for (const line of diff.split("\n")) {
+				lines.push(`      ${line}`);
+			}
+		} else {
+			lines.push(`    diff: ${diff}`);
 		}
 	}
 	return lines.join("\n");

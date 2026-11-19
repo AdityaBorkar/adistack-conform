@@ -8,26 +8,32 @@ describe("parseSimpleMapping", () => {
 		const text = [
 			"---",
 			"# comment",
-			"npm_auth_token: abc",
-			'npm-token: "q v"',
-			"dotted.key: 'x'",
+			"NPM_AUTH_TOKEN: abc",
+			'AWS_KEY_1: "q v"',
+			"MY_KEY: 'x'",
 			"",
 		].join("\n");
 		expect(parseSimpleMapping(text)).toEqual({
-			"dotted.key": "x",
-			npm_auth_token: "abc",
-			"npm-token": "q v",
+			AWS_KEY_1: "q v",
+			MY_KEY: "x",
+			NPM_AUTH_TOKEN: "abc",
 		});
 	});
 
 	test("nested or indented lines throw instead of rendering empty values", () => {
-		expect(() => parseSimpleMapping("parent:\n  child: x\n")).toThrow("line 2");
-		expect(() => parseSimpleMapping("-bad: x\n")).toThrow("Unsupported secrets line 1");
+		expect(() => parseSimpleMapping("PARENT:\n  CHILD: x\n")).toThrow("line 2");
+		expect(() => parseSimpleMapping("-BAD: x\n")).toThrow("Unsupported secrets line 1");
 	});
 
-	test("__proto__ becomes an own key, never the prototype", () => {
-		const values = parseSimpleMapping("__proto__: x\n");
-		expect(Object.hasOwn(values, "__proto__")).toBe(true);
+	test("lowercase, dotted, and dashed keys throw instead of rendering empty values", () => {
+		for (const line of ["npm_auth_token: x", "npm-token: x", "a.b: x", "__proto__: x"]) {
+			expect(() => parseSimpleMapping(`${line}\n`)).toThrow("Unsupported secrets line 1");
+		}
+	});
+
+	test("CAPITAL keys become own keys, never the prototype", () => {
+		const values = parseSimpleMapping("MY_KEY: x\n");
+		expect(Object.hasOwn(values, "MY_KEY")).toBe(true);
 		expect(Object.getPrototypeOf(values)).toBe(Object.prototype);
 	});
 });

@@ -39,7 +39,7 @@ const projectManifest = (sources: string[] = ["projects/files/tool/config.json"]
 	});
 
 const machineManifest = (files: unknown[] = []) =>
-	JSON.stringify({ files, packages: { bun: {}, pacman: {} } });
+	JSON.stringify({ files, packages: { apt: {}, bun: {}, pacman: {} } });
 
 const githubManifest = () =>
 	JSON.stringify({
@@ -175,7 +175,7 @@ describe("validateTechStack", () => {
 				"machines/main.json": machineManifest([
 					{
 						name: "Npmrc",
-						secrets: ["npm_auth_token"],
+						secrets: ["NPM_AUTH_TOKEN"],
 						source: "machines/files/.npmrc",
 						target: "~/.npmrc",
 					},

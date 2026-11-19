@@ -11,8 +11,9 @@ function versionString(label: string) {
 		});
 }
 
-// Names reach `sudo pacman` / `bun add` argv: no leading "-" or "." and no
-// shell or option syntax, so an upstream can never smuggle a flag in.
+// Names reach `sudo pacman` / `sudo apt-get` / `bun add` argv: no leading "-"
+// or "." and no shell or option syntax, so an upstream can never smuggle a
+// flag in.
 const PackageNameSchema = z
 	.string()
 	.regex(
@@ -20,18 +21,16 @@ const PackageNameSchema = z
 		"Package names use letters, digits and @ . _ + / - (no leading - or .).",
 	);
 
-// Same alphabet secrets.yaml keys are parsed with.
+// Secrets are $$CAPITAL_CASING$$ slots; same alphabet secrets.yaml keys are parsed with.
 const SecretNameSchema = z
 	.string()
-	.regex(
-		/^[A-Za-z_][\w.-]*$/u,
-		"Secret names use letters, digits and _ . - (leading letter or _).",
-	);
+	.regex(/^[A-Z][A-Z0-9_]*$/u, "Secret names use CAPITAL_CASING (A-Z, 0-9, _, leading letter).");
 
 const ManagerPackagesSchema = z.record(PackageNameSchema, versionString("Package"));
 
 const MachinePackagesSchema = z
 	.object({
+		apt: ManagerPackagesSchema.default({}),
 		bun: ManagerPackagesSchema.default({}),
 		pacman: ManagerPackagesSchema.default({}),
 	})
@@ -49,6 +48,7 @@ const MachineFileSchema = z
 
 const MachineAllowlistSchema = z
 	.object({
+		apt: z.array(PackageNameSchema).optional(),
 		bun: z.array(PackageNameSchema).optional(),
 		pacman: z.array(PackageNameSchema).optional(),
 	})
@@ -62,7 +62,7 @@ export const MachineManifestSchema = z.compile(
 			$schema: z.string().optional(),
 			allowlist: MachineAllowlistSchema.default({}),
 			files: z.array(MachineFileSchema).default([]),
-			packages: MachinePackagesSchema.default({ bun: {}, pacman: {} }),
+			packages: MachinePackagesSchema.default({ apt: {}, bun: {}, pacman: {} }),
 		})
 		.strict()
 		.superRefine((data, ctx) => {
@@ -72,7 +72,7 @@ export const MachineManifestSchema = z.compile(
 					ctx.addIssue({ code: "custom", message: `files has duplicate name "${entry.name}".` });
 				}
 				seen.add(entry.name);
-				// Links enforce only the symlink path; modes apply to secrets templates alone.
+				// Modes apply to secrets templates alone; plain files carry no mode.
 				if (entry.mode !== undefined && entry.secrets === undefined) {
 					ctx.addIssue({
 						code: "custom",
@@ -81,6 +81,7 @@ export const MachineManifestSchema = z.compile(
 				}
 			}
 			if (
+				Object.keys(data.packages.apt).length === 0 &&
 				Object.keys(data.packages.pacman).length === 0 &&
 				Object.keys(data.packages.bun).length === 0 &&
 				data.files.length === 0
@@ -88,7 +89,7 @@ export const MachineManifestSchema = z.compile(
 				ctx.addIssue({
 					code: "custom",
 					message:
-						"Machine manifest enforces nothing: add at least one packages (pacman/bun) or files[] entry.",
+						"Machine manifest enforces nothing: add at least one packages (apt/pacman/bun) or files[] entry.",
 				});
 			}
 		}),

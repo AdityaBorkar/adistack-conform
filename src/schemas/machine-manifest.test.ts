@@ -9,7 +9,11 @@ function withSecrets(secrets: string[]) {
 describe("MachineManifestSchema", () => {
 	test("valid minimal manifest passes with defaults", () => {
 		const result = MachineManifestSchema.safeParse({
-			packages: { bun: { "eas-cli": "latest" }, pacman: { ripgrep: "14.1.0-1" } },
+			packages: {
+				apt: { curl: "latest" },
+				bun: { "eas-cli": "latest" },
+				pacman: { ripgrep: "14.1.0-1" },
+			},
 		});
 		expect(result.success).toBe(true);
 		if (result.success) {
@@ -19,7 +23,7 @@ describe("MachineManifestSchema", () => {
 
 	test("unknown manager key fails", () => {
 		const result = MachineManifestSchema.safeParse({
-			packages: { apt: { ripgrep: "latest" } },
+			packages: { dnf: { ripgrep: "latest" } },
 		});
 		expect(result.success).toBe(false);
 	});
@@ -50,7 +54,7 @@ describe("MachineManifestSchema", () => {
 				{
 					mode: "0755",
 					name: "Npmrc",
-					secrets: ["npm_auth_token"],
+					secrets: ["NPM_AUTH_TOKEN"],
 					source: "machines/main/files/.npmrc",
 					target: "~/.npmrc",
 				},
@@ -125,6 +129,7 @@ describe("MachineManifestSchema", () => {
 	test("real package names pass", () => {
 		const result = MachineManifestSchema.safeParse({
 			packages: {
+				apt: { curl: "latest" },
 				bun: { "@scope/tool": "1.0.0", "eas-cli": "latest" },
 				pacman: { "gtk+3": "latest", "python-pip": "latest" },
 			},
@@ -132,10 +137,12 @@ describe("MachineManifestSchema", () => {
 		expect(result.success).toBe(true);
 	});
 
-	test("secret names must match the secrets.yaml key alphabet", () => {
-		expect(MachineManifestSchema.safeParse(withSecrets(["npm-token", "a.b", "_x"])).success).toBe(
-			true,
-		);
-		expect(MachineManifestSchema.safeParse(withSecrets(["bad name"])).success).toBe(false);
+	test("secret names must be CAPITAL_CASING", () => {
+		expect(
+			MachineManifestSchema.safeParse(withSecrets(["NPM_AUTH_TOKEN", "A", "A1_B2"])).success,
+		).toBe(true);
+		for (const name of ["npm_auth_token", "npm-token", "a.b", "_X", "bad name", ""]) {
+			expect(MachineManifestSchema.safeParse(withSecrets([name])).success).toBe(false);
+		}
 	});
 });

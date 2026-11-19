@@ -22,6 +22,7 @@ interface RunContext {
 	home: string;
 	// Configured scopes, narrowed by a --*-only flag.
 	scopes: CheckScope[];
+	skipSecrets: boolean;
 	strict: boolean;
 	techStack: TechStack;
 }
@@ -56,10 +57,10 @@ function scopeTask(
 	if (state === undefined) {
 		return Promise.resolve([]);
 	}
-	const { home, strict, techStack } = ctx;
+	const { home, skipSecrets, strict, techStack } = ctx;
 	// Re-check merging and narrowing key on ids, so a scope must never repeat one.
 	return SCOPES[scope](
-		{ baseDir: ctx.desiredState.dir, home, state, strict, techStack },
+		{ baseDir: ctx.desiredState.dir, home, skipSecrets, state, strict, techStack },
 		onlyIds,
 	).then(assertUniqueIds);
 }
@@ -139,7 +140,7 @@ export async function recheckAfterFix(
 }
 
 export async function prepareRun(
-	options: ConfigPathOption & ScopeOptions & { strict?: boolean },
+	options: ConfigPathOption & ScopeOptions & { skipSecrets?: boolean; strict?: boolean },
 ): Promise<RunContext & Awaited<ReturnType<typeof runAllChecks>>> {
 	const only = scopeOf(options);
 	const desiredState = await loadDesiredState(options.path);
@@ -149,6 +150,7 @@ export async function prepareRun(
 		desiredState,
 		home: defaultHome(),
 		scopes,
+		skipSecrets: options.skipSecrets === true,
 		strict: options.strict === true,
 		techStack: await openTechStack(pinnedReader(id, ref)),
 	};

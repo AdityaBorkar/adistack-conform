@@ -13,7 +13,7 @@ bun install                          # CI uses bun install --frozen-lockfile
 bun dev check                        # run CLI from source (bun ./src/index.ts); pass check/fix args after dev
 bun test                             # all tests (script adds --only-failures --parallel=4); single file: bun test src/core/result.test.ts
 bun run build                        # regen config/*.json from src/schemas/* + compile --minify --bytecode to .output/
-bun run verify                       # gate before pushing: format (writes, not --check) + check:lint + check:types + test + check:knip + check:conform in parallel (scripts/verify.ts)
+bun run verify                       # gate before pushing: format (writes, not --check) + check:lint + check:types + test + check:knip in parallel (scripts/verify.ts; no check:conform — run it separately)
 bun run check:conform                # dogfood self-check (bun dev check --project-only); full run is bun run review:conform
 ```
 

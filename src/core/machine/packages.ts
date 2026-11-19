@@ -1,3 +1,4 @@
+import { aptManager } from "#/core/machine/managers/apt.js";
 import { bunManager } from "#/core/machine/managers/bun.js";
 import { pacmanManager } from "#/core/machine/managers/pacman.js";
 import type {
@@ -5,33 +6,91 @@ import type {
 	ManagerId,
 	PackageManager,
 } from "#/core/machine/managers/types.js";
+import type { SystemManager } from "#/core/machine/os.js";
 import type { CheckBase, CheckResult } from "#/core/result.js";
 import { checkBase, failFixable, pass, skipped } from "#/core/result.js";
 import type { MachineManifest } from "#/schemas/machine-manifest.js";
+import { errorMessage } from "#/utils/error.js";
 
 export const MANAGERS: Record<ManagerId, PackageManager> = {
+	apt: aptManager,
 	bun: bunManager,
 	pacman: pacmanManager,
 };
 
 // Report order.
-const MANAGER_IDS: ManagerId[] = ["bun", "pacman"];
+const MANAGER_IDS: ManagerId[] = ["apt", "bun", "pacman"];
+
+function emptyInstalled(): InstalledPackages {
+	return { explicit: new Set<string>(), versions: new Map<string, string>() };
+}
+
+export const SYSTEM_WARNING =
+	"It seems you have not defined any system packages OR your OS Distro is not supported.";
+
+// Auto-OS selection: the distro's system manager runs alongside bun's
+// distro-agnostic globals; the other system's packages are ignored so an
+// Arch host never flags declared apt packages as missing (and vice versa).
+// Unsupported distros check bun globals only and surface SYSTEM_WARNING.
+export function activeManagers(system: SystemManager | undefined): ManagerId[] {
+	if (system === undefined) {
+		return ["bun"];
+	}
+	return MANAGER_IDS.filter((manager) => manager === "bun" || manager === system);
+}
+
+// Unsupported distros cannot enforce system packages: a skip keeps `check`
+// green while telling the user why no system packages ran.
+export function systemWarning(blueprint: string): CheckResult {
+	return skipped(
+		checkBase("machine", blueprint, "packages:system", "system packages"),
+		"system packages checked",
+		SYSTEM_WARNING,
+	);
+}
 
 export interface EvaluatePackagesArgs {
 	allowlist: MachineManifest["allowlist"];
 	blueprint: string;
 	declared: MachineManifest["packages"];
 	installed: Record<ManagerId, InstalledPackages>;
+	// The distro's system manager (undefined when unsupported): only it and
+	// bun are evaluated, the other system's packages are ignored.
+	systemManager: SystemManager | undefined;
 	// Strict runs treat extras as drift (fixable removal) instead of skipping them.
 	strict: boolean;
 }
 
-// Every manager's installed list, read concurrently.
+// Every active manager's installed list, read concurrently. Managers that
+// were not queried (the inactive distro) stay empty so cross-distro declared
+// packages are never flagged. A manager whose tools are absent contributes
+// nothing instead of failing the domain; anything else still rejects into
+// the packages guard.
 export async function listInstalled(
 	list: (manager: ManagerId) => Promise<InstalledPackages>,
+	managers: readonly ManagerId[] = MANAGER_IDS,
 ): Promise<Record<ManagerId, InstalledPackages>> {
-	const [pacman, bun] = await Promise.all([list("pacman"), list("bun")]);
-	return { bun, pacman };
+	const full: Record<ManagerId, InstalledPackages> = {
+		apt: emptyInstalled(),
+		bun: emptyInstalled(),
+		pacman: emptyInstalled(),
+	};
+	const entries = await Promise.all(
+		managers.map(async (manager) => {
+			try {
+				return [manager, await list(manager)] as const;
+			} catch (error) {
+				if (!errorMessage(error).startsWith("Cannot run ")) {
+					throw error;
+				}
+				return [manager, emptyInstalled()] as const;
+			}
+		}),
+	);
+	for (const [manager, installed] of entries) {
+		full[manager] = installed;
+	}
+	return full;
 }
 
 function extraActual(name: string): string {
@@ -40,9 +99,10 @@ function extraActual(name: string): string {
 
 // One result per declared package plus one per extra. Missing and version
 // drift are always fixable; extras are skipped unless the run is strict.
+// Only the active managers (distro system manager + bun) are evaluated.
 export function evaluatePackages(args: EvaluatePackagesArgs): CheckResult[] {
 	const results: CheckResult[] = [];
-	for (const manager of MANAGER_IDS) {
+	for (const manager of activeManagers(args.systemManager)) {
 		const wanted = args.declared[manager];
 		const installed = args.installed[manager];
 		const allow = new Set(args.allowlist[manager] ?? []);

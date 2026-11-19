@@ -33,7 +33,7 @@
 		"url": "git+https://github.com/AdityaBorkar/adistack-conform.git"
 	},
 	"bin": {
-		"@adistack/conform": "./.output/adistack-conform"
+		"conform": "./.output/adistack-conform"
 	},
 	"files": [
 		".output",
